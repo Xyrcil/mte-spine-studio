@@ -1,0 +1,16 @@
+{
+  "name": "mte-spine-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "assets:index": "node tools/index_skeletons.mjs && node tools/build_presentations.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "vite": "8.3.1"
+  }
+}
