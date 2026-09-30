@@ -18,10 +18,19 @@ utilities. It preserves Unity references, scene hierarchy, and atlas materials.
 ```sh
 python3 tools/extract_assets.py --source /path/to/archive
 npm run assets:index
+python3 tools/extract_audio.py --source /path/to/archive
+python3 tools/build_library.py --source /path/to/archive
 ```
 
 The current implementation loads composite Spine presentations from real
-resources. Character labeling, interaction state machines, audio, scene
-persistence, and media export are still being implemented.
+resources and joins their character names and voice tables. The voice panel
+plays the available source and Chinese tracks with subtitles and volume control.
+Interaction state machines, event-driven audio, scene persistence, static
+portraits, and media export are still being implemented.
+
+Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
+for Opus output. Use `--retry-failed` to retry failed conversions without
+repeating successful work. Resource indexes retain the original names and
+record conversion errors rather than dropping missing files.
 
 The Spine runtime license is retained in `public/vendor/SPINE-LICENSE`.
