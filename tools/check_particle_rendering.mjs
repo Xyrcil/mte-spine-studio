@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 
 const browser=await chromium.launch({channel:'chrome',headless:true});
+const bundle=process.argv[2]||'Spines/painting/301500101_spine';
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await page.locator('#pause').click();
-  await page.locator('[data-asset="Spines/painting/301500101_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301500101_spine');
+  await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
   const result=await page.evaluate(async()=>{
     const stage=window.mteStudio,group=stage.groups[0],catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;
     const pixels=()=>{stage.draw();const result=new Uint8Array(stage.canvas.width*stage.canvas.height*4);stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,result);return result;};
@@ -19,13 +20,20 @@ try{
     const {exportMedia}=await import('/src/engine/export.js');
     const settings={format:'png',width:stage.canvas.width,height:stage.canvas.height,scale:1,fps:30,speed:1,start:0,end:1,loops:1,loopMode:'repeat',fade:.2,background:stage.background,transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}};
     const output=await exportMedia({scene:saved,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings});
+    const verificationWarning=output.warnings.some(warning=>warning.includes('visual verification'));
     const bitmap=await createImageBitmap(output.blob),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const png=ctx.getImageData(0,0,canvas.width,canvas.height).data;let exportError=0;
     for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)for(let c=0;c<4;c++)exportError=Math.max(exportError,Math.abs(png[(y*canvas.width+x)*4+c]-restored[((canvas.height-y-1)*canvas.width+x)*4+c]));
+    let cropError=0;
+    if(group.effects.some(effect=>effect.maskedProfile)){
+      const width=Math.floor(stage.canvas.width/2),cropped=await exportMedia({scene:saved,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{...settings,width,crop:{x:0,y:0,width:width/stage.canvas.width,height:1}}}),bitmap=await createImageBitmap(cropped.blob),cropCanvas=document.createElement('canvas');cropCanvas.width=bitmap.width;cropCanvas.height=bitmap.height;const context=cropCanvas.getContext('2d');context.drawImage(bitmap,0,0);bitmap.close();const data=context.getImageData(0,0,width,cropCanvas.height).data;
+      for(let y=0;y<cropCanvas.height;y++)for(let x=2;x<width-2;x++)for(let c=0;c<4;c++)cropError=Math.max(cropError,Math.abs(data[(y*width+x)*4+c]-restored[((cropCanvas.height-y-1)*stage.canvas.width+x)*4+c]));
+    }
     const {RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js'),session=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,exportPlan(settings,saved.speed));let sessionError=0;
     try{await session.initialize();await session.seek(0);const data=new Uint8Array(restored.length);session.stage.gl.readPixels(0,0,session.canvas.width,session.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,data);for(let i=0;i<data.length;i++)sessionError=Math.max(sessionError,Math.abs(data[i]-restored[i]));}finally{session.dispose();}
-    return {difference,frozen,equal,rejected,preserved,exportError,sessionError,minAlpha:restored.reduce((min,value,index)=>index%4===3?Math.min(min,value):min,255),effects:group.effects.length,counts:group.effects.map(effect=>effect.model.view().length)};
+    return {difference,frozen,equal,rejected,preserved,exportError,cropError,sessionError,verificationWarning,glError:stage.gl.getError(),minAlpha:restored.reduce((min,value,index)=>index%4===3?Math.min(min,value):min,255),effects:group.effects.length,counts:group.effects.map(effect=>effect.model.view().length)};
   });
-  assert.equal(result.effects,2);assert.ok(result.difference>100,JSON.stringify(result));assert.equal(result.frozen,true);assert.equal(result.equal,true);assert.equal(result.rejected,true);assert.equal(result.preserved,true);assert.ok(result.exportError<=1,JSON.stringify(result));assert.deepEqual(errors,[]);
+  assert.equal(result.effects,bundle==='Spines/painting/3016009_spine'?1:2);assert.ok(result.difference>100,JSON.stringify(result));assert.equal(result.frozen,true);assert.equal(result.equal,true);assert.equal(result.rejected,true);assert.equal(result.preserved,true);assert.ok(result.exportError<=1,JSON.stringify(result));assert.ok(result.cropError<=2,JSON.stringify(result));assert.deepEqual(errors,[]);
+  assert.equal(result.verificationWarning,bundle==='Spines/painting/3016009_spine');assert.equal(result.glError,0);
   await page.evaluate(()=>{const stage=window.mteStudio;stage.draw();window.particleRecovery={snapshot:stage.snapshot(),pixels:new Uint8Array(stage.canvas.width*stage.canvas.height*4),extension:stage.gl.getExtension('WEBGL_lose_context')};stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,window.particleRecovery.pixels);if(!window.particleRecovery.extension)throw new Error('Context loss extension unavailable');window.particleRecovery.extension.loseContext();});
   await page.waitForFunction(()=>window.mteStudio.contextLost&&window.mteStudio.recoveryPending);
   assert.equal(await page.evaluate(()=>JSON.stringify(window.mteStudio.snapshot())===JSON.stringify(window.particleRecovery.snapshot)),true);

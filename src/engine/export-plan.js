@@ -39,7 +39,7 @@ export function exportCamera(camera,sourceAspect,plan){
   const width=plan.fit==='contain'?Math.max(cropWidth,cropHeight*aspect):Math.min(cropWidth,cropHeight*aspect);
   const result={x:camera.x+(plan.crop.x+plan.crop.width/2-.5)*sourceWidth,y:camera.y+(.5-plan.crop.y-plan.crop.height/2)*sourceHeight,width,height:width/aspect};
   const pixelWidth=cropWidth/width*plan.width,pixelHeight=cropHeight/result.height*plan.height;
-  return {camera:result,clip:plan.fit==='contain'?{x:Math.round((plan.width-pixelWidth)/2),y:Math.round((plan.height-pixelHeight)/2),width:Math.round(pixelWidth),height:Math.round(pixelHeight)}:null};
+  return {camera:result,maskCamera:{x:camera.x,y:camera.y,width:sourceWidth,height:sourceHeight},clip:plan.fit==='contain'?{x:Math.round((plan.width-pixelWidth)/2),y:Math.round((plan.height-pixelHeight)/2),width:Math.round(pixelWidth),height:Math.round(pixelHeight)}:null};
 }
 export function clipSample(channels,sampleRate,time,{offset=0,rate=1,repeat=false,gain=1}={},result=[0,0]){
   result[0]=0;result[1]=0;if(time<offset||!channels[0]?.length)return result;

@@ -5,6 +5,7 @@ import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePo
 import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareHierarchy} from './particle-layer.js';
 import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
+import {MaskedParticleRenderer} from './masked-particles.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -82,6 +83,7 @@ export class Stage extends EventTarget {
         group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:instance.active!==false});
       }
       group.effects=createParticleLayers(group,base,manager);
+      if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
       createNativeVisuals(group,base,manager);
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
@@ -119,6 +121,7 @@ export class Stage extends EventTarget {
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
+      group.maskedRenderer?.dispose();
       manager.dispose();
       throw error;
     }finally{this.activeLoads--;}
@@ -237,7 +240,7 @@ export class Stage extends EventTarget {
     })().catch(error=>{if(!this.contextLost&&!this.disposed)this.dispatchEvent(new CustomEvent('rendering-recovery-error',{detail:error.message}));throw error;}).finally(()=>this.recoveryPromise=null);
     return this.recoveryPromise;
   }
-  release(group){if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
+  release(group){group.maskedRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
   interact(clientX,clientY){
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
@@ -300,7 +303,7 @@ export class Stage extends EventTarget {
         renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
       }else{
         const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort((a,b)=>a.order-b.order||compareHierarchy(a.path,b.path));
-        for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
+        for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
       }
     }
     renderer.end();

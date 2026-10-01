@@ -47,7 +47,13 @@ Native clips with events, text, vector channels or unsupported image layouts
 remain explicitly unavailable; the skill-animation clip is not yet played.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
-Custom particle materials and unsupported native animation clips are not yet rendered;
+The recovered screen-mask additive particle variant has an independent browser
+renderer with stretched quads and grid-sheet frames. Its mask stays anchored
+to the source viewport during cropped exports. Geometry and material draw
+order still need original-client visual verification; the UI and exported
+results retain that warning. Transparent images cannot preserve additive
+composition on every background, so matching exports should use an opaque
+background. Other custom material variants and unsupported native clips are not yet rendered;
 affected presentations say so in their details. Inspect original component coverage with
 `python3 tools/inspect_effects.py --source /path/to/archive`.
 

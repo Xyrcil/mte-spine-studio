@@ -1,5 +1,6 @@
 import {ParticleSystem,validateParticleCheckpoint} from './particles.js';
 import {multiply,objectTransform} from './geometry.js';
+import {maskedParticleProfile} from './masked-particles.js';
 
 export function createParticleLayers(group,base,manager){
   const urls=new Set();
@@ -8,9 +9,11 @@ export function createParticleLayers(group,base,manager){
     let model,reason;const make=seed=>new ParticleSystem(source,{seed,transform});
     try{model=make();}catch(error){reason=error.message;}
     const material=source.materials?.[0];
-    if(!reason&&(source.status!=='extracted'||material?.shader!=='Legacy Shaders/Particles/Alpha Blended'||source.renderer?.m_RenderMode!==0||!source.sprites?.length))reason='Particle material or renderer is not supported yet';
-    const textures=reason?[]:source.sprites.map(sprite=>base+sprite.path);for(const url of textures)urls.add(url);
-    return {source,model,reason,textures,material,make};
+    let maskedProfile,textureMap;
+    if(!reason&&source.status==='extracted'&&material?.shader==='AOI/Effect/AOI_Effect_UrpV2'){try{maskedProfile=maskedParticleProfile(source);textureMap=Object.fromEntries(Object.entries(material.textures).map(([name,texture])=>[name,base+texture.path]));}catch(error){reason=error.message;}}
+    else if(!reason&&(source.status!=='extracted'||material?.shader!=='Legacy Shaders/Particles/Alpha Blended'||source.renderer?.m_RenderMode!==0||!source.sprites?.length))reason='Particle material or renderer is not supported yet';
+    const textures=reason?[]:maskedProfile?Object.values(textureMap):source.sprites.map(sprite=>base+sprite.path);for(const url of textures)urls.add(url);
+    return {source,model,reason,textures,material,make,maskedProfile,textureMap,...(maskedProfile?{verification:'Masked particle geometry and draw order need visual verification'}:{})};
   });
   for(const url of urls)manager.loadTexture(url);
   return result;
@@ -35,8 +38,9 @@ export function hierarchyOrder(group,transform){
 }
 export function compareHierarchy(a,b){for(let index=0;index<Math.min(a.length,b.length);index++)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;}
 
-export function drawParticleLayer(renderer,group,layer){
+export function drawParticleLayer(renderer,group,layer,maskCamera){
   if(layer.reason||!layer.model||!group.isActiveTransform(layer.source.transform)||layer.source.renderer?.m_Enabled===false||layer.source.renderer?.m_Enabled===0)return;
+  if(layer.maskedProfile){group.maskedRenderer.draw(renderer,group,layer,maskCamera);return;}
   const tint=Object.fromEntries(layer.material.properties.m_Colors||[])._TintColor||{r:1,g:1,b:1,a:1};
   const scale=Math.abs(group.scale),pivot=layer.source.renderer.m_Pivot||{x:0,y:0};
   const gl=renderer.context.gl;renderer.batcher.setBlendMode(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);

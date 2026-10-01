@@ -18,7 +18,7 @@ export class RenderSession {
     this.canvas=document.createElement('canvas');this.canvas.width=plan.width;this.canvas.height=plan.height;
     this.stage=new Stage(this.canvas,{manual:true,transparent:Boolean(plan.transparent)});this.stage.imageAssets=new Map(imageAssets);
     this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
-    const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip;this.time=0;
+    const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
   }
   async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
@@ -76,9 +76,12 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   try{
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
     await session.initialize();if(head)await head.initialize();
+    const effects=session.stage.groups.filter(group=>group.visible).flatMap(group=>group.effects||[]),pendingEffects=effects.filter(effect=>effect.verification);
+    if(pendingEffects.length)warnings.push('Masked particle geometry and draw order still need visual verification');
+    if(plan.transparent&&effects.some(effect=>effect.maskedProfile))warnings.push('Transparent output cannot retain additive blending on every background; use an opaque background for matching composition');
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
     const video=['mp4','webm'].includes(plan.format);
-    if((video&&effectProvider)||interactionProvider){const result=await collectInteractionEffects(session,plan,video?effectProvider:null,onProgress,interactionProvider);interactionClips=result.clips;interactionVoices=result.voices;warnings=result.warnings;}
+    if((video&&effectProvider)||interactionProvider){const result=await collectInteractionEffects(session,plan,video?effectProvider:null,onProgress,interactionProvider);interactionClips=result.clips;interactionVoices=result.voices;warnings.push(...result.warnings);}
     const replacement=interactionVoices.length?{until:interactionVoices[0].offset}:{};
     const voiceAudio=video&&capturedVoice?.includeAudio&&!session.scene.audio?.muted?{...capturedVoice,...replacement,scene:true,sceneRate:1/plan.speed}:null;
     const voiceCaption=capturedVoice?.includeSubtitles&&capturedVoice.text?{...capturedVoice,...replacement,captionOnly:true,sceneCaption:true,sceneRate:1/plan.speed}:null;
