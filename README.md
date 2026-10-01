@@ -150,6 +150,14 @@ unexpected HTML and partial audio responses are not stored as complete files.
 Preparation reports when the selected resources do not all fit. Browser permission
 or quota failures leave online playback available. Development mode disables
 service-worker caching to avoid stale source files.
+Offline preparation can include the recorded sequence even when its initial
+characters differ from the current scene. An independent replay collects its
+actual voices and effects in the recorded language, along with initial textures,
+captured sound and ambient resources. It does not play sound or change the
+editing scene. Missing sounds and unreproducible actions are reported; resources
+for additional unrecorded interactions are not guaranteed. Preparation remains
+available when automatic caching is disabled, and catalogues are prepared before
+media resources. Cancellation applies to sequence analysis and downloading.
 
 For a project URL such as `/mte-studio/`, build with
 `MTE_BASE_PATH=/mte-studio/ npm run build`. Test offline behavior with a local

@@ -23,7 +23,7 @@ const message = value => {status.textContent=value;};
 const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
-const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio}),message);window.mteCache=resourceCache;
+const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio,catalog,runtime}),message);window.mteCache=resourceCache;
 window.mteSequence=createSequencePanel(stage,editor,message);
 stage.addEventListener('sequence-paused',()=>audio?.pause());
 stage.addEventListener('sequence-playing',()=>audio?.resume().catch(error=>message(error.message)));
