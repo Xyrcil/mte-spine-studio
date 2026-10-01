@@ -9,6 +9,8 @@ from an arraybuffer XMLHttpRequest, so failed loads do not stall recovery.
 Collapsed parent transforms retain finite local applied values. IK skips
 non-invertible or zero-length scaled chains instead of dividing by zero;
 zero animation scales remain unchanged and resume normal solving when expanded.
+Polygon batches accumulate alpha separately from their RGB blend factors so
+opaque scenes remain opaque and transparent canvas exports retain coverage.
 
 Mediabunny 1.61.0 is an unmodified dependency under MPL-2.0.
 License: MEDIABUNNY-LICENSE.

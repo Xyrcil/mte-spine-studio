@@ -22,7 +22,9 @@ try{
   assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
   for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
     await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
-    assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
+    const unavailable=await page.evaluate(()=>window.mteStudio.groups[0].effects.some(effect=>effect.reason));
+    if(unavailable)assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
+    else assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);
   }
   assert.deepEqual(errors,[]);console.log('Effect resource checks passed: five native particle systems, resolved dependencies, decoded sprite/texture pixels, preserved smoke clip and explicit rendering status',result);
 }finally{await browser.close();}

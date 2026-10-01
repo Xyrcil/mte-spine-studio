@@ -45,6 +45,7 @@ export function createEditor(stage,message,onSelection){
       panel.append(button('Move forward',()=>reorder(1)),button('Move backward',()=>reorder(-1)));
       const duplicate=document.createElement('button');duplicate.textContent='Duplicate';duplicate.onclick=async()=>{
         if(isBusy())return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);const sound=scene.audio?.ambientTracks.find(track=>track.id===group.id);if(sound)scene.audio.ambientTracks.push({...sound,id:copy.id});if(scene.audio?.effectTracks)scene.audio.effectTracks=[...scene.audio.effectTracks,...scene.audio.effectTracks.filter(track=>track.group===group.id).map(track=>({...track,group:copy.id}))].slice(-12);
+        for(const effect of copy.effects||[])if(group.effects?.find(layer=>layer.source.id===effect.id)?.source.data.moveWithTransform===0)for(const particle of effect.state.particles)particle.position[0]+=1;
         try{await restore(scene);history.push(previous);choose(stage.groups.at(-1));changed();}catch(error){message(error.message);}
       };panel.append(duplicate);container.append(panel);
     }

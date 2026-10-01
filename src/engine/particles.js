@@ -106,3 +106,9 @@ export class ParticleSystem {
     const delay=finite(value.delay,'checkpoint delay');if(delay<0)throw new Error('Negative checkpoint delay');this.delay=delay;this.seed=value.seed;this.tick=value.tick;this.target=target;this.state=state;
   }
 }
+
+export function validateParticleCheckpoint(value,{id=value?.id,limit=10000}={}){
+  if(typeof id!=='string'||id.length>512)throw new Error('Invalid particle source ID');
+  const holder={effect:{id},limit};ParticleSystem.prototype.restore.call(holder,value);
+  return {schema:1,id,seed:holder.seed,delay:holder.delay,tick:holder.tick,target:holder.target,state:holder.state};
+}

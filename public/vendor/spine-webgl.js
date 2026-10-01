@@ -9186,7 +9186,7 @@ var spine;
 				this.lastTexture = null;
 				this.isDrawing = true;
 				gl.enable(gl.BLEND);
-				gl.blendFunc(this.srcBlend, this.dstBlend);
+				gl.blendFuncSeparate(this.srcBlend, this.dstBlend, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 			};
 			PolygonBatcher.prototype.setBlendMode = function (srcBlend, dstBlend) {
 				var gl = this.context.gl;
@@ -9194,7 +9194,7 @@ var spine;
 				this.dstBlend = dstBlend;
 				if (this.isDrawing) {
 					this.flush();
-					gl.blendFunc(this.srcBlend, this.dstBlend);
+					gl.blendFuncSeparate(this.srcBlend, this.dstBlend, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 				}
 			};
 			PolygonBatcher.prototype.draw = function (texture, vertices, indices) {

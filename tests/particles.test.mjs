@@ -1,13 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {ParticleSystem} from '../src/engine/particles.js';
+import {ParticleSystem,validateParticleCheckpoint} from '../src/engine/particles.js';
 
 const constant=value=>({minMaxState:0,scalar:value});
 const color={minMaxState:0,maxColor:{r:1,g:1,b:1,a:1}};
 function fixture(change={}){return {id:'test',sprites:[],data:{lengthInSec:1,simulationSpeed:1,looping:true,prewarm:false,moveWithTransform:0,startDelay:constant(0),InitialModule:{enabled:true,startLifetime:constant(2),startSpeed:constant(1),startSize:constant(1),startRotation:constant(0),startColor:color,maxNumParticles:10},EmissionModule:{enabled:true,rateOverTime:constant(2),rateOverDistance:constant(0),m_Bursts:[]},...change}};}
 const model=source=>new ParticleSystem(source||fixture(),{seed:7});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
+test('scene checkpoints validate source identity and capacity without retaining caller references',()=>{
+  const value=model();value.advance(.713);const saved=value.snapshot(),checked=validateParticleCheckpoint(saved,{id:'test',limit:10});
+  assert.deepEqual(checked,saved);checked.state.particles[0].position[0]=100;assert.notDeepEqual(checked,saved);
+  assert.throws(()=>validateParticleCheckpoint(saved,{id:'other'}),/source/);
+  assert.throws(()=>validateParticleCheckpoint(saved,{limit:0}),/checkpoint/);
+  const bad=structuredClone(saved);bad.state.particles[0].random[0]=1;assert.throws(()=>validateParticleCheckpoint(bad),/randomness/);assert.deepEqual(value.snapshot(),saved);
+});
 test('continuous emission has exact birth times and partial-frame views do not advance random state',()=>{
   const value=model();value.advance(.51);const before=value.snapshot(),particles=value.view();assert.equal(particles.length,1);near(particles[0].birth,.5);near(particles[0].position[2],.01);assert.deepEqual(value.snapshot(),before);assert.deepEqual(value.view(),particles);
   value.advance(.49);assert.equal(value.view().length,2);near(value.view()[1].birth,1);

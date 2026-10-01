@@ -31,8 +31,9 @@ dropping other catalogue entries. Particle extraction retains source modules,
 render settings, material parameters, shared shader/texture dependencies and
 sprite frames. Native animation components and sorting groups are also kept.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
-The current renderer does not yet play these additional effects; affected
-presentations say so in their details. Inspect original component coverage with
+The renderer plays the recovered Legacy alpha-blended sprite particles.
+Custom particle materials and native animation clips are not yet rendered;
+affected presentations say so in their details. Inspect original component coverage with
 `python3 tools/inspect_effects.py --source /path/to/archive`.
 
 Particle value sampling supports cubic and weighted tangents, held segments,
@@ -41,8 +42,9 @@ authored HDR values and caller-supplied random factors. The independent particle
 model simulates the recovered edge/box emitters, one-loop prewarming, forces,
 lifetimes, capacity, size/color/rotation changes and texture frame selection.
 It retains a random stream and validated checkpoints; partial-frame sampling
-does not consume randomness. The model is not yet connected to scene rendering,
-scene files or media export. Additional unsupported enabled modules fail
+does not consume randomness. Scene files, context recovery and independent
+media export retain particle positions and future emission. Legacy scenes
+without particle checkpoints start with the source prewarm. Additional unsupported enabled modules fail
 explicitly instead of producing placeholder effects.
 
 The current implementation loads composite Spine presentations from real
@@ -129,7 +131,7 @@ and manual retry. Animation mixes, poses and playback settings are retained;
 previously playing scenes resume without advancing through the interruption.
 Independent media exports stop on context loss instead of recording blank frames.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing, scheduled interaction recording/replay,
+rendering for custom materials and native clips, complete voice routing,
 browser fallbacks and public deployment remain in progress.
 
 Interactive presentations with `start` and `animation` play the entrance once
