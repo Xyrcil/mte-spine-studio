@@ -28,8 +28,10 @@ export function validateScene(value) {
         })};
       });
     } else {
-      if(typeof object.src!=='string'||!/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(object.src))throw new Error('Image scenes require an embedded raster image');
-      result.src=object.src;result.width=finite(object.width,'image width');result.height=finite(object.height,'image height');
+      if(object.asset!==undefined){if(typeof object.asset!=='string'||!/^portraits\/[\w.-]+\/-?\d+\.png$/.test(object.asset))throw new Error('Invalid portrait asset reference');result.asset=object.asset;}
+      else {if(typeof object.src!=='string'||!/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(object.src))throw new Error('Image scenes require an embedded raster image');result.src=object.src;}
+      if(object.appearanceId!==undefined)result.appearanceId=text(object.appearanceId,'appearance ID');
+      result.width=finite(object.width,'image width');result.height=finite(object.height,'image height');
       if(result.width<=0||result.height<=0)throw new Error('Invalid image dimensions');
     }
     return result;

@@ -6,17 +6,22 @@ import {createEditor} from './editor.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
-  <main><aside class="library"><label for="search">Asset library</label><input id="search" placeholder="Search asset or category"><select id="category"><option value="">All categories</option><option>painting</option><option>story</option><option>storyCG</option><option>ui</option></select><div id="assets" role="list"></div></aside>
+  <main><aside class="library"><label for="search">Asset library</label><input id="search" placeholder="Search asset or category"><select id="category"><option value="">All categories</option><option>painting</option><option>story</option><option>storyCG</option><option>ui</option><option value="portrait">Static portraits</option></select><div id="assets" role="list"></div></aside>
   <section class="workspace"><canvas id="stage" aria-label="Animated scene"></canvas><div id="status" role="status">Loading asset catalog…</div></section>
-  <aside class="inspector"><h2>Scene</h2><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Interaction rules and audio are being connected to the extracted source data.</p></aside></main>`;
+  <aside class="inspector"><h2>Scene</h2><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Gallery plays interactions. Studio edits the scene.</p></aside></main>`;
 const status = document.querySelector('#status');
 const stage = new Stage(document.querySelector('#stage'));
 window.mteStudio = stage;
 let view = 'gallery', catalog, runtime, request, libraryData, audio;
 const message = value => {status.textContent=value;};
-const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else document.querySelector('#details').textContent=group?'Image layer':'';});
+const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
-function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
+function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.standalone?'Standalone Spine preview · ':''}${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
+function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
+async function selectPortrait(appearance){
+  if(editor.busy)return;request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();
+  try{const old=[...stage.groups];editor.before();const group=await stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,request.signal);if(view==='gallery')for(const previous of old)stage.remove(previous.id);stage.fit();editor.choose(group);editor.changed();message('Static portrait loaded');}catch(error){if(error.name!=='AbortError')message(error.message);}
+}
 async function select(presentation) {
   if(editor.busy)return;
   request?.abort();request=new AbortController();
@@ -27,6 +32,7 @@ async function select(presentation) {
     const old=[...stage.groups];editor.before();
     const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===presentation.id),request.signal);
     if(view==='gallery')for(const previous of old)stage.remove(previous.id);
+    stage.fit();
     editor.choose(group);editor.changed();
     describe(group);
     message(presentation.id);
@@ -39,20 +45,24 @@ function library() {
   for (const presentation of catalog.presentations.filter(p=>p.instances.length&&(!category||p.category===category)&&`${p.id} ${p.label || ''}`.toLowerCase().includes(search))) {
     const button=document.createElement('button');button.className='asset';button.dataset.asset=presentation.id;
     const name=document.createElement('strong');name.textContent=presentation.label || presentation.id.split('/').at(-1);
+    const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance?.portrait)button.append(thumbnail(appearance.portrait));
     const detail=document.createElement('small');detail.textContent=`${presentation.category} · ${presentation.instances.length} layers`;
     button.append(name,detail);button.onclick=()=>select(presentation);container.append(button);
   }
-  for(const entry of libraryData.appearances.filter(row=>row.status!=='available'&&(!category||row.kind===category)&&`${row.name} ${row.characterName} ${row.bundle}`.toLowerCase().includes(search))) {
+  for(const entry of libraryData.appearances.filter(row=>(category==='portrait'?Boolean(row.portrait):row.status!=='available')&&(!category||category==='portrait'||row.kind===category)&&`${row.name} ${row.characterName} ${row.bundle||row.portraitResource}`.toLowerCase().includes(search))) {
     const button=document.createElement('button');button.className='asset';button.dataset.asset=entry.bundle;
+    button.dataset.appearance=entry.id;
     const title=document.createElement('strong');title.textContent=[entry.characterName,entry.name].filter(Boolean).join(' · ');
-    const note=document.createElement('small');note.textContent='Animation not extracted yet';
-    button.append(title,note);button.onclick=()=>{message(`Animation not extracted: ${entry.bundle}`);voicePanel({id:entry.bundle});};container.append(button);
+    const note=document.createElement('small');note.textContent=entry.portrait?entry.spineStatus==='missing-source'?'Static preview · Spine absent from backup':'Static portrait':entry.portraitStatus==='unavailable'?'Spine and portrait absent from backup':'Display resource not extracted';
+    if(entry.portrait)button.append(thumbnail(entry.portrait));
+    button.append(title,note);button.onclick=()=>{if(entry.portrait)selectPortrait(entry);else{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}};container.append(button);
   }
 }
+function thumbnail(sprite){const img=document.createElement('img');img.src=`${import.meta.env.BASE_URL}assets/${sprite.thumbnail}`;img.loading='lazy';img.alt='';img.width=50;img.height=65;return img;}
 function voicePanel(presentation) {
   document.querySelector('#voice-panel')?.remove();
   if(!audio)return;
-  const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);
+  const appearance=libraryData.appearances.find(row=>presentation.appearanceId?row.id===presentation.appearanceId:presentation.id&&row.bundle===presentation.id);
   const targets=new Set([appearance?.id,appearance?.characterId].filter(Boolean));
   const rows=libraryData.voices.filter(row=>targets.has(row.targetId));
   const panel=document.createElement('section');panel.id='voice-panel';
@@ -105,6 +115,7 @@ try {
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
+  const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
   if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;}
   library();message(`${catalog.presentations.length} bundles · ${runtime.summary.parsed} parsed skeletons`);

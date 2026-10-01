@@ -36,3 +36,8 @@ test('failed import releases staged resources without replacing the old scene',a
   await assert.rejects(stage.restore(value,[{id:'painting'}],[]),/layer count/);
   assert.equal(detached,true);assert.equal(disposed,true);assert.deepEqual(stage.groups,[old]);assert.equal(stage.paused,false);
 });
+test('portrait references reject traversal and do not embed asset bytes',()=>{
+  const value=scene();Object.assign(value.objects[0],{kind:'image',asset:'portraits/role/-123.png',appearanceId:'role',width:20,height:30});
+  const checked=validateScene(value);assert.equal(checked.objects[0].asset,'portraits/role/-123.png');assert.equal(checked.objects[0].src,undefined);
+  value.objects[0].asset='portraits/../secret/1.png';assert.throws(()=>validateScene(value),/portrait asset/);
+});

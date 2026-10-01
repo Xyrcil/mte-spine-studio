@@ -20,6 +20,8 @@ python3 tools/extract_assets.py --source /path/to/archive
 npm run assets:index
 python3 tools/extract_audio.py --source /path/to/archive
 python3 tools/build_library.py --source /path/to/archive
+python3 tools/extract_portraits.py --source /path/to/archive
+python3 tools/build_library.py --source /path/to/archive
 ```
 
 The current implementation loads composite Spine presentations from real
@@ -32,9 +34,13 @@ Interaction playback uses source colliders, moving-bone bindings, coordinated
 animation tracks and timeline events. Controller state is stored with scenes.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
 regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
+Standalone Spine bundles expose skeleton and animation previews, including
+story portraits without prefab components. Extracted static portraits can be
+viewed, played alongside voices and composed with animated artwork. Scenes
+reference catalog portraits rather than embedding copies of game images.
+Missing Spine bundles remain marked even when a static preview is available.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing, static portraits and media export are still
-being implemented.
+rendering, complete voice routing and media export are still being implemented.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without

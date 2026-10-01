@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {standaloneInstances} from './presentation_helpers.mjs';
 
 const root = path.resolve(process.argv[2] || 'public/assets');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, 'runtime-index.json')));
@@ -37,7 +38,9 @@ for (const bundle of extraction.bundles) {
       controllers.push({id: node.id, gameObject: owner, class: className(node), data: node.data});
     }
   }
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], instances, hotspots, controllers, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  const standalone=instances.length===0&&skeletons.size>0;
+  if(standalone)instances.push(...standaloneInstances([...skeletons.values()]));
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});

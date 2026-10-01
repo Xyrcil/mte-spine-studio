@@ -29,6 +29,14 @@ export function createEditor(stage,message,onSelection){
     const group=selected();
     if(group){const panel=document.createElement('section');panel.className='object-controls';
       panel.append(input('Object name','text',group.name,value=>group.name=value,{maxLength:512}));
+      if(group.kind==='spine'&&group.presentation.standalone){
+        const active=group.layers.find(layer=>layer.active)||group.layers[0],skeletonLabel=document.createElement('label');skeletonLabel.textContent='Skeleton variant';
+        const skeleton=document.createElement('select');skeleton.id='skeleton-preview';for(const layer of group.layers)skeleton.append(new Option(layer.instance.name,layer.instance.id));skeleton.value=active.instance.id;
+        skeleton.onchange=()=>mutate(()=>{for(const layer of group.layers)layer.active=layer.instance.id===skeleton.value;stage.evaluate(0);stage.fit();});skeletonLabel.append(skeleton);panel.append(skeletonLabel);
+        const animationLabel=document.createElement('label');animationLabel.textContent='Animation preview';const animation=document.createElement('select');animation.id='animation-preview';
+        for(const item of active.skeleton.data.animations)animation.append(new Option(item.name,item.name));animation.value=active.state.getCurrent(0)?.animation.name||'';
+        animation.onchange=()=>mutate(()=>active.state.setAnimation(0,animation.value,true));animationLabel.append(animation);panel.append(animationLabel);
+      }
       for(const [key,label,step,min,max] of [['x','X','.1'],['y','Y','.1'],['scale','Scale','.05','.01'],['rotation','Rotation','1'],['opacity','Opacity','.05','0','1']])panel.append(input(label,'number',group[key],value=>group[key]=value,{step,...(min?{min}:{}),...(max?{max}:{})}));
       for(const [key,label] of [['visible','Visible'],['locked','Locked'],['flipX','Mirror horizontally'],['flipY','Mirror vertically']])panel.append(input(label,'checkbox',group[key],value=>group[key]=value));
       const reorder=direction=>{const index=stage.groups.indexOf(group),target=index+direction;if(target<0||target>=stage.groups.length)return;[stage.groups[index],stage.groups[target]]=[stage.groups[target],stage.groups[index]];};
@@ -44,6 +52,7 @@ export function createEditor(stage,message,onSelection){
   async function restore(scene){
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
     try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
+    catch(error){changed();throw error;}
     finally{busy=false;refresh();}
   }
   async function recall(scene){const previous=snapshot();await restore(scene);history.push(previous);changed();message('Scene loaded');}

@@ -1,5 +1,5 @@
 import {validateScene} from './scene.js';
-import {identity,multiply,unityTransform,objectTransform} from './geometry.js';
+import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
@@ -13,6 +13,7 @@ export class Stage extends EventTarget {
     if (!this.gl) throw new Error('WebGL is unavailable');
     this.renderer = new (s().webgl.SceneRenderer)(canvas, this.gl);
     this.groups = [];
+    this.imageAssets=new Map();
     this.paused = false;
     this.speed = 1;
     this.background = '#191b20';
@@ -60,7 +61,7 @@ export class Stage extends EventTarget {
         if (entry.skeleton.endsWith('.json')) manager.loadText(skeleton);
         else manager.loadBinary(skeleton);
         manager.loadTextureAtlas(atlas);
-        group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:true});
+        group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:instance.active!==false});
       }
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
@@ -116,6 +117,15 @@ export class Stage extends EventTarget {
       }
     }
   }
+  setImageAssets(entries){this.imageAssets=new Map(entries.flatMap(entry=>entry.sprites.map(sprite=>[sprite.path,sprite])));}
+  async addPortrait(asset,name,appearanceId,signal,detached=false){
+    const sprite=this.imageAssets.get(asset);if(!sprite)throw new Error(`Portrait unavailable: ${asset}`);
+    const group=await this.addImage(`${import.meta.env.BASE_URL}assets/${asset}`,name,true);
+    if(signal?.aborted){this.release(group);throw new DOMException('Loading cancelled','AbortError');}
+    group.asset=asset;if(appearanceId!==undefined)group.appearanceId=appearanceId;
+    const density=sprite.pixelsPerUnit>0?sprite.pixelsPerUnit:100;group.width=sprite.width/density;group.height=sprite.height/density;
+    if(!detached){this.groups.push(group);this.fit();}return group;
+  }
   async addImage(src,name='Background image',detached=false) {
     const image=new Image();image.src=src;await image.decode();
     const width=this.camera.width,height=width*image.naturalHeight/image.naturalWidth;
@@ -126,7 +136,7 @@ export class Stage extends EventTarget {
   snapshot(name='Untitled scene') {
     return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
-      if(group.kind==='image')return {...row,src:group.src,width:group.width,height:group.height};
+      if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
       return {...row,bundle:group.presentation.id,interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
     })};
   }
@@ -136,9 +146,10 @@ export class Stage extends EventTarget {
     const created=[];
     try {
       for(const row of scene.objects){
-        const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?group.src===row.src:group.presentation.id===row.bundle));
+        if(row.kind==='image'&&row.asset&&!this.imageAssets.has(row.asset))throw new Error(`Portrait unavailable: ${row.asset}`);
+        const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?row.asset?group.asset===row.asset:!group.asset&&group.src===row.src:group.presentation.id===row.bundle));
         if(group){created.push(group);continue;}
-        if(row.kind==='image')created.push(await this.addImage(row.src,row.name,true));
+        if(row.kind==='image')created.push(row.asset?await this.addPortrait(row.asset,row.name,row.appearanceId,signal,true):await this.addImage(row.src,row.name,true));
         else {
           const presentation=presentations.find(item=>item.id===row.bundle);if(!presentation)throw new Error(`Scene asset unavailable: ${row.bundle}`);
           created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===row.bundle),signal,true));
@@ -152,7 +163,7 @@ export class Stage extends EventTarget {
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);}
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
       });
-      scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(group.kind==='image'){group.width=row.width;group.height=row.height;}});
+      scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
       scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const saved of row.layers){const layer=group.layers.find(layer=>layer.instance.id===saved.id);layer.active=saved.active;layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}}});
       scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else root.reset();}});
       for(const group of old)if(!created.includes(group))this.release(group);
@@ -182,6 +193,7 @@ export class Stage extends EventTarget {
   }
   fit() {
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const group of this.groups.filter(group=>group.visible&&group.kind==='image'))for(const x of [-group.width/2,group.width/2])for(const y of [-group.height/2,group.height/2]){const p=point(objectTransform(group),x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
     for (const group of this.groups.filter(group=>group.visible&&group.kind==='spine')) for (const layer of group.layers.filter(layer=>layer.active)) {
       const offset=new (s().Vector2)(), size=new (s().Vector2)();
       layer.skeleton.getBounds(offset,size,[]);
