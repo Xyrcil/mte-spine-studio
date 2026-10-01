@@ -2663,7 +2663,14 @@ var spine;
 				return;
 			}
 			var pa = parent.a, pb = parent.b, pc = parent.c, pd = parent.d;
-			var pid = 1 / (pa * pd - pb * pc);
+			var determinant = pa * pd - pb * pc;
+			if (determinant === 0) {
+				this.ax = this.x; this.ay = this.y; this.arotation = this.rotation;
+				this.ascaleX = this.scaleX; this.ascaleY = this.scaleY;
+				this.ashearX = this.shearX; this.ashearY = this.shearY;
+				return;
+			}
+			var pid = 1 / determinant;
 			var dx = this.worldX - parent.worldX, dy = this.worldY - parent.worldY;
 			this.ax = (dx * pd * pid - dy * pb * pid);
 			this.ay = (dy * pa * pid - dx * pc * pid);
@@ -2839,10 +2846,12 @@ var spine;
 			}
 		};
 		IkConstraint.prototype.apply1 = function (bone, targetX, targetY, compress, stretch, uniform, alpha) {
+			if (alpha === 0) return;
 			if (!bone.appliedValid)
 				bone.updateAppliedTransform();
 			var p = bone.parent;
 			var pa = p.a, pb = p.b, pc = p.c, pd = p.d;
+			if (bone.data.transformMode !== spine.TransformMode.OnlyTranslation && pa * pd - pb * pc === 0) return;
 			var rotationIK = -bone.ashearX - bone.arotation, tx = 0, ty = 0;
 			switch (bone.data.transformMode) {
 				case spine.TransformMode.OnlyTranslation:
@@ -2934,6 +2943,10 @@ var spine;
 			b = pp.b;
 			c = pp.c;
 			d = pp.d;
+			if (a * d - b * c === 0 || psx === 0 || psy === 0 || csx === 0) {
+				child.updateWorldTransform();
+				return;
+			}
 			var id = 1 / (a * d - b * c), x = cwx - pp.worldX, y = cwy - pp.worldY;
 			var dx = (x * d - y * b) * id - px, dy = (y * a - x * c) * id - py;
 			var l1 = Math.sqrt(dx * dx + dy * dy), l2 = child.data.length * csx, a1, a2;

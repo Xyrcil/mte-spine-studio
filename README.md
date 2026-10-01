@@ -113,6 +113,15 @@ Other special controllers still need full behavioral validation. Effect
 rendering, complete voice routing, scheduled interaction recording/replay,
 browser fallbacks and public deployment remain in progress.
 
+Interactive presentations with `start` and `animation` play the entrance once
+and queue the available idle after its full duration; raw standalone previews
+keep their configured loop. Zero-scaled bones remain collapsed without producing
+non-finite IK or applied-transform values. Expanding them resumes normal solving.
+Interaction details list missing initial animation references as well as absent
+alternate variants. `tools/check_controllers.mjs` explores loaded controller
+states and reports inactive regions, source gaps and its bounded-search limit;
+a limited search is not evidence of complete behavioral coverage.
+
 The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports

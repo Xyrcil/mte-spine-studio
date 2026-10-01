@@ -59,3 +59,8 @@ test('card sequence pauses input, advances scheduled stages and restores interac
 test('paused evaluation does not execute scheduled controller actions',()=>{
   const {root}=fixture();root.value.tasks=[{kind:'card-reveal',due:0}];root.advance(0);assert.equal(root.value.tasks.length,1);assert.equal(root.value.clock,0);
 });
+test('missing interaction diagnostics include unavailable initial and alternate source names',()=>{
+  const {root}=fixture();root.hotspots=[{name:'first',event:100,animation:'missing'},{name:'duplicate',event:100,animation:'missing'},{name:'toggle',event:5,animation:'overlay'}];
+  for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='missing'||name==='overlay_02'?null:{name,duration:2};
+  assert.deepEqual(root.missingAnimations(),[{hit:'first',animation:'missing'},{hit:'toggle',animation:'overlay_02'}]);
+});

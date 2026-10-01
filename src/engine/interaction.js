@@ -40,6 +40,10 @@ export class InteractionRoot {
   }
   reset(){this.value={schema:1,playing:false,event:0,track:0,animation:'',names:{...DEFAULT_ANIMATIONS},variants:{},isBig:false,state:this.source.data.aniState||0,stockingDown:false,cardStage:false,cardClickable:true,selectedCard:-1,wins:0,rounds:0,clock:0,random:0x12345678,tasks:[]};}
   missingVariants(){return this.hotspots.filter(hit=>[5,102].includes(hit.event)&&hit.animation&&!this.source.data.rolePetType&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(`${hit.animation}_02`))).map(hit=>({hit:hit.name,animation:`${hit.animation}_02`}));}
+  missingAnimations(){
+    const rows=[...this.hotspots.filter(hit=>hit.animation&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(hit.animation))).map(hit=>({hit:hit.name,animation:hit.animation})),...this.missingVariants()];
+    return rows.filter((row,index)=>rows.findIndex(other=>other.animation===row.animation)===index);
+  }
   snapshot(){return structuredClone(this.value);}
   restore(value){this.value=structuredClone(value);}
   matrix(hit){

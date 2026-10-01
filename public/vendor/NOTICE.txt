@@ -6,6 +6,9 @@ Keep atlas-declared page dimensions when Unity ships downsampled textures,
 so original region coordinates retain their intended normalized UVs.
 Binary download failure callbacks report an error without reading responseText
 from an arraybuffer XMLHttpRequest, so failed loads do not stall recovery.
+Collapsed parent transforms retain finite local applied values. IK skips
+non-invertible or zero-length scaled chains instead of dividing by zero;
+zero animation scales remain unchanged and resume normal solving when expanded.
 
 Mediabunny 1.61.0 is an unmodified dependency under MPL-2.0.
 License: MEDIABUNNY-LICENSE.

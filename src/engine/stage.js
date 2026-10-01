@@ -2,6 +2,7 @@ import {validateScene} from './scene.js';
 import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
+import {initializeAnimation} from './initial-animation.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -107,8 +108,7 @@ export class Stage extends EventTarget {
           for(const root of group.controllers||[])root.onEvent(layer,track,event);
           this.dispatchEvent(new CustomEvent('animation-event', {detail:{group:group.id, layer:layer.instance.id, track:track.trackIndex, name:event.data.name, time:event.time,int:event.intValue,float:event.floatValue,string:event.stringValue}}));
         }});
-        const name = layer.instance.animation;
-        if (name && data.findAnimation(name)) layer.state.setAnimation(0, name, layer.instance.loop);
+        initializeAnimation(layer,{interactive:presentation.controllers.length>0});
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
