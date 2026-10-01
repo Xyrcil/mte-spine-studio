@@ -1,0 +1,6 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {subtitleActive,subtitleLines,prepareSubtitle} from '../src/engine/subtitles.js';
+test('subtitles follow voice offset, duration, speed and repeat',()=>{assert.equal(subtitleActive(.5,2,{offset:1}),false);assert.equal(subtitleActive(1,2,{offset:1}),true);assert.equal(subtitleActive(3,2,{offset:1}),false);assert.equal(subtitleActive(2,2,{offset:1,rate:2}),false);assert.equal(subtitleActive(3,2,{offset:1,repeat:true}),true);assert.equal(subtitleActive(0,0,{repeat:true}),false);});
+test('subtitle wrapping preserves Unicode, newlines and source content',()=>{const text='字幕换行测试。\nHello 👋';const lines=subtitleLines(text,5,value=>Array.from(value).length);assert.equal(lines.join(''),text.replace('\n',''));assert.ok(lines.every(line=>Array.from(line).length<=5));});
+test('subtitle layout fits available space or fails explicitly without truncating',()=>{const ctx={font:'',measureText(value){return {width:Array.from(value).length*Number.parseInt(this.font)};}};const layout=prepareSubtitle(ctx,'A long subtitle that should wrap',640,480);assert.ok(layout.height<192);assert.equal(layout.lines.join('').replaceAll(' ',''),'Alongsubtitlethatshouldwrap');assert.throws(()=>prepareSubtitle(ctx,'x'.repeat(2000),100,100),/too long/);});

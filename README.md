@@ -27,6 +27,9 @@ python3 tools/build_library.py --source /path/to/archive
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
 plays the available source and Chinese tracks with subtitles and volume control.
+The searchable story voice library exposes every indexed source line, including
+missing-language and unvoiced entries. Story resources are not automatically
+assigned to artwork when the source provides no explicit association.
 Scene sound settings retain language, volumes, mute and per-object ambient
 resources, looping and playback positions. Ambient audio waits for user
 activation; hidden objects pause their sound and removed objects release it.
@@ -53,11 +56,15 @@ ambient audio and music, cancellation
 and direct file saving where the browser supports it. Crossfade overlaps the
 interval; repeat alone does not guarantee a seamless join. Video codecs are
 checked on the current device before encoding.
+Character and story voices can be selected for export. Optional burned-in
+subtitles retain the source line, wrap to fit the output and follow the selected
+voice's offset, duration, speed and repeat settings. They use whole-line timing,
+not inferred word timings, and can also be rendered without an audio track.
 Ambient audio follows the captured scene interval, speed and loop mode,
 including reversed ping-pong playback and crossfade mixing. Export respects
 captured mute, visibility, gains, positions and completed one-shot sounds.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing, exported interaction audio, subtitle export,
+rendering, complete voice routing, exported interaction audio and its subtitles,
 browser fallbacks, resource caching and public deployment remain in progress.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build

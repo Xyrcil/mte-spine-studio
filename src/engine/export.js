@@ -4,6 +4,7 @@ import {Stage} from './stage.js';
 import {validateScene} from './scene.js';
 import {exportPlan,frameSources,exportCamera} from './export-plan.js';
 import {mixExportSample} from './export-audio.js';
+import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
 const yieldBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -27,7 +28,7 @@ export class RenderSession {
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }
 
-export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[]}){
+export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip}){
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
   if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
@@ -35,21 +36,24 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
   let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
   const tracks=[];
+  let captionDuration=0,captionLayout;
   const audioCodec=plan.format==='mp4'?'aac':'opus';
   try{
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
     await session.initialize();if(head)await head.initialize();
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
-    if((audioClip||ambientClips.length)&&['mp4','webm'].includes(plan.format)){
-      if(!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
+    const video=['mp4','webm'].includes(plan.format),hasAudio=video&&(audioClip||ambientClips.length);
+    if(hasAudio||subtitleClip){
+      if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
       decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
-      for(const clip of [...(audioClip?[{...audioClip,scene:false}]:[]),...ambientClips.map(clip=>({...clip,scene:true}))]){
+      for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[])]){
         checkpoint(signal);let buffer=decoded.get(clip.url);
         if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
           buffer=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
           if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);
         }
-        tracks.push({...clip,channels:Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),sampleRate:buffer.sampleRate,options:{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1}});
+        if(clip.captionOnly){captionDuration=buffer.duration;captionLayout=prepareSubtitle(ctx,clip.text,plan.width,plan.height);}
+        else tracks.push({...clip,channels:Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),sampleRate:buffer.sampleRate,options:{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1}});
       }
     }
     if(['mp4','webm'].includes(plan.format)){
@@ -76,6 +80,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       const frames=frameSources(plan,i);await session.seek(plan.start+frames[0].frame/plan.fps*plan.speed);
       ctx.clearRect(0,0,plan.width,plan.height);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=frames[0].weight;ctx.drawImage(session.canvas,0,0);
       if(frames.length===2){await head.seek(plan.start+frames[1].frame/plan.fps*plan.speed);ctx.globalCompositeOperation='lighter';ctx.globalAlpha=frames[1].weight;ctx.drawImage(head.canvas,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
+      if(captionLayout&&subtitleActive(i/plan.fps,captionDuration,{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat)}))drawSubtitle(ctx,captionLayout,plan.width,plan.height);
       if(plan.format==='png'){const blob=await png(canvas);checkpoint(signal);if(fileWriter){await fileWriter.write(await blob.arrayBuffer());checkpoint(signal);await fileWriter.close();}onProgress({frame:1,total:1,phase:'complete'});return {blob:fileWriter?null:blob,plan};}
       if(source)await Promise.all([addAudio(Math.min(plan.duration,(i+1)/plan.fps)),source.add(i/plan.fps,1/plan.fps,{keyFrame:i%plan.cycleFrames===0})]);
       else {const blob=await png(canvas);checkpoint(signal);const file=new ZipPassThrough(`frame-${String(i).padStart(6,'0')}.png`);zip.add(file);file.push(new Uint8Array(await blob.arrayBuffer()),true);await writeQueue;}

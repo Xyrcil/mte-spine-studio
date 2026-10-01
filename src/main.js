@@ -5,6 +5,7 @@ import {AudioBus} from './engine/audio.js';
 import {createEditor} from './editor.js';
 import {createExportPanel} from './export-panel.js';
 import {createSoundPanel} from './sound-panel.js';
+import {createVoicePanel} from './voice-panel.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
@@ -64,26 +65,7 @@ function library() {
 }
 function thumbnail(sprite){const img=document.createElement('img');img.src=`${import.meta.env.BASE_URL}assets/${sprite.thumbnail}`;img.loading='lazy';img.alt='';img.width=50;img.height=65;return img;}
 function voicePanel(presentation) {
-  document.querySelector('#voice-panel')?.remove();
-  if(!audio)return;
-  const appearance=libraryData.appearances.find(row=>presentation.appearanceId?row.id===presentation.appearanceId:presentation.id&&row.bundle===presentation.id);
-  const targets=new Set([appearance?.id,appearance?.characterId].filter(Boolean));
-  const rows=libraryData.voices.filter(row=>targets.has(row.targetId));
-  const panel=document.createElement('section');panel.id='voice-panel';
-  const heading=document.createElement('h2');heading.textContent=`Voices (${rows.length})`;
-  const language=document.createElement('select');language.setAttribute('aria-label','Voice track');
-  for(const [value,text] of [['a_sound_voiceeff','Original track'],['a_sound_voiceeff_ch','Chinese track']]){const option=document.createElement('option');option.value=value;option.textContent=text;language.append(option);}
-  language.value=audio.language;language.onchange=()=>editor.mutate(()=>audio.language=language.value);
-  const list=document.createElement('select');list.setAttribute('aria-label','Voice');
-  for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=row.title;list.append(option);}
-  const play=document.createElement('button');play.textContent='Play voice';play.disabled=!rows.length;
-  play.onclick=async()=>{try{await audio.play(rows.find(row=>row.id===list.value),language.value);}catch(error){message(error.message);}};
-  const stop=document.createElement('button');stop.textContent='Stop voice';stop.onclick=()=>audio.stop();
-  const volume=document.createElement('input');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value=audio.volume;volume.setAttribute('aria-label','Voice volume');volume.onchange=()=>editor.mutate(()=>audio.setVolume(Number(volume.value)));
-  const subtitle=document.createElement('p');subtitle.id='subtitle';
-  const effectsLabel=document.createElement('label');effectsLabel.textContent='Effect volume';
-  const effects=document.createElement('input');effects.type='range';effects.min='0';effects.max='1';effects.step='.05';effects.value=audio.effectVolume;effects.onchange=()=>editor.mutate(()=>audio.setEffectVolume(Number(effects.value)));effectsLabel.append(effects);
-  panel.append(heading,language,list,play,stop,volume,effectsLabel,subtitle);document.querySelector('.inspector').append(panel);
+  createVoicePanel(presentation,libraryData,audio,editor,message);
 }
 document.querySelector('#search').oninput=library;document.querySelector('#category').onchange=library;
 document.querySelector('#editor-toggle').onclick=event=>{event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
@@ -108,7 +90,7 @@ stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed(
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
-  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-panel select')?.value||audio.language;
+  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-language')?.value||audio.language;
   const suffix=({1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'})[kind];
   let name=explicit|| (suffix?`Voice_${skinId}_Touch_${suffix}`:'');if(!name)return;
   if(!audio.resolve(name,language)&&!explicit&&skinId.length===9)name=`Voice_${skinId.slice(0,-2)}_Touch_${suffix}`;
