@@ -19,7 +19,9 @@ document.querySelector('#app').innerHTML = `
   <section class="workspace"><canvas id="stage" aria-label="Animated scene"></canvas><div id="status" role="status">Loading asset catalog…</div></section>
   <aside class="inspector"><h2>Scene</h2><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Gallery plays interactions. Studio edits the scene.</p></aside></main>`;
 const status = document.querySelector('#status');
-const stage = new Stage(document.querySelector('#stage'));
+let stage;
+try{stage=new Stage(document.querySelector('#stage'));}catch(error){status.textContent=`Rendering could not start: ${error.message}. Check browser graphics support and reload.`;document.querySelector('.library').inert=true;document.querySelector('.inspector').inert=true;for(const button of document.querySelectorAll('header button'))button.disabled=true;window.mteStartupError=error.message;}
+if(stage){
 window.mteStudio = stage;
 let view = 'gallery', catalog, runtime, request, libraryData, audio;
 const message = value => {status.textContent=value;};
@@ -121,3 +123,4 @@ try {
   const recovered=await editor.init(catalog.presentations,runtime.entries);
   const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);
 }catch(error){message(error.message);}
+}

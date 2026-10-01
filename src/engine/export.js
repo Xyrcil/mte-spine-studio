@@ -6,6 +6,7 @@ import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.j
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay} from './audio-delay.js';
 import {exportScene} from './export-source.js';
+import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
@@ -59,10 +60,14 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
   await session.initialize();return {clips,voices:voiceTimeline(voices),warnings:[...warnings]};
 }
 
+export async function exportVideoSupport(settings,sceneSpeed=1){
+  const plan=exportPlan(settings,sceneSpeed);
+  return chooseVideoCodec(plan.format,{width:plan.width,height:plan.height,frameRate:plan.fps,quality:new Quality({bitrate:plan.bitrate})},canEncodeVideo);
+}
+
 export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice,interactionProvider}){
   scene=exportScene(scene,Boolean(settings.useSequence));
-  const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
-  if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
+  const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=await exportVideoSupport(settings,scene.speed);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
   const session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal):null;
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
@@ -92,7 +97,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(capturedVoice?.includeSubtitles&&!capturedVoice.text)warnings.push('Captured voice has no subtitle text');
     const hasAudio=video&&(audioClip||ambientClips.length||interactionClips.length||voiceAudio||scheduledAudio.length);
     if(hasAudio||subtitleClip||voiceCaption||scheduledCaptions.length){
-      if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
+      if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format. Try another video format, turn off audio, or export a PNG sequence.');
       if(hasAudio&&audioCodec==='aac')audioDelay=await aacEncodingDelay(signal);
       decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
       for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...scheduledAudio,...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[]),...scheduledCaptions]){

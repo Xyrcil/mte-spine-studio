@@ -145,6 +145,11 @@ ambient audio and music, cancellation
 and direct file saving where the browser supports it. Crossfade overlaps the
 interval; repeat alone does not guarantee a seamless join. Video codecs are
 checked on the current device before encoding.
+The export panel also checks video support when settings change. WebM prefers
+VP9 and uses VP8 when only that encoder is available. Unsupported video or
+audio configurations explain the alternatives; image sequences do not require
+video encoders. A failed initial WebGL setup leaves a visible graphics error
+instead of an indefinitely loading canvas.
 Character and story voices can be selected for export. Optional burned-in
 subtitles retain the source line, wrap to fit the output and follow the selected
 voice's offset, duration, speed and repeat settings. They use whole-line timing,
@@ -158,6 +163,8 @@ speed and loop boundaries. Forward effects keep their pitch; ping-pong reverses
 the sampled interval. Missing sounds are returned as export warnings.
 AAC export measures this device's encoder delay and offsets the audio track
 to avoid silent leading padding, including for very short clips.
+AAC calibration unwraps a complete ES descriptor when WebKit returns one in
+place of the required AudioSpecificConfig; valid configurations are preserved.
 Captured speech and its subtitles can be included independently of additional
 selected voices. They retain the captured language and position, follow scene
 loops and keep their pitch during forward playback. Captions expire with the
@@ -195,6 +202,13 @@ Independent media exports stop on context loss instead of recording blank frames
 Other special controllers still need full behavioral validation. Effect
 rendering for custom materials and remaining native clips, complete voice routing,
 browser fallbacks and public deployment remain in progress.
+Browser-engine checks can be run with
+`node tools/check_browser_compatibility.mjs chromium` or `webkit` after installing
+the corresponding Playwright browser. They exercise real assets, special
+interactions, scene undo, video/audio decoding and audio alignment, PNG and ZIP.
+WebKit automation is not a substitute for testing released Safari and iOS.
+Firefox and Windows verification remain outstanding. Simulated encoder and
+graphics failures are checked separately by `node tools/check_export_fallback.mjs`.
 
 Interactive presentations with `start` and `animation` play the entrance once
 and queue the available idle after its full duration; raw standalone previews
