@@ -7,6 +7,13 @@
 .object-controls{border-top:1px solid #343841;margin-top:16px;padding-top:16px}
 .object-controls input[type=checkbox]{width:auto;margin-left:12px}
 .object-controls>button{margin:0 4px 8px 0}
+.inspector.export-mode>:not(#export-panel){display:none}
+.library.export-disabled{opacity:.55;pointer-events:none}
+.export-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#export-panel p{font-size:12px;color:#aeb6c4;line-height:1.6}
+.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:auto}
+#export-progress{width:100%}#export-preview{width:100%;height:auto;background:repeating-conic-gradient(#343841 0 25%,#20232a 0 50%) 0/20px 20px}
+#export-crop-box{position:absolute;border:2px dashed #e6d5ac;pointer-events:none;box-shadow:0 0 0 9999px #0005}
 button:disabled{opacity:.45;cursor:default}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #d5c295;outline-offset:2px}
 #editor-toggle{display:none}

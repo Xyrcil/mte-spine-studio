@@ -3,6 +3,7 @@ import './editor.css';
 import {Stage} from './engine/stage.js';
 import {AudioBus} from './engine/audio.js';
 import {createEditor} from './editor.js';
+import {createExportPanel} from './export-panel.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
@@ -16,6 +17,7 @@ let view = 'gallery', catalog, runtime, request, libraryData, audio;
 const message = value => {status.textContent=value;};
 const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
+const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
 function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.standalone?'Standalone Spine preview · ':''}${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 async function selectPortrait(appearance){
@@ -89,7 +91,8 @@ document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   view=button.dataset.view;
   for(const tab of document.querySelectorAll('[data-view]'))tab.classList.toggle('selected',tab===button);
-  if(view==='export')message('Export controls are not implemented yet.');
+  exporter.setOpen(view==='export');
+  document.querySelector('.library').inert=view==='export';document.querySelector('.library').classList.toggle('export-disabled',view==='export');
 };
 let drag;
 const canvas=document.querySelector('#stage');
@@ -110,7 +113,7 @@ stage.addEventListener('voice-request',event=>{
   const voice=libraryData.voices.find(row=>row.resourceName===name)||{resourceName:name,title:name,text:''};
   audio.play(voice,language).catch(error=>message(error.message));
 });
-canvas.onwheel=event=>{event.preventDefault();if(editor.busy)return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
+canvas.onwheel=event=>{event.preventDefault();if(editor.busy||view==='export')return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
 try {
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));

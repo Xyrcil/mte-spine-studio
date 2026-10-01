@@ -207,8 +207,10 @@ export class Stage extends EventTarget {
     const {gl,renderer,canvas}=this;
     gl.viewport(0,0,canvas.width,canvas.height);
     const hex=this.background.replace('#','');
-    gl.clearColor(parseInt(hex.slice(0,2),16)/255,parseInt(hex.slice(2,4),16)/255,parseInt(hex.slice(4,6),16)/255,1);
+    gl.disable(gl.SCISSOR_TEST);
+    if(this.options.transparent)gl.clearColor(0,0,0,0);else gl.clearColor(parseInt(hex.slice(0,2),16)/255,parseInt(hex.slice(2,4),16)/255,parseInt(hex.slice(4,6),16)/255,1);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    if(this.options.clip){const clip=this.options.clip;gl.enable(gl.SCISSOR_TEST);gl.scissor(clip.x,clip.y,clip.width,clip.height);}
     const aspect=canvas.width/canvas.height, width=Math.max(this.camera.width,this.camera.height*aspect);
     renderer.camera.viewportWidth=width; renderer.camera.viewportHeight=width/aspect;
     renderer.camera.position.x=this.camera.x; renderer.camera.position.y=this.camera.y;
@@ -220,6 +222,7 @@ export class Stage extends EventTarget {
       }else for(const layer of group.layers)if(layer.active){layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(layer.skeleton,false);}
     }
     renderer.end();
+    gl.disable(gl.SCISSOR_TEST);
   }
   tick(time) {
     const delta=Math.min((time-this.previous)/1000,.1); this.previous=time;

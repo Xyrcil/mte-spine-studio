@@ -1,0 +1,57 @@
+import {exportPlan} from './engine/export-plan.js';
+
+export function createExportPanel(stage,editor,getData,message){
+  const panel=document.createElement('section');panel.id='export-panel';panel.hidden=true;
+  panel.innerHTML=`<h2>Media export</h2><button id="capture-export">Capture current scene</button><p id="export-capture"></p>
+    <label>Format <select id="export-format"><option value="mp4">MP4 video</option><option value="webm">WebM video</option><option value="png">PNG image</option><option value="sequence">PNG sequence (ZIP)</option></select></label>
+    <div class="export-pair"><label>Width <input id="export-width" type="number" min="2" max="8192" step="2" value="1920"></label><label>Height <input id="export-height" type="number" min="2" max="8192" step="2" value="1080"></label></div>
+    <label>Pixel multiplier <input id="export-scale" type="number" min=".25" max="4" step=".25" value="1"></label>
+    <div class="export-pair"><label>Frames per second <input id="export-fps" type="number" min="1" max="120" value="30"></label><label>Video bitrate (Mbps) <input id="export-bitrate" type="number" min=".1" max="100" step=".1" value="8"></label></div>
+    <label>Animation speed multiplier <input id="export-speed" type="number" min=".01" max="10" step=".1" value="1"></label>
+    <p>Scene interval: seconds after the captured frame.</p><div class="export-pair"><label>Start <input id="export-start" type="number" min="0" step=".1" value="0"></label><label>End <input id="export-end" type="number" min="0" step=".1" value="3"></label></div>
+    <label>Loop mode <select id="export-loop-mode"><option value="repeat">Repeat interval</option><option value="ping-pong">Ping-pong</option><option value="crossfade">Crossfade join</option></select></label>
+    <div class="export-pair"><label>Loop count <input id="export-loops" type="number" min="1" max="10000" value="1"></label><label>Crossfade seconds <input id="export-fade" type="number" min="0" max="60" step=".05" value=".25"></label></div>
+    <p>Crop: percentages of the captured viewport.</p><div class="export-pair"><label>Left <input id="export-crop-x" type="number" min="0" max="100" value="0"></label><label>Top <input id="export-crop-y" type="number" min="0" max="100" value="0"></label><label>Crop width <input id="export-crop-width" type="number" min=".1" max="100" value="100"></label><label>Crop height <input id="export-crop-height" type="number" min=".1" max="100" value="100"></label></div>
+    <label>Crop fit <select id="export-fit"><option value="contain">Contain, with letterboxing</option><option value="cover">Cover, with clipping</option></select></label>
+    <label>Background <input id="export-background" type="color" value="#191b20"></label><label class="check-label"><input id="export-transparent" type="checkbox">Transparent PNG output</label>
+    <label>Voice track <select id="export-language"><option value="a_sound_voiceeff">Original track</option><option value="a_sound_voiceeff_ch">Chinese track</option></select></label><label>Video audio <select id="export-audio"><option value="">No audio</option></select></label>
+    <div class="export-pair"><label>Audio offset (s) <input id="export-audio-offset" type="number" min="0" step=".1" value="0"></label><label>Audio volume <input id="export-audio-gain" type="number" min="0" max="2" step=".1" value="1"></label></div>
+    <label class="check-label"><input id="export-audio-repeat" type="checkbox">Loop selected audio</label><label class="check-label"><input id="export-audio-speed" type="checkbox">Audio follows speed (changes pitch)</label>
+    <p>Selected voice only. Automatic interaction sounds are not included yet.</p>
+    <label class="check-label"><input id="export-direct" type="checkbox">Save directly to a local file</label>
+    <div class="actions"><button id="preview-export">Preview first frame</button><button id="run-export">Export media</button><button id="cancel-export" disabled>Cancel</button></div>
+    <p id="export-summary"></p><progress id="export-progress" max="1" value="0"></progress><p id="export-status" role="status"></p><canvas id="export-preview" aria-label="Export first frame preview"></canvas><p>Crossfade overlaps the start and end of the interval. Repeat does not guarantee a seamless join.</p>`;
+  document.querySelector('.inspector').append(panel);
+  const crop=document.createElement('div');crop.id='export-crop-box';crop.hidden=true;document.querySelector('.workspace').append(crop);
+  const field=id=>document.querySelector(`#export-${id}`),value=id=>Number(field(id).value);
+  let captured,sourceAspect,controller,busy=false;
+  function settings(){return {format:field('format').value,width:value('width'),height:value('height'),scale:value('scale'),fps:value('fps'),bitrate:value('bitrate')*1e6,speed:value('speed'),start:value('start'),end:value('end'),loops:value('loops'),loopMode:field('loop-mode').value,fade:value('fade'),fit:field('fit').value,background:field('background').value,transparent:field('transparent').checked,crop:{x:value('crop-x')/100,y:value('crop-y')/100,width:value('crop-width')/100,height:value('crop-height')/100},audioOffset:value('audio-offset'),audioGain:value('audio-gain'),audioRepeat:field('audio-repeat').checked,audioFollowSpeed:field('audio-speed').checked};}
+  function summary(){try{if(!captured)return;const options=settings(),plan=exportPlan(options,captured.speed);field('summary').textContent=`${plan.width} × ${plan.height} · ${plan.frames} frames · ${plan.duration.toFixed(3)} seconds`;Object.assign(crop.style,{left:`${options.crop.x*100}%`,top:`${options.crop.y*100}%`,width:`${options.crop.width*100}%`,height:`${options.crop.height*100}%`});}catch(error){field('summary').textContent=error.message;}}
+  function voices(){const {library,audio}=getData(),select=field('audio'),previous=select.value;select.replaceChildren(new Option('No audio',''));const targets=new Set();for(const object of captured?.objects||[]){const appearance=library.appearances.find(row=>object.appearanceId?row.id===object.appearanceId:object.bundle&&row.bundle===object.bundle);if(appearance){targets.add(appearance.id);targets.add(appearance.characterId);}}for(const voice of library.voices.filter(voice=>targets.has(voice.targetId))){if(audio?.resolve(voice.resourceName,field('language').value))select.append(new Option(voice.title,voice.resourceName));}if([...select.options].some(option=>option.value===previous))select.value=previous;}
+  function capture(){if(busy)return;const data=getData();if(!data.catalog)throw new Error('Asset catalog is still loading');captured=editor.snapshot();sourceAspect=stage.canvas.width/stage.canvas.height;field('capture').textContent=`Captured: ${captured.name} · ${captured.objects.length} objects`;field('background').value=captured.background;voices();summary();}
+  function progress(info){field('progress').max=info.total;field('progress').value=info.frame;field('status').textContent=info.phase==='loading'?'Loading export resources…':info.phase==='finalizing'?'Finalizing file…':`${info.frame} / ${info.total} frames`;}
+  async function run(preview=false){
+    if(busy)return;if(!captured)try{capture();}catch(error){field('status').textContent=error.message;message(error.message);return;}busy=true;controller=new AbortController();document.querySelector('#cancel-export').disabled=false;document.querySelector('#run-export').disabled=true;document.querySelector('#preview-export').disabled=true;document.querySelector('#capture-export').disabled=true;
+    const formStates=new Map([...panel.querySelectorAll('input,select')].map(node=>[node,node.disabled]));
+    let writable;
+    try{
+      let options=settings();exportPlan(options,captured.speed);
+      progress({frame:0,total:exportPlan(options,captured.speed).frames,phase:'loading'});
+      const {catalog,runtime,audio}=getData(),clip=field('audio').value&&audio?.resolve(field('audio').value,field('language').value);
+      for(const node of formStates.keys())node.disabled=true;
+      const extension=options.format==='sequence'?'zip':options.format,filename=`${captured.name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.${extension}`;
+      if(!preview&&field('direct').checked){const handle=await window.showSaveFilePicker({suggestedName:filename});writable=await handle.createWritable();}
+      if(preview){const ratio=options.width/options.height;options={...options,format:'png',width:Math.round(480*Math.min(1,ratio)),height:Math.round(480*Math.min(1,1/ratio)),scale:1};}
+      const {exportMedia}=await import('./engine/export.js');
+      const result=await exportMedia({scene:captured,catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,sourceAspect,settings:options,signal:controller.signal,onProgress:progress,writable,audioClip:clip?{url:audio.base+clip.path}:null});
+      if(preview){const bitmap=await createImageBitmap(result.blob),canvas=field('preview');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();field('status').textContent='First frame preview ready';}
+      else {if(result.blob){const url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}field('status').textContent=`Export complete: ${result.plan.frames} frames`;}return result;
+    }catch(error){if(writable)await writable.abort().catch(()=>{});field('status').textContent=error.name==='AbortError'?'Export cancelled':error.message;message(field('status').textContent);}
+    finally{busy=false;for(const [node,disabled] of formStates)node.disabled=disabled;document.querySelector('#cancel-export').disabled=true;document.querySelector('#run-export').disabled=false;document.querySelector('#preview-export').disabled=false;document.querySelector('#capture-export').disabled=false;}
+  }
+  document.querySelector('#capture-export').onclick=()=>{try{capture();}catch(error){message(error.message);}};
+  document.querySelector('#preview-export').onclick=()=>run(true);document.querySelector('#run-export').onclick=()=>run();document.querySelector('#cancel-export').onclick=()=>controller?.abort();
+  for(const input of panel.querySelectorAll('input,select'))input.addEventListener('change',summary);field('language').addEventListener('change',voices);
+  if(!window.showSaveFilePicker){field('direct').disabled=true;field('direct').parentElement.title='Direct saving is unavailable in this browser';}
+  return {settings,run,get captured(){return captured;},setOpen(open){panel.hidden=!open;crop.hidden=!open;document.querySelector('.inspector').classList.toggle('export-mode',open);if(open)try{capture();}catch(error){message(error.message);}}};
+}

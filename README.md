@@ -39,8 +39,15 @@ story portraits without prefab components. Extracted static portraits can be
 viewed, played alongside voices and composed with animated artwork. Scenes
 reference catalog portraits rather than embedding copies of game images.
 Missing Spine bundles remain marked even when a static preview is available.
+Media export renders an independent scene with fixed timestamps. It supports
+MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,
+crop, speed, repeat/ping-pong/crossfade loops, optional voice audio, cancellation
+and direct file saving where the browser supports it. Crossfade overlaps the
+interval; repeat alone does not guarantee a seamless join. Video codecs are
+checked on the current device before encoding.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing and media export are still being implemented.
+rendering, complete voice routing, exported interaction audio, subtitle export,
+browser fallbacks, resource caching and public deployment remain in progress.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without
@@ -48,3 +55,4 @@ repeating successful work. Resource indexes retain the original names and
 record conversion errors rather than dropping missing files.
 
 The Spine runtime license is retained in `public/vendor/SPINE-LICENSE`.
+Media dependency licenses and source links are retained in `public/vendor/`.
