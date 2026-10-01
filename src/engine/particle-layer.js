@@ -37,6 +37,8 @@ export function hierarchyOrder(group,transform){
   return path;
 }
 export function compareHierarchy(a,b){for(let index=0;index<Math.min(a.length,b.length);index++)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;}
+export function compareDraws(a,b){return a.order-b.order||(a.queue??3000)-(b.queue??3000)||compareHierarchy(a.path,b.path);}
+export function particleQueue(source){const queue=source.materials?.[0]?.renderQueue;return Number.isInteger(queue)&&queue>=0?queue:3000;}
 
 export function drawParticleLayer(renderer,group,layer,maskCamera){
   if(layer.reason||!layer.model||!group.isActiveTransform(layer.source.transform)||layer.source.renderer?.m_Enabled===false||layer.source.renderer?.m_Enabled===0)return;

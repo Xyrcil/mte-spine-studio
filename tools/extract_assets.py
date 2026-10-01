@@ -72,6 +72,18 @@ def safe_name(value: str):
     return re.sub(r"[^\w.-]+", "_", value)
 
 
+def shader_render_queue(shader):
+    subshaders = shader.get("m_ParsedForm", {}).get("m_SubShaders", [])
+    if not subshaders:
+        return None
+    tags = dict(subshaders[0].get("m_Tags", {}).get("tags", []))
+    tag = next((value for key, value in tags.items() if key.lower() == "queue"), None)
+    match = re.fullmatch(r"(Background|Geometry|AlphaTest|Transparent|Overlay)([+-]\d+)?", tag or "")
+    if not match:
+        return None
+    return {"Background": 1000, "Geometry": 2000, "AlphaTest": 2450, "Transparent": 3000, "Overlay": 4000}[match[1]] + int(match[2] or 0)
+
+
 class BundleExtractor:
     def __init__(self, environment, output: Path):
         self.environment = environment
@@ -174,6 +186,31 @@ class BundleExtractor:
             entries.append({"id": str(reader.path_id), "gameObject": str(tree["m_GameObject"]["m_PathID"]), "data": precise_references(tree), "sprite": sprite, "material": material, "status": "partial" if errors else "extracted", "errors": errors})
         return entries
 
+    def extract_renderers(self):
+        entries = []
+        for reader in self.objects:
+            if reader.type.name != "MeshRenderer":
+                continue
+            tree = self.tree(reader)
+            materials, errors = [], []
+            for pointer in tree.get("m_Materials", []):
+                if not pointer.get("m_PathID"):
+                    continue
+                try:
+                    material = self.resolve(reader, pointer)
+                    data = self.tree(material)
+                    queue = data.get("m_CustomRenderQueue", -1)
+                    if queue < 0:
+                        try:
+                            queue = shader_render_queue(self.tree(self.resolve(material, data["m_Shader"])))
+                        except Exception:
+                            queue = None
+                    materials.append({"id": str(material.path_id), "renderQueue": queue, "customRenderQueue": data.get("m_CustomRenderQueue", -1)})
+                except Exception as error:
+                    errors.append({"type": "Material", "reference": precise_references(pointer), "error": str(error)})
+            entries.append({"id": str(reader.path_id), "gameObject": str(tree["m_GameObject"]["m_PathID"]), "materials": materials, "errors": errors})
+        return entries
+
     def extract_effects(self):
         entries = []
         for reader in self.objects:
@@ -266,7 +303,7 @@ class BundleExtractor:
             except Exception as exc:
                 errors.append({"id": str(reader.path_id), "type": "SkeletonDataAsset", "error": str(exc)})
         write_json(self.output / "hierarchy.json", precise_references(hierarchy))
-        return {"skeletons": skeletons, "effects": self.extract_effects(), "images": self.extract_images(), "errors": errors}
+        return {"skeletons": skeletons, "effects": self.extract_effects(), "images": self.extract_images(), "renderers": self.extract_renderers(), "errors": errors}
 
 
 def main():
@@ -276,7 +313,10 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--match", default="")
     parser.add_argument("--merge", action="store_true", help="Update matching bundle records without dropping other extracted bundles")
+    parser.add_argument("--metadata-only", action="store_true", help="Refresh renderer material queues without rewriting existing media")
     args = parser.parse_args()
+    if args.metadata_only and not args.merge:
+        parser.error("--metadata-only requires --merge")
     sys.dont_write_bytecode = True
     source = args.source.resolve()
     sys.path.insert(0, str(source / "tools/python-libs"))
@@ -320,7 +360,7 @@ def main():
             destination.mkdir(parents=True, exist_ok=True)
             extractor = BundleExtractor(environment, destination)
             dependency_errors = []
-            if any(reader.type.name in ("Animation", "AnimationClip") for reader in extractor.objects):
+            if args.metadata_only or any(reader.type.name in ("Animation", "AnimationClip") for reader in extractor.objects):
                 pending = list(records[key].dependencies)
                 loaded = {key.lower()}
                 while pending:
@@ -340,19 +380,29 @@ def main():
                         dependency_bytes[dependency_key] = data
                     environment.load_file(dependency_bytes[dependency_key], name=dependency_key, is_dependency=True)
                     pending.extend(record.dependencies)
-            if shader_path and any(reader.type.name == "ParticleSystem" for reader in extractor.objects):
+            has_particles = any(reader.type.name == "ParticleSystem" for reader in extractor.objects)
+            if shader_path and (has_particles or args.metadata_only):
                 if shader_bytes is None:
                     shader_bytes = shader_path.read_bytes()
                     if not shader_bytes.startswith(b"UnityFS"):
                         shader_bytes = decoder.xor_prefix(shader_bytes, records["Shaders"].hash_code)
                 environment.load_file(shader_bytes, name="Shaders.dat", is_dependency=True)
-                for dependency_key, dependency_path in effect_texture_paths.items():
+                for dependency_key, dependency_path in (effect_texture_paths.items() if has_particles else []):
                     if dependency_key not in effect_texture_bytes:
                         data = dependency_path.read_bytes()
                         if not data.startswith(b"UnityFS"):
                             data = decoder.xor_prefix(data, records[dependency_key].hash_code)
                         effect_texture_bytes[dependency_key] = data
                     environment.load_file(effect_texture_bytes[dependency_key], name=dependency_key, is_dependency=True)
+            if args.metadata_only:
+                previous = next((item for item in catalog if item["id"] == key), None)
+                if not previous or not previous.get("path"):
+                    raise ValueError("Metadata refresh requires an existing extracted bundle")
+                result = {**previous, "renderers": extractor.extract_renderers()}
+                catalog = [item for item in catalog if item["id"] != key] + [result]
+                print(key, "renderers", len(result["renderers"]), "errors", sum(len(row["errors"]) for row in result["renderers"]), flush=True)
+                write_json(args.output / "extraction.json", {"schema": 1, "bundles": catalog})
+                continue
             result = extractor.extract()
             result["errors"].extend(dependency_errors)
             result.update(id=key, path=destination.relative_to(args.output).as_posix())

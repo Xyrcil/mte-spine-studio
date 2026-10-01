@@ -3,7 +3,7 @@ import {identity,multiply,unityTransform,objectTransform,point} from './geometry
 import {InteractionRoot} from './interaction.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
 import {initializeAnimation} from './initial-animation.js';
-import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareHierarchy} from './particle-layer.js';
+import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareDraws,particleQueue} from './particle-layer.js';
 import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
 import {MaskedParticleRenderer} from './masked-particles.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
@@ -302,7 +302,7 @@ export class Stage extends EventTarget {
         const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
         renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
       }else{
-        const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort((a,b)=>a.order-b.order||compareHierarchy(a.path,b.path));
+        const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,queue:layer.instance.renderQueue,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
         for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
       }
     }

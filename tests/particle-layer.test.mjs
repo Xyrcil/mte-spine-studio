@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createParticleLayers,particleOrder,hierarchyOrder,compareHierarchy,preflightParticles} from '../src/engine/particle-layer.js';
+import {createParticleLayers,particleOrder,hierarchyOrder,compareHierarchy,compareDraws,particleQueue,preflightParticles} from '../src/engine/particle-layer.js';
 
 const constant=scalar=>({minMaxState:0,scalar});
 function effect(id,shader='Legacy Shaders/Particles/Alpha Blended'){
@@ -23,6 +23,10 @@ test('particle sorting inherits the nearest enabled sorting group',()=>{
 test('equal draw orders follow original sibling hierarchy and reject cycles',()=>{
   const value=group();assert.deepEqual(hierarchyOrder(value,'childT'),[0]);assert.deepEqual(hierarchyOrder(value,'otherT'),[1]);assert.ok(compareHierarchy([0],[1])<0);assert.ok(compareHierarchy([0],[0,1])<0);
   value.nodes.get('rootT').data.m_Father={m_PathID:'childT'};assert.throws(()=>hierarchyOrder(value,'childT'),/Cyclic/);
+});
+test('material queues break equal sorting orders before sibling order',()=>{
+  const draws=[{order:0,queue:3005,path:[0]},{order:0,queue:3001,path:[3]},{order:0,queue:3000,path:[4]},{order:1,queue:2999,path:[0]}].sort(compareDraws);
+  assert.deepEqual(draws.map(row=>row.queue),[3000,3001,3005,2999]);assert.equal(particleQueue({materials:[{renderQueue:3004}]}),3004);assert.equal(particleQueue({materials:[{renderQueue:-1}]}),3000);
 });
 test('particle restore preflight accepts legacy scenes but rejects missing and repeated sources',()=>{
   const value=group([effect('one'),effect('two')]);value.effects=createParticleLayers(value,'/assets/',{loadTexture(){}});const saved=value.effects.map(layer=>layer.model.snapshot());

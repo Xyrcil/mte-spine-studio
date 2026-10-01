@@ -35,7 +35,17 @@ stage.addEventListener('rendering-recovering',()=>{renderingRetry.disabled=true;
 stage.addEventListener('rendering-recovered',()=>{renderingRetry.disabled=false;renderingRetry.hidden=true;document.querySelector('.library').inert=view==='export';editor.choose(stage.groups.find(group=>group.id===recoverySelection)||stage.groups.at(-1));editor.changed();message('Rendering restored');});
 stage.addEventListener('rendering-recovery-error',event=>{renderingRetry.disabled=false;renderingRetry.hidden=false;message(`Rendering recovery failed: ${event.detail}. The scene can still be saved.`);});
 renderingRetry.onclick=()=>stage.recoverRendering().catch(error=>message(error.message));
-function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingAnimations()),effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0),pending=(group.effects||[]).filter(effect=>effect.verification);document.querySelector('#details').textContent=`${group.presentation.standalone?'Standalone Spine preview · ':''}${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`:''}${effects?` · Additional effects unavailable: ${effects}`:''}${pending.length?' · Effect visual verification pending':''}`;}
+function describe(group){
+  const gaps=(group.controllers||[]).flatMap(root=>root.missingAnimations());
+  const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
+  const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${group.presentation.hotspots.length} interaction regions`];
+  if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
+  if(effects)parts.push(`Additional effects unavailable: ${effects}`);
+  if(group.effects?.some(effect=>effect.verification))parts.push('Effect visual verification pending');
+  const ordering=group.layers.filter(layer=>layer.instance.renderOrderStatus).length;
+  if(ordering)parts.push(`Material ordering unavailable: ${ordering}`);
+  document.querySelector('#details').textContent=parts.join(' · ');
+}
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 async function selectPortrait(appearance){
   if(editor.busy)return;request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();if(view==='gallery')audio?.stopAmbients();

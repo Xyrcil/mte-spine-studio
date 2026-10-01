@@ -34,6 +34,12 @@ Material metadata includes active shader keywords, custom render queues,
 disabled passes, tags and instancing settings; shader implementation code is
 not included in converted resources. The masked particle material uses an
 additive blend and its own render queue, not the Legacy alpha-blended path.
+Mesh renderer queues retain explicit material values or their shader queue tags.
+For matching sorting orders, draw calls use those queues before hierarchy ties.
+Refresh this metadata without rewriting media with
+`python3 tools/extract_assets.py --source /path/to/archive --merge --metadata-only`.
+Mixed material queues within one skeleton remain marked in the UI and exports;
+they are not treated as a single verified material queue.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.

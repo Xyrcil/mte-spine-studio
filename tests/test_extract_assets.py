@@ -5,11 +5,36 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import unittest
-from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json
+from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue
 from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_shader_queue_tags_preserve_offsets_and_unknown_defaults(self):
+        shader = lambda tag: {"m_ParsedForm": {"m_SubShaders": [{"m_Tags": {"tags": [("QUEUE", tag)]}}]}}
+        self.assertEqual(shader_render_queue(shader("Transparent")), 3000)
+        self.assertEqual(shader_render_queue(shader("Transparent+4")), 3004)
+        self.assertEqual(shader_render_queue(shader("AlphaTest-1")), 2449)
+        self.assertIsNone(shader_render_queue(shader("Unknown")))
+        self.assertIsNone(shader_render_queue({}))
+
+    def test_renderer_queues_resolve_custom_values_and_shader_defaults_without_textures(self):
+        pointer = lambda value: {"m_FileID": 0, "m_PathID": value}
+        rows = {}
+        def reader(number, kind, tree):
+            value = SimpleNamespace(path_id=number, assets_file="bundle", type=SimpleNamespace(name=kind), read_typetree=lambda: tree)
+            rows[number] = value
+            return value
+        renderer = reader(1, "MeshRenderer", {"m_GameObject": pointer(10), "m_Materials": [pointer(2), pointer(3)]})
+        reader(2, "Material", {"m_CustomRenderQueue": 3004, "m_Shader": pointer(99)})
+        reader(3, "Material", {"m_CustomRenderQueue": -1, "m_Shader": pointer(4)})
+        reader(4, "Shader", {"m_ParsedForm": {"m_SubShaders": [{"m_Tags": {"tags": [("QUEUE", "Transparent")]}}]}})
+        with tempfile.TemporaryDirectory() as folder:
+            extractor = BundleExtractor(SimpleNamespace(objects=[renderer]), Path(folder))
+            extractor.resolve = lambda owner, reference: rows[reference["m_PathID"]]
+            record = extractor.extract_renderers()[0]
+            self.assertEqual([material["renderQueue"] for material in record["materials"]], [3004, 3000])
+            self.assertEqual(record["errors"], [])
     def test_binary_header_uses_spine_strings_and_big_endian_bounds(self):
         data = bytes([5]) + b"hash" + bytes([7]) + b"3.8.99" + struct.pack(">ffff", -12, -25, 300, 600)
         self.assertEqual(binary_strings(data), ("3.8.99", [-12, -25, 300, 600]))

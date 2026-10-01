@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {standaloneInstances} from './presentation_helpers.mjs';
+import {standaloneInstances,materialOrdering} from './presentation_helpers.mjs';
 
 const root = path.resolve(process.argv[2] || 'public/assets');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, 'runtime-index.json')));
@@ -29,7 +29,8 @@ for (const bundle of extraction.bundles) {
     if (node.data.skeletonDataAsset) {
       const skeleton = skeletons.get(idOf(node.data.skeletonDataAsset));
       const renderer = components.get(owner)?.find(item => item.type === 'MeshRenderer');
-      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null, animation: node.data._animationName, skin: node.data.initialSkinName, loop: Boolean(node.data.loop), timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
+      const ordering=materialOrdering(bundle.renderers?.find(row=>row.id===renderer?.id));
+      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null, animation: node.data._animationName, skin: node.data.initialSkinName, loop: Boolean(node.data.loop), timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
     }
     if ('cur_clickEvent' in node.data) {
       hotspots.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, class: className(node), event: node.data.cur_clickEvent, track: node.data.trackIndex, animation: node.data.ani_name, audio: node.data.audio_name, controller: idOf(node.data.ani_root), colliders: (components.get(owner) || []).filter(item => item.type.endsWith('Collider2D')).map(item => ({id: item.id, type: item.type, data: item.data})), transform: transforms.get(owner)?.id});
