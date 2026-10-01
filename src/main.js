@@ -86,12 +86,13 @@ canvas.onpointerdown=event=>{if(editor.busy)return;if(view==='gallery'){const re
 canvas.onpointermove=event=>{if(!drag)return;const width=Math.max(stage.camera.width,stage.camera.height*canvas.clientWidth/canvas.clientHeight);drag.group.x=drag.startX+(event.clientX-drag.x)*width/canvas.clientWidth;drag.group.y=drag.startY-(event.clientY-drag.y)*width/canvas.clientWidth;};
 const endDrag=()=>{if(drag){drag=null;editor.changed();}};canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
 let wheelTimer;
-stage.addEventListener('sound-request',event=>{if(!audio||stage.paused)return;audio.playEffect(event.detail.name,event.detail.category).catch(error=>message(error.message));});
+stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(error=>message(error.message));});
 stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
-  const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category).catch(error=>message(error.message));
+  if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
+  const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
   const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language);if(!voice)return;
   audio.play(voice,language).catch(error=>message(error.message));
 });

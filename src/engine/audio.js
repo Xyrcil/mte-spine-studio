@@ -37,12 +37,14 @@ export class AudioBus extends EventTarget {
     }catch(error){if(token===this.token)throw error;}
   }
   stop() {this.token++;this.element.pause();this.element.removeAttribute('src');this.element.load();this.dispatchEvent(new CustomEvent('subtitle',{detail:null}));}
-  async playEffect(name,category='a_sound_ui'){
+  async playEffect(name,category='a_sound_ui',time=0,autoplay=true,group=''){
     const info=this.soundInfo(name,category),clip=info.clip;if(!clip)throw new Error(`Sound unavailable: ${name}`);
     if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
     const element=new Audio(this.base+clip.path);element.volume=this.effectVolume*info.volume;element.resourceVolume=info.volume;element.muted=this.muted;this.effects.add(element);
+    element.effectName=name;element.effectCategory=category;element.effectTime=time;element.effectGroup=group;element.preload='none';
+    element.addEventListener('loadedmetadata',()=>{if(time>0&&this.effects.has(element))element.currentTime=Math.min(time,element.duration);},{once:true});
     element.addEventListener('ended',()=>this.releaseEffect(element),{once:true});
-    try{await element.play();}catch(error){this.releaseEffect(element);throw error;}
+    try{if(autoplay)await element.play();}catch(error){this.releaseEffect(element);throw error;}
     return element;
   }
   releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
@@ -62,6 +64,7 @@ export class AudioBus extends EventTarget {
   syncAmbients(groups,appearances){
     this.sceneGroups=groups;this.appearances=appearances;
     const present=new Set(groups.map(group=>group.id));
+    for(const effect of this.effects)if(effect.effectGroup&&!groups.some(group=>group.id===effect.effectGroup&&group.visible))this.releaseEffect(effect);
     const desired=new Map();
     for(const group of groups){const setting=this.ambientSetting(group);if(setting&&setting.enabled&&group.visible)desired.set(group.id,setting);}
     for(const [id,channel] of this.ambients)if(!desired.has(id)||desired.get(id).name!==channel.name||desired.get(id).category!==channel.category)this.releaseAmbient(id,!desired.has(id)&&present.has(id)&&this.ambientPreferences.get(id)?.enabled!==false);
@@ -91,7 +94,7 @@ export class AudioBus extends EventTarget {
   ambientSnapshot(){
     const tracks=[];for(const group of this.sceneGroups){const setting=this.ambientSetting(group);if(!setting)continue;const channel=this.ambients.get(group.id);tracks.push({...setting,time:channel?.element.currentTime||setting.time,ended:channel?.ended??setting.ended});}return tracks;
   }
-  snapshot(){return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot()};}
+  snapshot(){return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})}))};}
   exportAmbients(snapshot,objects){
     if(!snapshot||snapshot.muted||!snapshot.ambientEnabled)return [];
     const visible=new Set(objects.filter(object=>object.visible).map(object=>object.id));
@@ -104,6 +107,7 @@ export class AudioBus extends EventTarget {
     this.stop();this.stopEffects();this.stopAmbients();this.ambientPreferences.clear();this.paused=paused;
     if(snapshot){this.setVolume(snapshot.voiceVolume);this.setEffectVolume(snapshot.effectVolume);this.setAmbientVolume(snapshot.ambientVolume);this.setMuted(snapshot.muted);this.ambientEnabled=snapshot.ambientEnabled;this.language=snapshot.language;for(const track of snapshot.ambientTracks)this.ambientPreferences.set(track.id,{...track});}
     this.syncAmbients(groups,appearances);
+    for(const track of snapshot?.effectTracks||[])if(!track.group||groups.some(group=>group.id===track.group&&group.visible))this.playEffect(track.name,track.category,track.time,this.unlocked&&!paused,track.group).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
   }
   dispose(){this.stop();this.stopEffects();this.stopAmbients();}
 }

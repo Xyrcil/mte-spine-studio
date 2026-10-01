@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {interactionEffects,resolveInteractionVoice,explicitInteractionEffect} from '../src/engine/interaction-audio.js';
+import {interactionEffects,resolveInteractionVoice,explicitInteractionEffect,eventLateness} from '../src/engine/interaction-audio.js';
 const state={isBig:false,state:1,cardStage:false,names:{4:'stand_down',6:'click_01_down',8:'kaoji_01',12:'rope_down',17:'game_down1'}};
 test('special click sound branches retain state-dependent source names',()=>{
   assert.deepEqual(interactionEffects(6,'123',state),['12301_cm_click_01_down']);assert.deepEqual(interactionEffects(14,'123',{...state,isBig:true}),['12301_cm_click_03_down']);assert.deepEqual(interactionEffects(8,'123',state),['12301_cm_stand_down']);assert.deepEqual(interactionEffects(9,'123',{...state,state:2}),['12301_cm_door_down']);assert.deepEqual(interactionEffects(11,'123',state),['12301_cm_click_lleg']);assert.deepEqual(interactionEffects(18,'123',{...state,cardStage:true}),['12301_cm_card_click']);assert.deepEqual(interactionEffects(4,'301400901',state),[]);assert.deepEqual(interactionEffects(1,'0',state),[]);
@@ -17,4 +17,9 @@ test('hotspot effect references do not replace voices or play the same effect tw
   const library={voices:[{resourceName:'Voice_1234567_Touch_Head',text:'Head voice'}],storyVoices:[]},audio={soundInfo:name=>({name,category:'a_sound_ui',clip:{path:'effect.m4a'}}),resolve:name=>name==='Voice_1234567_Touch_Head'?{}:null};
   const request={skinId:'123456789',event:2,explicit:'click_effect'};assert.equal(resolveInteractionVoice(request,library,audio,'original').text,'Head voice');assert.equal(explicitInteractionEffect(request,audio).name,'click_effect');assert.equal(explicitInteractionEffect({...request,effects:['SoundRes/a_sound_ui/click_effect']},audio),null);
   assert.equal(resolveInteractionVoice({...request,explicit:'missing_effect'},library,{resolve:audio.resolve},'original').text,'Head voice');
+});
+test('timeline sounds recover event timestamps across scaled tracks and loop boundaries',()=>{
+  const layer={instance:{timeScale:.5},state:{timeScale:1}},track={getAnimationTime:()=>.075,timeScale:1,loop:false};assert.ok(Math.abs(eventLateness(layer,track,{time:.066})-.018)<1e-12);
+  assert.ok(Math.abs(eventLateness(layer,{...track,loop:true,animationStart:0,animationEnd:2,getAnimationTime:()=>.01},{time:1.99})-.04)<1e-12);
+  assert.equal(eventLateness(layer,{...track,timeScale:0},{time:.066}),0);
 });

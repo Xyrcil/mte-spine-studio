@@ -19,3 +19,8 @@ test('one-shot exhaustion, looping and summed audio use valid PCM bounds',()=>{
   const voice={scene:false,channels:[new Float32Array(1000).fill(.2)],sampleRate:100,options:{offset:1,gain:.5}};
   assert.deepEqual(mixExportSample(p,.5,[voice]),[0,0]);assert.ok(Math.abs(mixExportSample(p,1.5,[voice])[0]-.1)<1e-6);
 });
+test('event effects begin at their source event and keep forward playback pitch',()=>{
+  const p=plan({start:0,end:2,speed:2}),effect=track({position:0,offset:.5,sceneRate:1/p.speed});
+  assert.deepEqual(mixExportSample(p,.2,[effect]),[0,0]);assert.ok(Math.abs(mixExportSample(p,.35,[effect])[0]-.01)<1e-6);
+  const captured=track({position:2,offset:0,sceneRate:1/p.speed});assert.ok(Math.abs(mixExportSample(p,.35,[captured])[0]-.235)<1e-6);
+});

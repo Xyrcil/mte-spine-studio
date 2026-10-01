@@ -1,5 +1,5 @@
 import {multiply,inversePoint,objectTransform,unityTransform,colliderContains} from './geometry.js';
-import {interactionEffects} from './interaction-audio.js';
+import {interactionEffects,eventLateness} from './interaction-audio.js';
 
 const DEFAULT_ANIMATIONS={1:'click_01',2:'click_02',3:'click_03',4:'stand_down',6:'click_01_down',7:'click_tail',8:'kaoji_01',9:'door_down',10:'click_lleg_1',11:'click_rleg_1',12:'rope_down',13:'click_03_head_1',14:'click_03_down',15:'stand_up1',16:'click_03_dleg_1',17:'game_down1',18:'card_A',19:'card_B',20:'card_C',21:'card_None',22:'card_None',50:'click_03'};
 const STATIC_BONES=new Set(['HitArea_tail','HitArea_lleg','HitArea_rope','HitArea_rleg','HitArea_head','HitArea_dleg','HitArea_chicken1','HitArea_chicken2','HitArea_chicken3','HitArea_chicken4','HitArea_door2','HitArea_door3','HitArea_chest1','HitArea_chest2','HitArea_chest3','HitArea_chest4','HitArea_hand','HitArea_game','HitArea_game2','HitArea_cardA','HitArea_cardB','HitArea_cardC']);
@@ -58,7 +58,7 @@ export class InteractionRoot {
     })||null;
   }
   emit(type,detail){this.stage.dispatchEvent(new CustomEvent(type,{detail:{group:this.group.id,controller:this.source.id,...detail}}));}
-  sound(name,category='a_sound_ui'){if(name)this.emit('sound-request',{name,category});}
+  sound(name,category='a_sound_ui',lateness=0){if(name)this.emit('sound-request',{name,category,lateness});}
   play(name,track=0,loop=false,mix){
     let count=0,duration=0;
     for(const layer of this.layers){const animation=layer.skeleton.data.findAnimation(name);if(!animation)continue;const entry=layer.state.setAnimation(track,name,loop);if(mix!==undefined)entry.mixDuration=mix;count++;duration=animation.duration;}
@@ -95,7 +95,7 @@ export class InteractionRoot {
   onEvent(layer,track,event){
     if(layer!==this.primary)return;
     const name=event.data.name,v=this.value;
-    if(name.includes('sound_'))this.sound(name.replaceAll('sound_','').replace('301619402_caidan_Rshoes02','301619402_caidan_Rshoes_02'));
+    if(name.includes('sound_'))this.sound(name.replaceAll('sound_','').replace('301619402_caidan_Rshoes02','301619402_caidan_Rshoes_02'),'a_sound_ui',eventLateness(layer,track,event));
     if(!v.playing)return;
     for(const effect of this.source.data.OtherEffectList||[])if(effect.Key===name)this.emit('effect-request',{object:String(effect.Obj?.m_PathID||'0'),duration:effect.Time});
     if(name!=='end'&&name!=='card'&&!name.includes('changeto'))return;

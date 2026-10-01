@@ -13,7 +13,7 @@ export function mixExportSample(plan,time,tracks,result=[0,0]){
   for(const track of tracks){
     if(track.scene){
       sources??=sceneAudioSources(plan,time);
-      for(const source of sources){clipSample(track.channels,track.sampleRate,track.position+source.time,{repeat:track.repeat,gain:track.gain},sample);result[0]+=sample[0]*source.weight;result[1]+=sample[1]*source.weight;}
+      for(const source of sources){clipSample(track.channels,track.sampleRate,track.position+(source.time-(track.offset||0))*(track.sceneRate??1),{repeat:track.repeat,gain:track.gain},sample);result[0]+=sample[0]*source.weight;result[1]+=sample[1]*source.weight;}
     }else{clipSample(track.channels,track.sampleRate,time,track.options,sample);result[0]+=sample[0];result[1]+=sample[1];}
   }
   const fade=Math.max(0,Math.min(1,(plan.duration-time)/.005));

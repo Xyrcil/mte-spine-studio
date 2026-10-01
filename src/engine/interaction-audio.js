@@ -1,5 +1,13 @@
 const TOUCH={1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'};
 
+export function eventLateness(layer,track,event){
+  if(typeof track.getAnimationTime!=='function')return 0;
+  const rate=(layer.instance?.timeScale??1)*(layer.state?.timeScale??1)*(track.timeScale??1);if(rate<=0)return 0;
+  let elapsed=track.getAnimationTime()-event.time;
+  if(elapsed<0&&track.loop)elapsed+=track.animationEnd-track.animationStart;
+  return Math.max(0,elapsed/rate);
+}
+
 export function interactionEffects(event,skin,state){
   if(!skin||skin==='0')return [];
   const prefix=`${skin}01_cm_`;let name='';

@@ -47,6 +47,9 @@ language and matching subtitle row. State-dependent special click sounds are
 separate from voices; hotspot effect references do not suppress character
 speech or duplicate an already requested sound. Effect volume also retains
 the resource's configured gain.
+Active effects retain resource, object and playback position in saved scenes.
+Hidden or removed objects release their effects; duplicated objects inherit
+their captured sound positions.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
 regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
 Standalone Spine bundles expose skeleton and animation previews, including
@@ -68,8 +71,14 @@ not inferred word timings, and can also be rendered without an audio track.
 Ambient audio follows the captured scene interval, speed and loop mode,
 including reversed ping-pong playback and crossfade mixing. Export respects
 captured mute, visibility, gains, positions and completed one-shot sounds.
+Interaction effects are collected from an independent scene replay and mixed
+with any effects still active at capture. Event timestamps account for track
+speed and loop boundaries. Forward effects keep their pitch; ping-pong reverses
+the sampled interval. Missing sounds are returned as export warnings.
+AAC export measures this device's encoder delay and offsets the audio track
+to avoid silent leading padding, including for very short clips.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing, exported interaction audio and its subtitles,
+rendering, complete voice routing, captured/automatic interaction voices and their subtitles,
 browser fallbacks, resource caching and public deployment remain in progress.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build

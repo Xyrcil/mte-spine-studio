@@ -13,5 +13,16 @@ export function validateSoundScene(value,objects){
     if(typeof track.time!=='number'||!Number.isFinite(track.time)||track.time<0)throw new Error('Invalid ambient time');
     return {id:track.id,name:track.name,category:track.category,loop:track.loop,gain:volume(track.gain,'ambient gain'),time:track.time,enabled:track.enabled,ended:track.ended};
   });
-  return {schema:1,voiceVolume:volume(value.voiceVolume,'voice volume'),effectVolume:volume(value.effectVolume,'effect volume'),ambientVolume:volume(value.ambientVolume,'ambient volume'),muted:value.muted,ambientEnabled:value.ambientEnabled,language:value.language,ambientTracks};
+  let effectTracks;
+  if(value.effectTracks!==undefined){
+    if(!Array.isArray(value.effectTracks)||value.effectTracks.length>12)throw new Error('Invalid effect tracks');
+    effectTracks=value.effectTracks.map(track=>{
+      if(typeof track.name!=='string'||!track.name||track.name.length>512)throw new Error('Invalid effect resource');
+      if(!['a_sound_ui','a_sound_bgm','a_sound_fighteff'].includes(track.category))throw new Error('Invalid effect category');
+      if(typeof track.time!=='number'||!Number.isFinite(track.time)||track.time<0||track.time>86400)throw new Error('Invalid effect time');
+      if(track.group!==undefined&&(typeof track.group!=='string'||!objectIds.has(track.group)))throw new Error('Invalid effect object');
+      return {name:track.name,category:track.category,time:track.time,...(track.group!==undefined?{group:track.group}:{})};
+    });
+  }
+  return {schema:1,voiceVolume:volume(value.voiceVolume,'voice volume'),effectVolume:volume(value.effectVolume,'effect volume'),ambientVolume:volume(value.ambientVolume,'ambient volume'),muted:value.muted,ambientEnabled:value.ambientEnabled,language:value.language,ambientTracks,...(effectTracks!==undefined?{effectTracks}:{})};
 }
