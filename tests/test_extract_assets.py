@@ -18,6 +18,25 @@ class ExtractionTests(unittest.TestCase):
         self.assertIsNone(shader_render_queue(shader("Unknown")))
         self.assertIsNone(shader_render_queue({}))
 
+    def test_skeleton_material_bindings_match_original_page_names_after_browser_renaming(self):
+        pointer = lambda value: {"m_FileID": 0, "m_PathID": value}
+        rows = {}
+        def reader(number, tree, value=None):
+            item = SimpleNamespace(path_id=number, assets_file="bundle", read_typetree=lambda: tree, read=lambda: value)
+            rows[number] = item
+            return item
+        owner = reader(1, {"atlasAssets": [pointer(2)], "blendModeMaterials": {"multiplyMaterials": [{"pageName": "original.png", "material": pointer(5)}]}})
+        reader(2, {"atlasFile": pointer(3), "materials": [pointer(4)]})
+        reader(3, {}, SimpleNamespace(m_Script="original.png\nsize: 20,20\nregion\n  xy: 0,0\n"))
+        reader(4, {"m_CustomRenderQueue": 3005})
+        reader(5, {"m_CustomRenderQueue": 3000})
+        with tempfile.TemporaryDirectory() as folder:
+            extractor = BundleExtractor(SimpleNamespace(objects=[]), Path(folder))
+            extractor.resolve = lambda owner, reference: rows[reference["m_PathID"]]
+            result = extractor.skeleton_materials(owner)
+            self.assertEqual(result["errors"], [])
+            self.assertEqual(result["pages"], [{"atlas": 0, "page": "page-0.png", "sourcePage": "original.png", "materials": {"normal": {"id": "4", "renderQueue": 3005}, "multiply": {"id": "5", "renderQueue": 3000}}}])
+
     def test_renderer_queues_resolve_custom_values_and_shader_defaults_without_textures(self):
         pointer = lambda value: {"m_FileID": 0, "m_PathID": value}
         rows = {}

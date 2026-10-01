@@ -6,6 +6,7 @@ import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareDraws,particleQueue} from './particle-layer.js';
 import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
 import {MaskedParticleRenderer} from './masked-particles.js';
+import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots} from './material-order.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -102,6 +103,7 @@ export class Stage extends EventTarget {
         reader.scale = layer.entry.scale;
         const data = reader.readSkeletonData(layer.entry.skeleton.endsWith('.json') ? JSON.parse(manager.get(layer.source)) : manager.get(layer.source));
         layer.skeleton = new (s().Skeleton)(data);
+        layer.materialMapping=compileMaterialMapping(layer);
         if (layer.instance.skin) layer.skeleton.setSkinByName(layer.instance.skin);
         layer.skeleton.scaleX = layer.instance.flipX ? -1 : 1;
         layer.skeleton.scaleY = layer.instance.flipY ? -1 : 1;
@@ -302,8 +304,8 @@ export class Stage extends EventTarget {
         const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
         renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
       }else{
-        const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,queue:layer.instance.renderQueue,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
-        for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
+        const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
+        for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots);else renderer.drawSkeleton(draw.layer.skeleton,false);}
       }
     }
     renderer.end();

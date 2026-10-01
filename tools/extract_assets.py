@@ -211,6 +211,35 @@ class BundleExtractor:
             entries.append({"id": str(reader.path_id), "gameObject": str(tree["m_GameObject"]["m_PathID"]), "materials": materials, "errors": errors})
         return entries
 
+    def skeleton_materials(self, reader):
+        tree = self.tree(reader)
+        pages, errors = [], []
+        for atlas_index, pointer in enumerate(tree.get("atlasAssets", [])):
+            try:
+                atlas = self.resolve(reader, pointer)
+                atlas_tree = self.tree(atlas)
+                text = self.resolve(atlas, atlas_tree["atlasFile"]).read().m_Script
+                names = atlas_pages(text)
+                for index, name in enumerate(names):
+                    mappings = {"normal": (atlas, atlas_tree["materials"][index])}
+                    blend = tree.get("blendModeMaterials", {})
+                    for mode in ("additive", "multiply", "screen"):
+                        match = next((row for row in blend.get(mode + "Materials", []) if row["pageName"] == name), None)
+                        if match:
+                            mappings[mode] = (reader, match["material"])
+                    materials = {}
+                    for mode, (owner, reference) in mappings.items():
+                        material = self.resolve(owner, reference)
+                        data = self.tree(material)
+                        queue = data.get("m_CustomRenderQueue", -1)
+                        if queue < 0:
+                            queue = shader_render_queue(self.tree(self.resolve(material, data["m_Shader"])))
+                        materials[mode] = {"id": str(material.path_id), "renderQueue": queue}
+                    pages.append({"atlas": atlas_index, "page": f"page-{index}.png", "sourcePage": name, "materials": materials})
+            except Exception as error:
+                errors.append({"atlas": atlas_index, "error": str(error)})
+        return {"pages": pages, "errors": errors}
+
     def extract_effects(self):
         entries = []
         for reader in self.objects:
@@ -299,7 +328,7 @@ class BundleExtractor:
                     (atlas_folder / "texture.atlas").write_text(atlas_text, encoding="utf-8")
                     write_json(atlas_folder / "materials.json", material_settings)
                     atlases.append({"atlas": f"atlas-{index}/texture.atlas", "pages": names})
-                skeletons.append({"id": str(reader.path_id), "name": tree.get("m_Name"), "skeleton": f"{reader.path_id}/{filename}", "version": version, "bounds": bounds, "scale": tree.get("scale", 1), "defaultMix": tree.get("defaultMix", 0), "atlases": atlases, "mixes": {k: tree.get(k, []) for k in ("fromAnimation", "toAnimation", "duration")}})
+                skeletons.append({"id": str(reader.path_id), "name": tree.get("m_Name"), "skeleton": f"{reader.path_id}/{filename}", "version": version, "bounds": bounds, "scale": tree.get("scale", 1), "defaultMix": tree.get("defaultMix", 0), "atlases": atlases, "materialBindings": self.skeleton_materials(reader), "mixes": {k: tree.get(k, []) for k in ("fromAnimation", "toAnimation", "duration")}})
             except Exception as exc:
                 errors.append({"id": str(reader.path_id), "type": "SkeletonDataAsset", "error": str(exc)})
         write_json(self.output / "hierarchy.json", precise_references(hierarchy))
@@ -381,7 +410,7 @@ def main():
                     environment.load_file(dependency_bytes[dependency_key], name=dependency_key, is_dependency=True)
                     pending.extend(record.dependencies)
             has_particles = any(reader.type.name == "ParticleSystem" for reader in extractor.objects)
-            if shader_path and (has_particles or args.metadata_only):
+            if shader_path:
                 if shader_bytes is None:
                     shader_bytes = shader_path.read_bytes()
                     if not shader_bytes.startswith(b"UnityFS"):
@@ -399,6 +428,8 @@ def main():
                 if not previous or not previous.get("path"):
                     raise ValueError("Metadata refresh requires an existing extracted bundle")
                 result = {**previous, "renderers": extractor.extract_renderers()}
+                readers = {str(reader.path_id): reader for reader in extractor.objects}
+                result["skeletons"] = [{**item, "materialBindings": extractor.skeleton_materials(readers[item["id"]])} for item in previous["skeletons"]]
                 catalog = [item for item in catalog if item["id"] != key] + [result]
                 print(key, "renderers", len(result["renderers"]), "errors", sum(len(row["errors"]) for row in result["renderers"]), flush=True)
                 write_json(args.output / "extraction.json", {"schema": 1, "bundles": catalog})

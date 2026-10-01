@@ -10480,6 +10480,10 @@ var spine;
 						inRange = false;
 					}
 					var attachment = slot.getAttachment();
+					if (this.slotFilter && !this.slotFilter(slot) && !(attachment instanceof spine.ClippingAttachment)) {
+						clipper.clipEndWithSlot(slot);
+						continue;
+					}
 					var texture = null;
 					if (attachment instanceof spine.RegionAttachment) {
 						var region = attachment;

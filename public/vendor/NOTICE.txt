@@ -11,6 +11,8 @@ non-invertible or zero-length scaled chains instead of dividing by zero;
 zero animation scales remain unchanged and resume normal solving when expanded.
 Polygon batches accumulate alpha separately from their RGB blend factors so
 opaque scenes remain opaque and transparent canvas exports retain coverage.
+Skeleton slot filtering preserves original clipping traversal when material
+queue segments are drawn separately.
 
 Mediabunny 1.61.0 is an unmodified dependency under MPL-2.0.
 License: MEDIABUNNY-LICENSE.

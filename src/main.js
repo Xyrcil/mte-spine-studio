@@ -42,8 +42,9 @@ function describe(group){
   if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
   if(effects)parts.push(`Additional effects unavailable: ${effects}`);
   if(group.effects?.some(effect=>effect.verification))parts.push('Effect visual verification pending');
-  const ordering=group.layers.filter(layer=>layer.instance.renderOrderStatus).length;
+  const ordering=group.layers.filter(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason)).length;
   if(ordering)parts.push(`Material ordering unavailable: ${ordering}`);
+  if(group.layers.some(layer=>layer.materialMapping?.pages))parts.push('Material segment visual verification pending');
   document.querySelector('#details').textContent=parts.join(' · ');
 }
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}

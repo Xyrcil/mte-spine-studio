@@ -38,8 +38,11 @@ Mesh renderer queues retain explicit material values or their shader queue tags.
 For matching sorting orders, draw calls use those queues before hierarchy ties.
 Refresh this metadata without rewriting media with
 `python3 tools/extract_assets.py --source /path/to/archive --merge --metadata-only`.
-Mixed material queues within one skeleton remain marked in the UI and exports;
-they are not treated as a single verified material queue.
+Mixed material queues use source atlas-page and blend-material references.
+Their current attachments and draw order are regrouped into material segments
+each frame. Slot filtering traverses the original clipping attachments even
+when they sit outside the selected segment. Unresolved mappings remain marked;
+resolved segments still carry an original-client visual-verification notice.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.
