@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {InteractionRecorder,InteractionPlayer,validateSequence} from '../src/engine/interaction-sequence.js';
 import {validateScene} from '../src/engine/scene.js';
+import {exportScene} from '../src/engine/export-source.js';
 
 const initial={schema:1,name:'Test',background:'#000000',camera:{x:0,y:0,width:10,height:10},speed:1,paused:false,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'test',x:0,y:0,scale:1,rotation:0,opacity:1,layers:[],interactions:[]}]};
 // Use the same source-backed state validator as saved scenes.
@@ -43,4 +44,14 @@ test('saved scenes retain isolated sequences and reject recursive checkpoints',(
   const sequenceValue=sequence(),scene=validateScene({...initial,sequence:sequenceValue});assert.deepEqual(scene.sequence,validateSequence(sequenceValue));
   assert.throws(()=>validateScene({...initial,sequence:{...sequenceValue,initial:{...initial,sequence:sequenceValue}}}),/Nested/);
   const stage=new FakeStage();stage.snapshot=()=>scene;const recorder=new InteractionRecorder(stage);recorder.start();assert.equal(recorder.stop().initial.sequence,undefined);recorder.dispose();
+});
+test('sequence export selects recorded speed and objects without mutating the edited scene',()=>{
+  const original={...initial,speed:2,objects:[],sequence:sequence()},selected=exportScene(original,true);
+  assert.equal(selected.speed,1);assert.equal(selected.objects.length,1);assert.equal(original.objects.length,0);
+  assert.equal(exportScene(original).speed,2);assert.throws(()=>exportScene(initial,true),/interaction sequence/);
+});
+test('export replay advances the remainder beyond the final sequence timestamp',()=>{
+  const stage=new FakeStage(),player=new InteractionPlayer(stage,sequence(),{continueAfterEnd:true});let elapsed=0;
+  player.advance(1.1,delta=>elapsed+=delta);assert.ok(Math.abs(elapsed-1.1)<1e-10);assert.equal(player.finished,true);assert.equal(stage.calls.length,3);
+  player.advance(.1,delta=>elapsed+=delta);assert.ok(Math.abs(elapsed-1.2)<1e-10);assert.equal(stage.sequenceTime,undefined);
 });

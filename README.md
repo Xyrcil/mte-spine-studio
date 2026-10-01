@@ -121,7 +121,13 @@ once. The sequence panel records Gallery clicks, pauses/resumes playback and
 replays the captured starting scene. Editing is locked during recording and
 replay. Sequences round-trip through their own JSON files and saved scenes,
 including autosave recovery. Recursive sequence checkpoints are rejected.
-Action-time editing and scheduled voice/video export are not connected yet.
+The export panel can replay a saved sequence from its recorded starting scene,
+including its click sounds and automatic animation sound events. Seeking back
+rebuilds the sequence, and all loop modes use the same source interval. Failed
+actions stop export instead of silently skipping state transitions. Current
+scene edits do not replace the recorded transforms or sound settings.
+Action-time editing and voices triggered by scheduled interactions are not
+connected yet.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without

@@ -1,11 +1,12 @@
 import {Output,BufferTarget,StreamTarget,Mp4OutputFormat,WebMOutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
 import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
-import {validateScene} from './scene.js';
 import {exportPlan,frameSources,exportCamera} from './export-plan.js';
 import {mixExportSample,sceneAudioSources} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay} from './audio-delay.js';
+import {exportScene} from './export-source.js';
+import {InteractionPlayer} from './interaction-sequence.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
 const yieldBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -13,19 +14,20 @@ const png=canvas=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve
 
 export class RenderSession {
   constructor(scene,catalog,entries,imageAssets,sourceAspect,plan,signal){
-    this.scene=validateScene(scene);this.catalog=catalog;this.entries=entries;this.plan=plan;this.signal=signal;
+    this.scene=exportScene(scene,Boolean(plan.useSequence));this.catalog=catalog;this.entries=entries;this.plan=plan;this.signal=signal;
     this.canvas=document.createElement('canvas');this.canvas.width=plan.width;this.canvas.height=plan.height;
     this.stage=new Stage(this.canvas,{manual:true,transparent:Boolean(plan.transparent)});this.stage.imageAssets=new Map(imageAssets);
+    this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
     const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip;this.time=0;
   }
-  async initialize(){checkpoint(this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
+  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
     if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');
     checkpoint(this.signal);
     if(target<this.time-1e-9){await this.initialize();this.time=0;}
     let steps=0;
-    while(target-this.time>1e-9){const delta=Math.min(1/120,target-this.time);this.pendingTime=this.time+delta;this.stage.evaluate(delta);this.time+=delta;if(++steps%300===0){onAdvance?.(this.time);await yieldBrowser();checkpoint(this.signal);}}
-    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.stage.evaluate(0);this.stage.draw();
+    while(target-this.time>1e-9){const delta=Math.min(1/120,target-this.time);this.pendingTime=this.time+delta;this.stage.evaluate(delta);if(this.playbackError)throw this.playbackError;this.time+=delta;if(++steps%300===0){onAdvance?.(this.time);await yieldBrowser();checkpoint(this.signal);}}
+    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.stage.evaluate(0);if(this.playbackError)throw this.playbackError;this.stage.draw();
   }
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }
@@ -38,7 +40,7 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
     clips.push({...clip,scene:true,position,offset,sceneRate:1/plan.speed,repeat:false,gain:clip.gain*(session.scene.audio?.effectVolume??.8)});
   };
   for(const track of session.scene.audio?.effectTracks||[])add(track.name,track.category,track.time,0,track.group);
-  const listener=event=>{if(++eventCount>10000){error=new Error('Too many interaction sound events; export a shorter interval');return;}try{add(event.detail.name,event.detail.category,0,Math.max(0,session.pendingTime-(event.detail.lateness||0)),event.detail.group);}catch(reason){error=reason;}};
+  const listener=event=>{if(++eventCount>10000){error=new Error('Too many interaction sound events; export a shorter interval');return;}try{add(event.detail.name,event.detail.category,0,Math.max(0,(session.stage.sequenceTime??session.pendingTime)-(event.detail.lateness||0)),event.detail.group);}catch(reason){error=reason;}};
   session.stage.addEventListener('sound-request',listener);
   const end=Math.max(plan.end,plan.start+plan.segmentFrames/plan.fps*plan.speed);
   onProgress({phase:'analyzing-audio',frame:0,total:Math.ceil(end*120)});
@@ -48,6 +50,7 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
 }
 
 export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice}){
+  scene=exportScene(scene,Boolean(settings.useSequence));
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
   if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');

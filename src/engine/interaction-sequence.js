@@ -36,19 +36,20 @@ export class InteractionRecorder {
 }
 
 export class InteractionPlayer {
-  constructor(stage,sequence){this.stage=stage;this.sequence=validateSequence(sequence);this.elapsed=0;this.cursor=0;this.finished=false;}
+  constructor(stage,sequence,{continueAfterEnd=false}={}){this.stage=stage;this.sequence=validateSequence(sequence);this.elapsed=0;this.cursor=0;this.finished=false;this.continueAfterEnd=continueAfterEnd;}
   advance(delta,evaluate){
     if(!Number.isFinite(delta)||delta<0)throw new Error('Invalid playback step');
     if(this.finished){evaluate(delta);return;}
-    const end=Math.min(this.sequence.duration,this.elapsed+delta);
-    const advanceTo=target=>{while(this.elapsed<target){const step=Math.min(1/120,target-this.elapsed);evaluate(step);this.elapsed+=step;}this.elapsed=target;};
+    const target=this.elapsed+delta,end=Math.min(this.sequence.duration,target);
+    const timed=(at,action)=>{const previous=this.stage.sequenceTime;this.stage.sequenceTime=at;try{return action();}finally{if(previous===undefined)delete this.stage.sequenceTime;else this.stage.sequenceTime=previous;}};
+    const advanceTo=target=>{while(this.elapsed<target){const step=Math.min(1/120,target-this.elapsed);timed(this.elapsed+step,()=>evaluate(step));this.elapsed+=step;}this.elapsed=target;};
     while(this.cursor<this.sequence.actions.length&&this.sequence.actions[this.cursor].at<=end){
       const action=this.sequence.actions[this.cursor];advanceTo(action.at);
-      const result=this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true});
+      const result=timed(action.at,()=>this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
       if(!result.accepted||result.animation!==action.animation)throw new Error(`Sequence action ${this.cursor+1} could not be reproduced: ${result.reason||'animation changed'}`);
       this.cursor++;
     }
-    advanceTo(end);if(delta===0)evaluate(0);
-    if(end===this.sequence.duration){this.finished=true;this.stage.dispatchEvent(new CustomEvent('sequence-ended'));}
+    advanceTo(end);if(delta===0)timed(this.elapsed,()=>evaluate(0));
+    if(end===this.sequence.duration){this.finished=true;this.stage.dispatchEvent(new CustomEvent('sequence-ended'));if(this.continueAfterEnd&&target>end){timed(target,()=>evaluate(target-end));this.elapsed=target;}}
   }
 }
