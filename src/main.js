@@ -4,6 +4,7 @@ import {Stage} from './engine/stage.js';
 import {AudioBus} from './engine/audio.js';
 import {createEditor} from './editor.js';
 import {createExportPanel} from './export-panel.js';
+import {createSoundPanel} from './sound-panel.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
@@ -21,7 +22,7 @@ const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libr
 function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.standalone?'Standalone Spine preview · ':''}${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 async function selectPortrait(appearance){
-  if(editor.busy)return;request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();
+  if(editor.busy)return;request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();if(view==='gallery')audio?.stopAmbients();
   try{const old=[...stage.groups];editor.before();const group=await stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,request.signal);if(view==='gallery')for(const previous of old)stage.remove(previous.id);stage.fit();editor.choose(group);editor.changed();message('Static portrait loaded');}catch(error){if(error.name!=='AbortError')message(error.message);}
 }
 async function select(presentation) {
@@ -29,6 +30,7 @@ async function select(presentation) {
   request?.abort();request=new AbortController();
   audio?.stop();
   audio?.stopEffects();
+  if(view==='gallery')audio?.stopAmbients();
   message(`Loading ${presentation.id}…`);
   try {
     const old=[...stage.groups];editor.before();
@@ -71,15 +73,16 @@ function voicePanel(presentation) {
   const heading=document.createElement('h2');heading.textContent=`Voices (${rows.length})`;
   const language=document.createElement('select');language.setAttribute('aria-label','Voice track');
   for(const [value,text] of [['a_sound_voiceeff','Original track'],['a_sound_voiceeff_ch','Chinese track']]){const option=document.createElement('option');option.value=value;option.textContent=text;language.append(option);}
+  language.value=audio.language;language.onchange=()=>editor.mutate(()=>audio.language=language.value);
   const list=document.createElement('select');list.setAttribute('aria-label','Voice');
   for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=row.title;list.append(option);}
   const play=document.createElement('button');play.textContent='Play voice';play.disabled=!rows.length;
   play.onclick=async()=>{try{await audio.play(rows.find(row=>row.id===list.value),language.value);}catch(error){message(error.message);}};
   const stop=document.createElement('button');stop.textContent='Stop voice';stop.onclick=()=>audio.stop();
-  const volume=document.createElement('input');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value=audio.volume;volume.setAttribute('aria-label','Voice volume');volume.oninput=()=>audio.setVolume(Number(volume.value));
+  const volume=document.createElement('input');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value=audio.volume;volume.setAttribute('aria-label','Voice volume');volume.onchange=()=>editor.mutate(()=>audio.setVolume(Number(volume.value)));
   const subtitle=document.createElement('p');subtitle.id='subtitle';
   const effectsLabel=document.createElement('label');effectsLabel.textContent='Effect volume';
-  const effects=document.createElement('input');effects.type='range';effects.min='0';effects.max='1';effects.step='.05';effects.value=audio.effectVolume;effects.oninput=()=>audio.setEffectVolume(Number(effects.value));effectsLabel.append(effects);
+  const effects=document.createElement('input');effects.type='range';effects.min='0';effects.max='1';effects.step='.05';effects.value=audio.effectVolume;effects.onchange=()=>editor.mutate(()=>audio.setEffectVolume(Number(effects.value)));effectsLabel.append(effects);
   panel.append(heading,language,list,play,stop,volume,effectsLabel,subtitle);document.querySelector('.inspector').append(panel);
 }
 document.querySelector('#search').oninput=library;document.querySelector('#category').onchange=library;
@@ -105,7 +108,7 @@ stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed(
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
-  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-panel select')?.value||'a_sound_voiceeff';
+  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-panel select')?.value||audio.language;
   const suffix=({1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'})[kind];
   let name=explicit|| (suffix?`Voice_${skinId}_Touch_${suffix}`:'');if(!name)return;
   if(!audio.resolve(name,language)&&!explicit&&skinId.length===9)name=`Voice_${skinId.slice(0,-2)}_Touch_${suffix}`;
@@ -120,7 +123,7 @@ try {
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
-  if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;}
+  if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
   library();message(`${catalog.presentations.length} bundles · ${runtime.summary.parsed} parsed skeletons`);
   const recovered=await editor.init(catalog.presentations,runtime.entries);
   const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);

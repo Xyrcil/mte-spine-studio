@@ -2,7 +2,8 @@ import {Output,BufferTarget,StreamTarget,Mp4OutputFormat,WebMOutputFormat,Canvas
 import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
 import {validateScene} from './scene.js';
-import {exportPlan,frameSources,exportCamera,clipSample} from './export-plan.js';
+import {exportPlan,frameSources,exportCamera} from './export-plan.js';
+import {mixExportSample} from './export-audio.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
 const yieldBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -26,40 +27,47 @@ export class RenderSession {
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }
 
-export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip}){
+export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[]}){
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
   if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
   const session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal):null;
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
-  let output,source,audioSource,decoder,decoded,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
+  let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
+  const tracks=[];
   const audioCodec=plan.format==='mp4'?'aac':'opus';
   try{
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
     await session.initialize();if(head)await head.initialize();
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
-    if(audioClip&&['mp4','webm'].includes(plan.format)){
+    if((audioClip||ambientClips.length)&&['mp4','webm'].includes(plan.format)){
       if(!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
-      const response=await fetch(audioClip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
-      decoder=new AudioContext();decoded=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);
+      decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
+      for(const clip of [...(audioClip?[{...audioClip,scene:false}]:[]),...ambientClips.map(clip=>({...clip,scene:true}))]){
+        checkpoint(signal);let buffer=decoded.get(clip.url);
+        if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
+          buffer=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
+          if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);
+        }
+        tracks.push({...clip,channels:Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),sampleRate:buffer.sampleRate,options:{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1}});
+      }
     }
     if(['mp4','webm'].includes(plan.format)){
       const stream=fileWriter&&new WritableStream({write:chunk=>fileWriter.write(chunk),close:()=>{}});
       output=new Output({format:plan.format==='mp4'?new Mp4OutputFormat({fastStart:writable?'fragmented':false}):new WebMOutputFormat(),target:stream?new StreamTarget(stream,{chunked:true,chunkSize:4*1024*1024}):new BufferTarget()});
       let payloadBytes=0;
       source=new CanvasSource(canvas,{codec,quality,keyFrameInterval:2,onEncodedPacket:packet=>{payloadBytes+=packet.data.byteLength;if(!writable&&payloadBytes>384*1024*1024)zipError=new Error('Encoded file exceeds the memory budget; use direct file saving');}});output.addVideoTrack(source,{frameRate:plan.fps});
-      if(decoded){audioSource=new AudioBufferSource({codec:audioCodec,quality:new Quality({bitrate:128000})});output.addAudioTrack(audioSource);}
+      if(tracks.length){audioSource=new AudioBufferSource({codec:audioCodec,quality:new Quality({bitrate:128000})});output.addAudioTrack(audioSource);}
       await output.start();
       abortOutput=()=>{output.cancel().catch(()=>{});};signal?.addEventListener('abort',abortOutput,{once:true});checkpoint(signal);
     }else if(plan.format==='sequence'){
       zip=new Zip((error,data)=>{if(error){zipError=error;return;}zipBytes+=data.byteLength;if(zipBytes>0xffffffff){zipError=new Error('PNG sequence exceeds the ZIP size limit; export a shorter interval');return;}if(!writable&&zipBytes>384*1024*1024){zipError=new Error('PNG sequence exceeds the memory budget; use direct file saving');return;}if(fileWriter)writeQueue=writeQueue.then(()=>fileWriter.write(data));else chunks.push(data);});
     }
-    const audioChannels=decoded&&Array.from({length:decoded.numberOfChannels},(_,i)=>decoded.getChannelData(i));
-    const sampleOptions={offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1},sampleValues=[0,0];
+    const sampleValues=[0,0];
     async function addAudio(until){
       if(!audioSource)return;
       while(audioUntil<until-1e-9){checkpoint(signal);const count=Math.min(48000,Math.round((until-audioUntil)*48000));if(count<1)break;const buffer=new AudioBuffer({numberOfChannels:2,length:count,sampleRate:48000}),channels=[buffer.getChannelData(0),buffer.getChannelData(1)];
-        for(let sample=0;sample<count;sample++){const time=audioUntil+sample/48000,values=clipSample(audioChannels,decoded.sampleRate,time,sampleOptions,sampleValues),fade=Math.min(1,(plan.duration-time)/.005);channels[0][sample]=values[0]*fade;channels[1][sample]=values[1]*fade;}
+        for(let sample=0;sample<count;sample++){const values=mixExportSample(plan,audioUntil+sample/48000,tracks,sampleValues);channels[0][sample]=values[0];channels[1][sample]=values[1];}
         await audioSource.add(buffer);audioUntil+=count/48000;
       }
     }

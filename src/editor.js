@@ -9,7 +9,7 @@ export function createEditor(stage,message,onSelection){
   document.querySelector('.inspector h2').after(controls);
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
   const before=()=>{if(busy)return false;history.push(snapshot());return true;};
-  function changed(){refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function changed(){stage.dispatchEvent(new CustomEvent('scene-change'));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
@@ -42,7 +42,7 @@ export function createEditor(stage,message,onSelection){
       const reorder=direction=>{const index=stage.groups.indexOf(group),target=index+direction;if(target<0||target>=stage.groups.length)return;[stage.groups[index],stage.groups[target]]=[stage.groups[target],stage.groups[index]];};
       panel.append(button('Move forward',()=>reorder(1)),button('Move backward',()=>reorder(-1)));
       const duplicate=document.createElement('button');duplicate.textContent='Duplicate';duplicate.onclick=async()=>{
-        if(busy)return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);
+        if(busy)return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);const sound=scene.audio?.ambientTracks.find(track=>track.id===group.id);if(sound)scene.audio.ambientTracks.push({...sound,id:copy.id});
         try{await restore(scene);history.push(previous);choose(stage.groups.at(-1));changed();}catch(error){message(error.message);}
       };panel.append(duplicate);container.append(panel);
     }

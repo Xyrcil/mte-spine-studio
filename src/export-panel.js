@@ -17,7 +17,8 @@ export function createExportPanel(stage,editor,getData,message){
     <label>Voice track <select id="export-language"><option value="a_sound_voiceeff">Original track</option><option value="a_sound_voiceeff_ch">Chinese track</option></select></label><label>Video audio <select id="export-audio"><option value="">No audio</option></select></label>
     <div class="export-pair"><label>Audio offset (s) <input id="export-audio-offset" type="number" min="0" step=".1" value="0"></label><label>Audio volume <input id="export-audio-gain" type="number" min="0" max="2" step=".1" value="1"></label></div>
     <label class="check-label"><input id="export-audio-repeat" type="checkbox">Loop selected audio</label><label class="check-label"><input id="export-audio-speed" type="checkbox">Audio follows speed (changes pitch)</label>
-    <p>Selected voice only. Automatic interaction sounds are not included yet.</p>
+    <label class="check-label"><input id="export-ambient" type="checkbox" checked>Include captured ambient audio and music</label>
+    <p>Ambient audio follows the scene interval and loop mode. Speed changes its pitch; ping-pong reverses it. Automatic interaction sounds are not included yet.</p>
     <label class="check-label"><input id="export-direct" type="checkbox">Save directly to a local file</label>
     <div class="actions"><button id="preview-export">Preview first frame</button><button id="run-export">Export media</button><button id="cancel-export" disabled>Cancel</button></div>
     <p id="export-summary"></p><progress id="export-progress" max="1" value="0"></progress><p id="export-status" role="status"></p><canvas id="export-preview" aria-label="Export first frame preview"></canvas><p>Crossfade overlaps the start and end of the interval. Repeat does not guarantee a seamless join.</p>`;
@@ -43,7 +44,8 @@ export function createExportPanel(stage,editor,getData,message){
       if(!preview&&field('direct').checked){const handle=await window.showSaveFilePicker({suggestedName:filename});writable=await handle.createWritable();}
       if(preview){const ratio=options.width/options.height;options={...options,format:'png',width:Math.round(480*Math.min(1,ratio)),height:Math.round(480*Math.min(1,1/ratio)),scale:1};}
       const {exportMedia}=await import('./engine/export.js');
-      const result=await exportMedia({scene:captured,catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,sourceAspect,settings:options,signal:controller.signal,onProgress:progress,writable,audioClip:clip?{url:audio.base+clip.path}:null});
+      const ambientClips=!preview&&['mp4','webm'].includes(options.format)&&field('ambient').checked?audio?.exportAmbients(captured.audio,captured.objects)||[]:[];
+      const result=await exportMedia({scene:captured,catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,sourceAspect,settings:options,signal:controller.signal,onProgress:progress,writable,audioClip:clip&&!captured.audio?.muted?{url:audio.base+clip.path}:null,ambientClips});
       if(preview){const bitmap=await createImageBitmap(result.blob),canvas=field('preview');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();field('status').textContent='First frame preview ready';}
       else {if(result.blob){const url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}field('status').textContent=`Export complete: ${result.plan.frames} frames`;}return result;
     }catch(error){if(writable)await writable.abort().catch(()=>{});field('status').textContent=error.name==='AbortError'?'Export cancelled':error.message;message(field('status').textContent);}

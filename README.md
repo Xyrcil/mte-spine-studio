@@ -27,6 +27,10 @@ python3 tools/build_library.py --source /path/to/archive
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
 plays the available source and Chinese tracks with subtitles and volume control.
+Scene sound settings retain language, volumes, mute and per-object ambient
+resources, looping and playback positions. Ambient audio waits for user
+activation; hidden objects pause their sound and removed objects release it.
+Available background music can be assigned independently to scene objects.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
@@ -44,10 +48,14 @@ reference catalog portraits rather than embedding copies of game images.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,
-crop, speed, repeat/ping-pong/crossfade loops, optional voice audio, cancellation
+crop, speed, repeat/ping-pong/crossfade loops, optional voice audio, captured
+ambient audio and music, cancellation
 and direct file saving where the browser supports it. Crossfade overlaps the
 interval; repeat alone does not guarantee a seamless join. Video codecs are
 checked on the current device before encoding.
+Ambient audio follows the captured scene interval, speed and loop mode,
+including reversed ping-pong playback and crossfade mixing. Export respects
+captured mute, visibility, gains, positions and completed one-shot sounds.
 Other special controllers still need full behavioral validation. Effect
 rendering, complete voice routing, exported interaction audio, subtitle export,
 browser fallbacks, resource caching and public deployment remain in progress.
