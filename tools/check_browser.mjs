@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:900}});
@@ -9,7 +10,7 @@ await page.screenshot({path:'private/browser-first.png'});
 console.log(await page.evaluate(()=>({groups:window.mteStudio.groups.map(group=>({id:group.presentation.id,layers:group.layers.length})),status:document.querySelector('#status').textContent,camera:window.mteStudio.camera})));
 console.log({errors});
 await page.getByRole('button',{name:'Studio',exact:true}).click();
-await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();
+await selectAsset(page,'Spines/painting/301619402_spine');
 await page.waitForFunction(()=>window.mteStudio.groups.length===2,null,{timeout:60000});
 await page.screenshot({path:'private/browser-multi.png'});
 console.log(await page.evaluate(()=>({groups:window.mteStudio.groups.map(group=>({id:group.presentation.id,layers:group.layers.length,hotspots:group.presentation.hotspots.length}))})));

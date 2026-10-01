@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -5,7 +6,7 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
-  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();
+  await selectAsset(page,'Spines/painting/301619402_spine');
   await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   await page.evaluate(()=>{const stage=window.mteStudio,group=stage.groups[0];Object.assign(group,{x:2,y:1,scale:.85,rotation:19,flipX:true});stage.evaluate(0);stage.fit();});
   const initial=await page.evaluate(()=>{

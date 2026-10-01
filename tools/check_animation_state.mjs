@@ -1,10 +1,11 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
-  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
+  await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   const result=await page.evaluate(async()=>{
     const {Stage}=await import('/src/engine/stage.js'),{RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js');
     const original=window.mteStudio;original.paused=true;const group=original.groups[0],root=group.controllers[0];root.click(root.hotspots.find(hit=>hit.name==='HitArea_anim_anim2'));original.evaluate(.06);original.draw();

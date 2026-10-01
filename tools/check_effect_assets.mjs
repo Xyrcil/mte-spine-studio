@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 
@@ -32,7 +33,7 @@ try{
   });
   assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.uiImages,19);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
   for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
-    await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
+    await selectAsset(page,bundle);await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     const unavailable=await page.evaluate(()=>window.mteStudio.groups[0].effects.some(effect=>effect.reason));
     if(unavailable)assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
     else assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);

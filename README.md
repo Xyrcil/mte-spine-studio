@@ -78,8 +78,15 @@ without particle checkpoints start with the source prewarm. Additional unsupport
 explicitly instead of producing placeholder effects.
 
 The current implementation loads composite Spine presentations from real
-resources and joins their character names and voice tables. The voice panel
-plays the available source and Chinese tracks with subtitles and volume control.
+resources and joins their character names and voice tables. The artwork library
+groups characters and offers skin, story and
+portrait filters, source-name search, favorites and recently opened entries.
+All indexed display entries remain reachable through 24-item pages, including
+missing artwork and static previews. Favorites and recent entries stay on the
+device; unavailable browser storage does not prevent browsing. On small screens,
+the library opens as a bottom panel and closes after loading artwork.
+The voice panel plays the available source and Chinese tracks with subtitles
+and volume control.
 The searchable story voice library exposes every indexed source line, including
 missing-language and unvoiced entries. Story resources are not automatically
 assigned to artwork when the source provides no explicit association.

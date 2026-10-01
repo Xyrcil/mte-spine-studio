@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -5,7 +6,7 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],results=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await page.locator('#pause').click();
   for(const id of ['3013015','3014009','301601602']){
-    const bundle=`Spines/painting/${id}_spine`;await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
+    const bundle=`Spines/painting/${id}_spine`;await selectAsset(page,bundle);await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     assert.doesNotMatch(await page.locator('#details').textContent(),/Material ordering unavailable:/);assert.match(await page.locator('#details').textContent(),/Material segment visual verification pending/);
     const result=await page.evaluate(async()=>{
       const stage=window.mteStudio,group=stage.groups[0],layer=group.layers.find(layer=>layer.instance.renderOrderStatus==='mixed-queues'),{skeletonDrawSegments}=await import('/src/engine/material-order.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;

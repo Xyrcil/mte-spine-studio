@@ -1,10 +1,11 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
-  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
+  await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];stage.paused=true;window.mteAudio.pause();window.mteAudio.stopEffects();for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.reset();root.play('animation',0,true);stage.evaluate(0);});
   const original=await page.evaluate(()=>window.mteEditor.snapshot());await page.getByRole('button',{name:'Export',exact:true}).click();
   for(const [key,value] of [['width','160'],['height','120'],['fps','10'],['end','.8'],['loops','2']])await page.locator(`#export-${key}`).fill(value);

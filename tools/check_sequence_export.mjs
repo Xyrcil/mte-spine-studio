@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 
@@ -5,7 +6,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
-  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
+  await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   await page.evaluate(async()=>{
     const {InteractionRecorder}=await import('/src/engine/interaction-sequence.js'),stage=window.mteStudio,root=stage.groups[0].controllers[0];stage.paused=true;window.mteAudio.stopEffects();window.mteAudio.stop();root.reset();
     for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.play('animation',0,true);stage.evaluate(0);stage.fit();

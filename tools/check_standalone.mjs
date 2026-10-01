@@ -1,11 +1,12 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
-  await page.locator('#category').selectOption('story');assert.equal(await page.locator('#assets [data-asset]').count(),244);
-  await page.locator('[data-asset="Spines/story/gelei"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/story/gelei');
+  await page.locator('#category').selectOption('story');assert.equal(await page.locator('#library-count').textContent(),'244 artwork entries');assert.equal(await page.locator('#assets [data-asset]').count(),24);
+  await selectAsset(page,'Spines/story/gelei');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/story/gelei');
   assert.equal(await page.locator('#animation-preview').inputValue(),'stand');
   await page.locator('#animation-preview').selectOption('weixiao');assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].layers[0].state.getCurrent(0).animation.name),'weixiao');
   await page.waitForTimeout(400);await page.screenshot({path:'private/browser-story.png'});

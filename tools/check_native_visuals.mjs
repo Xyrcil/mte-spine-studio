@@ -1,3 +1,4 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 
@@ -5,7 +6,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await page.locator('#pause').click();
-  await page.locator('[data-asset="Spines/ui/Onsen"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen');
+  await selectAsset(page,'Spines/ui/Onsen');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen');
   assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);
   const result=await page.evaluate(async()=>{
     const stage=window.mteStudio,group=stage.groups[0],catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;

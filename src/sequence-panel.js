@@ -15,7 +15,7 @@ export function createSequencePanel(stage,editor,message){
     field('position').max=stage.sequence?.duration??0;
     updateTimeline(busy||editor.busy);
     field('status').textContent=recorder.active?`Recording · ${recorder.actions.length} clicks`:stage.sequencePlayer?'Replaying':stage.sequence?`${stage.sequence.actions.length} clicks · ${stage.sequence.duration.toFixed(2)} s${stage.sequence.initial.audio?'':' · No recorded sound settings; replay uses current preferences'}`:'No sequence recorded';
-    for(const selector of ['.library','#layers','.scene-controls:not(#sequence-panel)','#sound-panel','#voice-panel','#background','#speed','#fit']){const node=document.querySelector(selector);if(node)node.inert=(selector==='.scene-controls:not(#sequence-panel)'?active||loading:busy)||(selector==='.library'&&!document.querySelector('#export-panel').hidden);}
+    for(const selector of ['.library','#library-toggle','#layers','.scene-controls:not(#sequence-panel)','#sound-panel','#voice-panel','#background','#speed','#fit']){const node=document.querySelector(selector);if(node)node.inert=(selector==='.scene-controls:not(#sequence-panel)'?active||loading:busy)||(['.library','#library-toggle'].includes(selector)&&!document.querySelector('#export-panel').hidden);}
     for(const tab of document.querySelectorAll('[data-view]'))tab.disabled=busy;
   }
   function changeSequence(transform){

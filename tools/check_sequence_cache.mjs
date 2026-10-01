@@ -1,15 +1,16 @@
+import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true}),base=process.env.MTE_CACHE_TEST_URL||'http://127.0.0.1:4174/';
 try{
   const context=await browser.newContext({viewport:{width:1600,height:1200}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base);await page.waitForFunction(()=>window.mteStudio?.groups.length&&navigator.serviceWorker.controller,null,{timeout:60000});await page.locator('#pause').click();
-  await page.locator('[data-asset="Spines/painting/301301101_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301301101_spine');
+  await selectAsset(page,'Spines/painting/301301101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301301101_spine');
   const sequence=await page.evaluate(()=>{
     const stage=window.mteStudio,audio=window.mteAudio,recorder=window.mteSequence.recorder,root=stage.groups[0].controllers[0];audio.stop();audio.stopEffects();audio.language='a_sound_voiceeff_ch';stage.paused=true;root.reset();for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.play('animation',0,true);stage.evaluate(0);stage.fit();
     recorder.start();stage.evaluate(.137);const hit=root.hotspots.find(hit=>hit.event===2),result=stage.triggerInteraction(stage.groups[0].id,root.source.id,hit.id);if(!result.accepted)throw new Error(result.reason);stage.evaluate(.9);const sequence=recorder.stop();window.mteEditor.changed();return sequence;
   });
-  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
+  await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   await page.evaluate(async()=>{await window.mteCache.request('CLEAR');await window.mteCache.request('CONFIG',{enabled:false,budget:256*1048576});});
   const original=await page.evaluate(()=>window.mteEditor.snapshot());await page.locator('#cache-scene').click();await page.waitForFunction(()=>!document.querySelector('#cache-scene').disabled,null,{timeout:60000});assert.match(await page.locator('#cache-status').textContent(),/^\d+\.\d MiB cached/);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),original);
   const cachedVoice=await page.evaluate(async()=>{const url=new URL(window.mteAudio.base+window.mteAudio.resolve('Voice_301301101_Touch_Chest','a_sound_voiceeff_ch').path,location.origin).href,name=(await caches.keys()).find(name=>name.endsWith(':assets:1'));return Boolean(await (await caches.open(name)).match(url));});assert.equal(cachedVoice,true);
