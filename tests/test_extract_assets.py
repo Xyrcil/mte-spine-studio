@@ -53,6 +53,30 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(len(audit["components"]), 2)
         self.assertEqual(audit["errors"], [])
 
+    def test_ui_images_share_decoded_sprites_and_preserve_null_and_missing_resources(self):
+        pointer = lambda number: {"m_FileID": 0, "m_PathID": number}
+        image = SimpleNamespace(width=20, height=12, save=Mock())
+        sprite = SimpleNamespace(path_id=6, assets_file="shared", read=lambda: SimpleNamespace(image=image), read_typetree=lambda: {"m_Pivot": {"x": .5, "y": .5}, "m_PixelsToUnits": 100})
+        def component(number, resource):
+            data = {"m_GameObject": pointer(number + 100), "m_Color": {"r": 1, "g": 1, "b": 1, "a": .5}, "m_Sprite": pointer(resource), "m_Material": pointer(0), "m_Type": 0}
+            return SimpleNamespace(path_id=number, assets_file="bundle", type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: data)
+        with tempfile.TemporaryDirectory() as folder:
+            extractor = BundleExtractor(SimpleNamespace(objects=[component(1, 6), component(2, 6), component(3, 0), component(4, 99)]), Path(folder))
+            def resolve(owner, reference):
+                if reference["m_PathID"] != 6:
+                    raise ValueError("Missing sprite")
+                return sprite
+            extractor.resolve = resolve
+            rows = extractor.extract_images()
+            self.assertEqual(image.save.call_count, 1)
+            self.assertEqual(rows[0]["sprite"], rows[1]["sprite"])
+            self.assertEqual(rows[0]["data"]["m_Color"]["a"], .5)
+            self.assertEqual(rows[0]["gameObject"], "101")
+            self.assertEqual(rows[2]["status"], "extracted")
+            self.assertIsNone(rows[2]["sprite"])
+            self.assertEqual(rows[3]["status"], "partial")
+            self.assertEqual(rows[3]["errors"][0]["type"], "Sprite")
+
 
 if __name__ == "__main__":
     unittest.main()

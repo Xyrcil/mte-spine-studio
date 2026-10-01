@@ -80,6 +80,7 @@ class BundleExtractor:
         self.objects = list(environment.objects)
         self.references = []
         self.effect_textures = {}
+        self.effect_sprites = {}
 
     def tree(self, reader):
         key = (id(reader.assets_file), reader.path_id)
@@ -129,6 +130,47 @@ class BundleExtractor:
                 textures[name] = {**self.effect_texture(reader, value["m_Texture"]), "scale": value.get("m_Scale"), "offset": value.get("m_Offset")}
         return {"id": str(reader.path_id), "name": tree.get("m_Name", ""), "shader": shader_name, "properties": precise_references(settings), "textures": textures}
 
+    def effect_sprite(self, owner, pointer):
+        reader = self.resolve(owner, pointer)
+        key = (id(reader.assets_file), reader.path_id)
+        if key in self.effect_sprites:
+            return self.effect_sprites[key]
+        sprite = reader.read()
+        destination = self.output / "effects/sprites" / f"{reader.path_id}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        image = sprite.image
+        image.save(destination)
+        tree = self.tree(reader)
+        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": image.width, "height": image.height, "rect": tree.get("m_Rect"), "pivot": tree.get("m_Pivot"), "pixelsPerUnit": tree.get("m_PixelsToUnits")}
+        self.effect_sprites[key] = result
+        return result
+
+    def extract_images(self):
+        entries = []
+        for reader in self.objects:
+            if reader.type.name != "MonoBehaviour":
+                continue
+            try:
+                tree = self.tree(reader)
+            except Exception:
+                continue
+            if "m_Sprite" not in tree or "m_Color" not in tree:
+                continue
+            errors, sprite, material = [], None, None
+            for kind, pointer, resolve in [("Sprite", tree["m_Sprite"], self.effect_sprite), ("Material", tree.get("m_Material", {}), self.effect_material)]:
+                if not pointer.get("m_PathID"):
+                    continue
+                try:
+                    result = resolve(reader, pointer)
+                    if kind == "Sprite":
+                        sprite = result
+                    else:
+                        material = result
+                except Exception as error:
+                    errors.append({"type": kind, "reference": precise_references(pointer), "error": str(error)})
+            entries.append({"id": str(reader.path_id), "gameObject": str(tree["m_GameObject"]["m_PathID"]), "data": precise_references(tree), "sprite": sprite, "material": material, "status": "partial" if errors else "extracted", "errors": errors})
+        return entries
+
     def extract_effects(self):
         entries = []
         for reader in self.objects:
@@ -153,14 +195,7 @@ class BundleExtractor:
                     if not pointer.get("m_PathID"):
                         continue
                     try:
-                        sprite_reader = self.resolve(reader, pointer)
-                        sprite = sprite_reader.read()
-                        destination = self.output / "effects/sprites" / f"{sprite_reader.path_id}.png"
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        image = sprite.image
-                        image.save(destination)
-                        sprite_tree = self.tree(sprite_reader)
-                        sprites.append({"id": str(sprite_reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": image.width, "height": image.height, "rect": sprite_tree.get("m_Rect"), "pivot": sprite_tree.get("m_Pivot"), "pixelsPerUnit": sprite_tree.get("m_PixelsToUnits")})
+                        sprites.append(self.effect_sprite(reader, pointer))
                     except Exception as error:
                         errors.append({"type": "Sprite", "reference": precise_references(pointer), "error": str(error)})
                 entries.append({"id": str(reader.path_id), "gameObject": str(owner_id), "name": game_object.get("m_Name", ""), "data": precise_references(tree), "renderer": precise_references(renderer_tree), "materials": materials, "sprites": sprites, "status": "partial" if errors else "extracted", "errors": errors})
@@ -228,7 +263,7 @@ class BundleExtractor:
             except Exception as exc:
                 errors.append({"id": str(reader.path_id), "type": "SkeletonDataAsset", "error": str(exc)})
         write_json(self.output / "hierarchy.json", precise_references(hierarchy))
-        return {"skeletons": skeletons, "effects": self.extract_effects(), "errors": errors}
+        return {"skeletons": skeletons, "effects": self.extract_effects(), "images": self.extract_images(), "errors": errors}
 
 
 def main():
@@ -265,6 +300,12 @@ def main():
         for dependency in sorted((root / "Effects/Textures").rglob("*.dat")):
             effect_texture_paths[dependency.relative_to(root).with_suffix("").as_posix()] = dependency
     effect_texture_bytes = {}
+    dependency_paths = {}
+    for root in roots:
+        for path in root.rglob("*.dat"):
+            dependency_paths[path.relative_to(root).with_suffix("").as_posix().lower()] = path
+    dependency_records = {key.lower(): record for key, record in records.items()}
+    dependency_bytes = {}
     for key, path in list(candidates.items())[:args.limit]:
         destination = args.output / "spines" / key.removeprefix("Spines/")
         try:
@@ -275,6 +316,27 @@ def main():
             environment = UnityPy.load(raw)
             destination.mkdir(parents=True, exist_ok=True)
             extractor = BundleExtractor(environment, destination)
+            dependency_errors = []
+            if any(reader.type.name in ("Animation", "AnimationClip") for reader in extractor.objects):
+                pending = list(records[key].dependencies)
+                loaded = {key.lower()}
+                while pending:
+                    dependency_key = pending.pop().lower()
+                    if dependency_key in loaded:
+                        continue
+                    loaded.add(dependency_key)
+                    dependency_path = dependency_paths.get(dependency_key)
+                    record = dependency_records.get(dependency_key)
+                    if dependency_path is None or record is None:
+                        dependency_errors.append({"type": "Dependency", "resource": dependency_key, "error": "Resource file or decoding record is missing"})
+                        continue
+                    if dependency_key not in dependency_bytes:
+                        data = dependency_path.read_bytes()
+                        if not data.startswith(b"UnityFS"):
+                            data = decoder.xor_prefix(data, record.hash_code)
+                        dependency_bytes[dependency_key] = data
+                    environment.load_file(dependency_bytes[dependency_key], name=dependency_key, is_dependency=True)
+                    pending.extend(record.dependencies)
             if shader_path and any(reader.type.name == "ParticleSystem" for reader in extractor.objects):
                 if shader_bytes is None:
                     shader_bytes = shader_path.read_bytes()
@@ -289,9 +351,10 @@ def main():
                         effect_texture_bytes[dependency_key] = data
                     environment.load_file(effect_texture_bytes[dependency_key], name=dependency_key, is_dependency=True)
             result = extractor.extract()
+            result["errors"].extend(dependency_errors)
             result.update(id=key, path=destination.relative_to(args.output).as_posix())
             catalog = [item for item in catalog if item["id"] != key] + [result]
-            print(key, "skeletons", len(result["skeletons"]), "effects", len(result["effects"]), "errors", len(result["errors"]) + sum(len(effect["errors"]) for effect in result["effects"]), flush=True)
+            print(key, "skeletons", len(result["skeletons"]), "effects", len(result["effects"]), "images", len(result["images"]), "errors", len(result["errors"]) + sum(len(effect["errors"]) for effect in result["effects"] + result["images"]), flush=True)
         except Exception as exc:
             if not args.merge:
                 catalog.append({"id": key, "skeletons": [], "errors": [{"type": "Bundle", "error": str(exc)}]})

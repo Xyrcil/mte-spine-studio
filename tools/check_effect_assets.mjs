@@ -7,7 +7,13 @@ try{
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async()=>{
     const catalog=await fetch('/assets/presentations.json').then(response=>response.json()),entries=[],images=new Map();
+    let uiImages=0;
     for(const presentation of catalog.presentations){
+      for(const image of presentation.images||[]){
+        if(image.status!=='extracted'||image.errors.length||!image.transform)throw new Error(`Incomplete UI image: ${presentation.id}/${image.id}`);
+        if(image.sprite)images.set(`${presentation.path}/${image.sprite.path}`,image.sprite);
+        uiImages++;
+      }
       for(const effect of presentation.effects||[]){
         if(effect.status!=='extracted'||effect.errors.length||!effect.transform)throw new Error(`Incomplete effect: ${presentation.id}/${effect.id}`);
         for(const image of [...effect.sprites,...effect.materials.flatMap(material=>Object.values(material.textures))])images.set(`${presentation.path}/${image.path}`,image);
@@ -17,9 +23,10 @@ try{
     let nonempty=0;
     for(const [path,metadata] of images){const response=await fetch('/assets/'+path);if(!response.ok)throw new Error(`Image unavailable: ${path}`);const bitmap=await createImageBitmap(await response.blob());if(bitmap.width!==metadata.width||bitmap.height!==metadata.height)throw new Error('Effect image dimensions changed');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;if(pixels.some((value,index)=>index%4===3&&value>0))nonempty++;}
     const onsen=catalog.presentations.find(presentation=>presentation.id==='Spines/ui/Onsen');
-    return {entries,images:images.size,nonempty,smoke:onsen.visualAnimations.filter(row=>row.type==='AnimationClip').map(row=>row.data.m_Name),bundles:catalog.presentations.length};
+    if(onsen.images.length!==4||onsen.canvasGroups.length!==2||onsen.images.some(image=>image.sprite?.id!=='5562774842075140937'))throw new Error('Original smoke image or opacity components missing');
+    return {entries,images:images.size,uiImages,nonempty,smoke:onsen.visualAnimations.filter(row=>row.type==='AnimationClip').map(row=>row.data.m_Name),bundles:catalog.presentations.length};
   });
-  assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
+  assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.uiImages,19);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
   for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
     await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     const unavailable=await page.evaluate(()=>window.mteStudio.groups[0].effects.some(effect=>effect.reason));

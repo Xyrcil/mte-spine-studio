@@ -30,6 +30,11 @@ Use `--match <bundle-name> --merge` to refresh selected Spine bundles without
 dropping other catalogue entries. Particle extraction retains source modules,
 render settings, material parameters, shared shader/texture dependencies and
 sprite frames. Native animation components and sorting groups are also kept.
+Native animation bundles load their declared shared dependencies before image
+extraction. UI image components retain their original color, sprite and material
+references; CanvasGroup opacity and RectTransform data stay in the presentation.
+The recovered smoke images and skill-animation graphics are local resources,
+not generated replacements. Their native animation playback is still pending.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 Custom particle materials and native animation clips are not yet rendered;
