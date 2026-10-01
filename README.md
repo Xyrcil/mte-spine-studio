@@ -35,6 +35,11 @@ The current renderer does not yet play these additional effects; affected
 presentations say so in their details. Inspect original component coverage with
 `python3 tools/inspect_effects.py --source /path/to/archive`.
 
+Particle value sampling supports cubic and weighted tangents, held segments,
+constant/curve ranges and independent gradient color/opacity keys. It preserves
+authored HDR values and caller-supplied random factors. Particle simulation and
+drawing are still pending; the sampler alone does not render an effect.
+
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
 plays the available source and Chinese tracks with subtitles and volume control.
