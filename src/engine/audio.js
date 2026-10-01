@@ -31,6 +31,7 @@ export class AudioBus extends EventTarget {
   setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
   async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
     if(!voice?.resourceName)throw new Error('No voice resource selected');
+    voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{})},this.voiceRows),...voice};
     const clip=this.resolve(voice.resourceName,category);
     if(!clip)throw new Error('Audio resource is unavailable for this track');
     this.stop();const token=this.token;

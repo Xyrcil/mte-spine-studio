@@ -4,11 +4,12 @@ export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
   let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve();
   const snapshot=()=>stage.snapshot(name);
+  stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
   controls.innerHTML=`<label>Scene name <input id="scene-name" value="Untitled scene" maxlength="512"></label><div class="actions"><button id="undo">Undo</button><button id="redo">Redo</button></div><div class="actions"><button id="save-scene">Save locally</button><button id="download-scene">Export scene</button><button id="import-scene">Import scene</button></div><label>Saved scenes <select id="saved-scenes"><option value="">Choose a scene</option></select></label><div class="actions"><button id="load-scene">Load</button><button id="delete-scene">Delete saved</button></div><button id="add-background">Add background image</button><input id="scene-file" type="file" accept="application/json,.json" hidden><input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>`;
   document.querySelector('.inspector h2').after(controls);
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
-  const before=()=>{if(busy)return false;history.push(snapshot());return true;};
+  const before=()=>{if(busy||stage.recoveryPending)return false;history.push(snapshot());return true;};
   function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
@@ -50,6 +51,7 @@ export function createEditor(stage,message,onSelection){
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
   async function restore(scene){
+    if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
     try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
     catch(error){changed();throw error;}
@@ -75,5 +77,5 @@ export function createEditor(stage,message,onSelection){
     try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);history.push(previous);selectedId=group.id;changed();}
     catch(error){message(error.message);}finally{busy=false;refresh();}
   };
-  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return busy;},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
+  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return busy||stage.recoveryPending;},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }

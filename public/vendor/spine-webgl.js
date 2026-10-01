@@ -2217,11 +2217,11 @@ var spine;
 					success(new Uint8Array(request.response));
 				}
 				else {
-					error(request.status, request.responseText);
+					error(request.status, "Binary resource download failed");
 				}
 			};
 			request.onerror = function () {
-				error(request.status, request.responseText);
+				error(request.status, "Binary resource network error");
 			};
 			request.send();
 		};

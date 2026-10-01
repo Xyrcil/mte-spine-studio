@@ -21,6 +21,16 @@ export class Stage extends EventTarget {
     this.background = '#191b20';
     this.camera = {x:0,y:0,width:20,height:20};
     this.previous = performance.now();
+    this.contextEpoch=0;this.contextLost=false;this.recoveryPending=false;this.disposed=false;
+    this.contextAbort=new AbortController();
+    this.onContextLost=event=>{
+      event.preventDefault();this.contextEpoch++;
+      this.contextLost=true;this.recoveryPending=true;this.dispatchEvent(new CustomEvent('rendering-pausing'));
+      if(!this.recoverySnapshot){this.recoverySnapshot=this.captureScene?.()||this.snapshot();if(this.loadingRestorePaused!==undefined)this.recoverySnapshot.paused=this.loadingRestorePaused;this.recoveryInputs={presentations:this.groups.filter(group=>group.kind==='spine').map(group=>group.presentation),entries:this.groups.flatMap(group=>group.layers.map(layer=>layer.entry))};}
+      this.contextAbort.abort();this.paused=true;this.dispatchEvent(new CustomEvent('rendering-lost'));
+    };
+    this.onContextRestored=async()=>{this.contextLost=false;this.contextAbort=new AbortController();if(options.manual)return;try{await this.recoveryPromise;}catch{}if(this.recoveryPending&&!this.contextLost&&!this.disposed)this.recoverRendering().catch(()=>{});};
+    canvas.addEventListener('webglcontextlost',this.onContextLost);canvas.addEventListener('webglcontextrestored',this.onContextRestored);
     if(!options.manual){this.resizeObserver = new ResizeObserver(() => this.resize());this.resizeObserver.observe(canvas);this.frame = requestAnimationFrame(time => this.tick(time));}
   }
   resize() {
@@ -29,7 +39,10 @@ export class Stage extends EventTarget {
     this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
   }
   async add(presentation, entries, signal,detached=false) {
+    if(this.contextLost||this.disposed)throw new DOMException('Rendering context is unavailable','AbortError');
+    const contextEpoch=this.contextEpoch;
     const manager = new (s().webgl.AssetManager)(this.gl);
+    this.activeLoads=(this.activeLoads||0)+1;
     const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager, layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
     try {
       const base = `${import.meta.env.BASE_URL}assets/${presentation.path}/`;
@@ -67,11 +80,14 @@ export class Stage extends EventTarget {
       }
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
+        if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
+        if(manager.hasErrors())throw new Error(JSON.stringify(manager.getErrors()));
         if (signal?.aborted) throw new DOMException('Loading cancelled', 'AbortError');
         if (performance.now() > deadline) throw new Error('Resource loading timed out');
         await new Promise(resolve => setTimeout(resolve, 20));
       }
       if (signal?.aborted) throw new DOMException('Loading cancelled', 'AbortError');
+      if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
       if (manager.hasErrors()) throw new Error(JSON.stringify(manager.getErrors()));
       for (const layer of group.layers) {
         const loader = new (s().AtlasAttachmentLoader)(manager.get(layer.atlas));
@@ -101,7 +117,7 @@ export class Stage extends EventTarget {
     } catch (error) {
       manager.dispose();
       throw error;
-    }
+    }finally{this.activeLoads--;}
   }
   evaluate(delta) {
     for(const group of this.groups)for(const root of group.controllers||[])root.advance(delta);
@@ -133,13 +149,18 @@ export class Stage extends EventTarget {
     if(!detached){this.groups.push(group);this.fit();}return group;
   }
   async addImage(src,name='Background image',detached=false) {
-    const image=new Image();image.src=src;await image.decode();
+    const contextEpoch=this.contextEpoch,image=new Image(),signal=this.contextAbort?.signal;let timer,cancel;
+    this.activeLoads=(this.activeLoads||0)+1;
+    try{image.src=src;await Promise.race([image.decode(),new Promise((_resolve,reject)=>{cancel=()=>{image.src='';reject(new DOMException('Rendering context is unavailable','AbortError'));};signal?.addEventListener('abort',cancel,{once:true});timer=setTimeout(()=>{image.src='';reject(new Error('Image loading timed out'));},60000);if(signal?.aborted)cancel();})]);
+    if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
     const width=this.camera.width,height=width*image.naturalHeight/image.naturalWidth;
     const texture=new (s().webgl.GLTexture)(this.gl,image);
     const group={id:crypto.randomUUID(),kind:'image',src,name,texture,width,height,x:this.camera.x,y:this.camera.y,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[]};
     if(!detached)this.groups.unshift(group);return group;
+    }finally{clearTimeout(timer);if(cancel)signal?.removeEventListener('abort',cancel);this.activeLoads--;}
   }
   snapshot(name='Untitled scene') {
+    if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
     return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
@@ -147,8 +168,11 @@ export class Stage extends EventTarget {
     })};
   }
   async restore(scene,presentations,entries,signal) {
+    if(this.contextLost||this.disposed)throw new Error('Rendering context is unavailable');
+    const contextEpoch=this.contextEpoch;
     scene=validateScene(scene);
     const old=[...this.groups],camera={...this.camera},previousPaused=this.paused;this.paused=true;
+    this.loadingRestorePaused=previousPaused;
     const created=[];
     try {
       for(const row of scene.objects){
@@ -162,6 +186,7 @@ export class Stage extends EventTarget {
         }
       }
       if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
+      if(contextEpoch!==this.contextEpoch)throw new DOMException('Rendering was interrupted while loading','AbortError');
       scene.objects.forEach((row,index)=>{
         const group=created[index];
         if(group.kind==='image')return;
@@ -176,12 +201,28 @@ export class Stage extends EventTarget {
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
       this.draw();
-    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
+  }
+  recoverRendering(){
+    if(this.recoveryPromise)return this.recoveryPromise;
+    if(!this.recoveryPending)return Promise.resolve();
+    if(this.contextLost||this.gl.isContextLost())return Promise.reject(new Error('The browser has not restored rendering yet. Save the scene and retry later.'));
+    const epoch=this.contextEpoch;
+    this.recoveryPromise=(async()=>{
+      this.dispatchEvent(new CustomEvent('rendering-recovering'));
+      while(this.activeLoads){await new Promise(resolve=>setTimeout(resolve,20));if(epoch!==this.contextEpoch||this.disposed)throw new Error('Rendering was interrupted during recovery');}
+      for(const group of this.groups)this.release(group);this.groups=[];this.renderer.dispose();this.renderer=new (s().webgl.SceneRenderer)(this.canvas,this.gl);
+      await this.restore(this.recoverySnapshot,this.recoveryInputs.presentations,this.recoveryInputs.entries);
+      if(this.disposed||this.contextLost||epoch!==this.contextEpoch)throw new Error('Rendering was interrupted during recovery');
+      this.previous=performance.now();this.recoveryPending=false;this.recoverySnapshot=null;this.recoveryInputs=null;this.dispatchEvent(new CustomEvent('rendering-recovered'));
+    })().catch(error=>{if(!this.contextLost&&!this.disposed)this.dispatchEvent(new CustomEvent('rendering-recovery-error',{detail:error.message}));throw error;}).finally(()=>this.recoveryPromise=null);
+    return this.recoveryPromise;
   }
   release(group){if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
   interact(clientX,clientY){
+    if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
     if(this.paused)return {accepted:false,reason:'Playback is paused'};
     const {x,y}=this.screenToWorld(clientX,clientY);
     for(const group of [...this.groups].reverse())if(group.visible)for(const root of group.controllers||[]){const hit=root.hitAt(x,y);if(hit)return {...root.click(hit),group:group.id,hit:hit.id};}
@@ -212,6 +253,7 @@ export class Stage extends EventTarget {
     if (Number.isFinite(minX)) this.camera={x:(minX+maxX)/2,y:(minY+maxY)/2,width:Math.max(1,maxX-minX)*1.15,height:Math.max(1,maxY-minY)*1.15};
   }
   draw() {
+    if(this.contextLost||this.disposed)return;
     const {gl,renderer,canvas}=this;
     gl.viewport(0,0,canvas.width,canvas.height);
     const hex=this.background.replace('#','');
@@ -234,7 +276,7 @@ export class Stage extends EventTarget {
   }
   tick(time) {
     const delta=Math.min((time-this.previous)/1000,.1); this.previous=time;
-    this.evaluate(this.paused ? 0 : delta*this.speed); this.draw();
+    if(!this.recoveryPending){this.evaluate(this.paused ? 0 : delta*this.speed);this.draw();}
     this.frame=requestAnimationFrame(next => this.tick(next));
   }
   remove(id) {
@@ -243,6 +285,8 @@ export class Stage extends EventTarget {
     this.release(this.groups[index]); this.groups.splice(index,1);
   }
   dispose() {
+    this.contextAbort.abort();
+    this.disposed=true;this.canvas.removeEventListener('webglcontextlost',this.onContextLost);this.canvas.removeEventListener('webglcontextrestored',this.onContextRestored);
     cancelAnimationFrame(this.frame); this.resizeObserver?.disconnect();
     for (const group of this.groups) this.release(group);
     this.renderer.dispose();

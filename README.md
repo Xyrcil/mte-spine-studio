@@ -103,6 +103,12 @@ service-worker caching to avoid stale source files.
 For a project URL such as `/mte-studio/`, build with
 `MTE_BASE_PATH=/mte-studio/ npm run build`. Test offline behavior with a local
 preview of the production build, not the development server.
+Interactive rendering preserves a CPU scene checkpoint when WebGL is lost,
+pauses sound and rebuilds textures and draw resources after the browser restores
+the context. Failed recovery keeps the checkpoint available for scene export
+and manual retry. Animation mixes, poses and playback settings are retained;
+previously playing scenes resume without advancing through the interruption.
+Independent media exports stop on context loss instead of recording blank frames.
 Other special controllers still need full behavioral validation. Effect
 rendering, complete voice routing, scheduled interaction recording/replay,
 browser fallbacks and public deployment remain in progress.

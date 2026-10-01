@@ -20,11 +20,12 @@ export class RenderSession {
   }
   async initialize(){checkpoint(this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
+    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');
     checkpoint(this.signal);
     if(target<this.time-1e-9){await this.initialize();this.time=0;}
     let steps=0;
     while(target-this.time>1e-9){const delta=Math.min(1/120,target-this.time);this.pendingTime=this.time+delta;this.stage.evaluate(delta);this.time+=delta;if(++steps%300===0){onAdvance?.(this.time);await yieldBrowser();checkpoint(this.signal);}}
-    this.stage.evaluate(0);this.stage.draw();
+    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.stage.evaluate(0);this.stage.draw();
   }
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }

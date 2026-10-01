@@ -23,6 +23,14 @@ const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){descri
 window.mteEditor=editor;
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
 const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio}),message);window.mteCache=resourceCache;
+const renderingRetry=document.createElement('button');renderingRetry.id='rendering-retry';renderingRetry.textContent='Retry rendering';renderingRetry.hidden=true;document.querySelector('header').append(renderingRetry);
+let recoverySelection;
+stage.addEventListener('rendering-pausing',()=>audio?.pause());
+stage.addEventListener('rendering-lost',()=>{request?.abort();recoverySelection=editor.selected()?.id;audio?.pause();document.querySelector('.library').inert=true;renderingRetry.hidden=false;message('Rendering interrupted. The scene is retained; you can export its JSON while waiting for recovery.');});
+stage.addEventListener('rendering-recovering',()=>{renderingRetry.disabled=true;message('Restoring scene textures and animation state…');});
+stage.addEventListener('rendering-recovered',()=>{renderingRetry.disabled=false;renderingRetry.hidden=true;document.querySelector('.library').inert=view==='export';editor.choose(stage.groups.find(group=>group.id===recoverySelection)||stage.groups.at(-1));editor.changed();message('Rendering restored');});
+stage.addEventListener('rendering-recovery-error',event=>{renderingRetry.disabled=false;renderingRetry.hidden=false;message(`Rendering recovery failed: ${event.detail}. The scene can still be saved.`);});
+renderingRetry.onclick=()=>stage.recoverRendering().catch(error=>message(error.message));
 function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.standalone?'Standalone Spine preview · ':''}${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 async function selectPortrait(appearance){
