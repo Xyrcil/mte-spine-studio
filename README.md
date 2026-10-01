@@ -113,6 +113,13 @@ Other special controllers still need full behavioral validation. Effect
 rendering, complete voice routing, scheduled interaction recording/replay,
 browser fallbacks and public deployment remain in progress.
 
+The interaction sequence engine records accepted clicks against a captured
+initial scene using simulation time. Replay targets the original object,
+controller and region, splits evaluation at action timestamps and reports
+state divergence rather than skipping a failed action. Time-zero actions run
+once. The sequence editor, scene-file integration and scheduled voice/video
+export are not connected yet.
+
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without
 repeating successful work. Resource indexes retain the original names and

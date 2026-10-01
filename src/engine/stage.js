@@ -120,6 +120,13 @@ export class Stage extends EventTarget {
     }finally{this.activeLoads--;}
   }
   evaluate(delta) {
+    if(this.sequencePlayer){
+      try{this.sequencePlayer.advance(delta,value=>this.evaluateFrame(value));}
+      catch(error){this.sequencePlayer=null;this.paused=true;this.dispatchEvent(new CustomEvent('sequence-error',{detail:error.message}));}
+    }else this.evaluateFrame(delta);
+    if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
+  }
+  evaluateFrame(delta) {
     for(const group of this.groups)for(const root of group.controllers||[])root.advance(delta);
     for (const group of this.groups.filter(group=>group.kind==='spine')) for (const layer of group.layers) {
       const sk = layer.skeleton;
@@ -225,8 +232,19 @@ export class Stage extends EventTarget {
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
     if(this.paused)return {accepted:false,reason:'Playback is paused'};
     const {x,y}=this.screenToWorld(clientX,clientY);
-    for(const group of [...this.groups].reverse())if(group.visible)for(const root of group.controllers||[]){const hit=root.hitAt(x,y);if(hit)return {...root.click(hit),group:group.id,hit:hit.id};}
+    for(const group of [...this.groups].reverse())if(group.visible)for(const root of group.controllers||[]){const hit=root.hitAt(x,y);if(hit)return this.triggerInteraction(group.id,root.source.id,hit.id);}
     return {accepted:false,reason:'No interaction region here'};
+  }
+  triggerInteraction(groupId,controllerId,hitId,{replay=false}={}){
+    if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
+    if(this.sequencePlayer&&!replay)return {accepted:false,reason:'Stop sequence playback before interacting'};
+    const group=this.groups.find(group=>group.id===groupId&&group.visible);
+    const root=group?.controllers?.find(root=>root.source.id===controllerId);
+    const hit=root?.hotspots.find(hit=>hit.id===hitId&&group.isActiveTransform(hit.transform));
+    if(!hit)return {accepted:false,reason:'Interaction target is unavailable'};
+    const result={...root.click(hit),group:groupId,controller:controllerId,hit:hitId};
+    if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));
+    return result;
   }
   hitTest(clientX,clientY){
     const {x,y}=this.screenToWorld(clientX,clientY);
