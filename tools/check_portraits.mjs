@@ -18,7 +18,7 @@ try{
   await page.locator('#layers').getByRole('button',{name:'格蕾 · 原皮',exact:true}).click();
   await page.getByRole('button',{name:'Duplicate',exact:true}).click();await page.waitForFunction(()=>window.mteStudio.groups.length===3&&!window.mteEditor.busy);
   await page.getByRole('button',{name:'Pause',exact:true}).click();
-  const scene=await page.evaluate(()=>window.mteEditor.snapshot());assert.equal(scene.objects.filter(row=>row.asset).length,2);assert.ok(JSON.stringify(scene).length<100000);
+  const scene=await page.evaluate(()=>window.mteEditor.snapshot());assert.equal(scene.objects.filter(row=>row.asset).length,2);assert.ok(scene.objects.filter(row=>row.asset).every(row=>row.src===undefined));assert.equal(JSON.stringify(scene).includes('data:image/'),false);
   const broken=structuredClone(scene);broken.objects[0].x=999;broken.objects[2].asset='portraits/missing/1.png';
   await page.locator('#scene-file').setInputFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(broken))});await page.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('Import failed'));
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),scene);

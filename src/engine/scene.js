@@ -1,4 +1,5 @@
 import {validateInteraction} from './interaction.js';
+import {validateAnimation,validatePose} from './animation-state.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
@@ -21,11 +22,13 @@ export function validateScene(value) {
         if(layerIds.has(layer.id))throw new Error('Duplicate layer ID');layerIds.add(layer.id);
         if(!Array.isArray(layer.tracks)||layer.tracks.length>32)throw new Error('Invalid animation tracks');
         const trackIds=new Set();
-        return {id:text(layer.id,'layer ID'),active:layer.active!==false,tracks:layer.tracks.map(track=>{
+        const result={id:text(layer.id,'layer ID'),active:layer.active!==false,tracks:layer.tracks.map(track=>{
           const index=finite(track.index,'track index');if(index<0||index>31||!Number.isInteger(index)||trackIds.has(index))throw new Error('Invalid track index');trackIds.add(index);
           const time=finite(track.time,'animation time');if(time<0)throw new Error('Animation time must be positive');
           return {index,name:text(track.name,'animation name'),time,loop:Boolean(track.loop),timeScale:finite(track.timeScale,'track speed')};
         })};
+        if(layer.animationState!==undefined||layer.pose!==undefined){result.animationState=validateAnimation(layer.animationState);result.pose=validatePose(layer.pose);const heads=result.animationState.tracks.flatMap((id,index)=>id===null?[]:[{index,entry:result.animationState.entries[id]}]);if(heads.length!==result.tracks.length||heads.some(({index,entry})=>!result.tracks.some(track=>track.index===index&&track.name===entry.name&&track.time===entry.trackTime&&track.loop===entry.loop&&track.timeScale===entry.timeScale)))throw new Error('Animation checkpoint disagrees with scene tracks');}
+        return result;
       });
     } else {
       if(object.asset!==undefined){if(typeof object.asset!=='string'||!/^portraits\/[\w.-]+\/-?\d+\.png$/.test(object.asset))throw new Error('Invalid portrait asset reference');result.asset=object.asset;}

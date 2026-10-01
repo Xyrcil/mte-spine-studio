@@ -30,6 +30,9 @@ plays the available source and Chinese tracks with subtitles and volume control.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
+Animation checkpoints also retain active mix chains, queued tracks, event
+cursors, rotation history, attachments, deformation, draw order and pose state.
+Paused redraws do not reapply animations. Older track-only scenes remain readable.
 Interaction playback uses source colliders, moving-bone bindings, coordinated
 animation tracks and timeline events. Controller state is stored with scenes.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
