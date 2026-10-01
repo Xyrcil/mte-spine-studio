@@ -40,7 +40,10 @@ for (const bundle of extraction.bundles) {
   }
   const standalone=instances.length===0&&skeletons.size>0;
   if(standalone)instances.push(...standaloneInstances([...skeletons.values()]));
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  const effects=(bundle.effects||[]).map(effect=>({...effect,transform:transforms.get(effect.gameObject)?.id}));
+  const visualAnimations=nodes.filter(node=>['Animation','AnimationClip'].includes(node.type));
+  const sortingGroups=nodes.filter(node=>node.type==='SortingGroup');
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, visualAnimations, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import re
 import struct
 import sys
@@ -22,11 +23,13 @@ def load_decoder(source: Path):
 def write_json(path: Path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.write_text(json.dumps(precise_references(data), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     temporary.replace(path)
 
 
 def precise_references(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else "Infinity" if value > 0 else "-Infinity"
     if isinstance(value, dict):
         return {key: str(item) if key == "m_PathID" else precise_references(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -76,6 +79,7 @@ class BundleExtractor:
         self.trees = {}
         self.objects = list(environment.objects)
         self.references = []
+        self.effect_textures = {}
 
     def tree(self, reader):
         key = (id(reader.assets_file), reader.path_id)
@@ -97,12 +101,79 @@ class BundleExtractor:
         texture = self.resolve(material, envs["_MainTex"]["m_Texture"])
         return texture.read(), tree
 
+    def effect_texture(self, owner, pointer):
+        reader = self.resolve(owner, pointer)
+        key = (id(reader.assets_file), reader.path_id)
+        if key in self.effect_textures:
+            return self.effect_textures[key]
+        texture = reader.read()
+        destination = self.output / "effects/textures" / f"{reader.path_id}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        texture.image.save(destination)
+        tree = self.tree(reader)
+        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace")}
+        self.effect_textures[key] = result
+        return result
+
+    def effect_material(self, owner, pointer):
+        reader = self.resolve(owner, pointer)
+        tree = self.tree(reader)
+        shader = self.tree(self.resolve(reader, tree["m_Shader"]))
+        shader_name = shader.get("m_Name") or shader.get("m_ParsedForm", {}).get("m_Name") or shader.get("m_ParsedForm", {}).get("name", "")
+        settings = tree.get("m_SavedProperties", {})
+        envs = settings.get("m_TexEnvs", [])
+        envs = dict(envs) if isinstance(envs, list) else envs
+        textures = {}
+        for name, value in envs.items():
+            if value.get("m_Texture", {}).get("m_PathID"):
+                textures[name] = {**self.effect_texture(reader, value["m_Texture"]), "scale": value.get("m_Scale"), "offset": value.get("m_Offset")}
+        return {"id": str(reader.path_id), "name": tree.get("m_Name", ""), "shader": shader_name, "properties": precise_references(settings), "textures": textures}
+
+    def extract_effects(self):
+        entries = []
+        for reader in self.objects:
+            if reader.type.name != "ParticleSystem":
+                continue
+            errors = []
+            try:
+                tree = self.tree(reader)
+                owner_id = tree["m_GameObject"]["m_PathID"]
+                owner = self.resolve(reader, tree["m_GameObject"])
+                game_object = self.tree(owner)
+                renderer = next((obj for obj in self.objects if obj.type.name == "ParticleSystemRenderer" and self.tree(obj).get("m_GameObject", {}).get("m_PathID") == owner_id), None)
+                renderer_tree = self.tree(renderer) if renderer else None
+                materials, sprites = [], []
+                for pointer in (renderer_tree or {}).get("m_Materials", []):
+                    try:
+                        materials.append(self.effect_material(renderer, pointer))
+                    except Exception as error:
+                        errors.append({"type": "Material", "reference": precise_references(pointer), "error": str(error)})
+                for item in tree.get("UVModule", {}).get("sprites", []):
+                    pointer = item.get("sprite", item)
+                    if not pointer.get("m_PathID"):
+                        continue
+                    try:
+                        sprite_reader = self.resolve(reader, pointer)
+                        sprite = sprite_reader.read()
+                        destination = self.output / "effects/sprites" / f"{sprite_reader.path_id}.png"
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        image = sprite.image
+                        image.save(destination)
+                        sprite_tree = self.tree(sprite_reader)
+                        sprites.append({"id": str(sprite_reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": image.width, "height": image.height, "rect": sprite_tree.get("m_Rect"), "pivot": sprite_tree.get("m_Pivot"), "pixelsPerUnit": sprite_tree.get("m_PixelsToUnits")})
+                    except Exception as error:
+                        errors.append({"type": "Sprite", "reference": precise_references(pointer), "error": str(error)})
+                entries.append({"id": str(reader.path_id), "gameObject": str(owner_id), "name": game_object.get("m_Name", ""), "data": precise_references(tree), "renderer": precise_references(renderer_tree), "materials": materials, "sprites": sprites, "status": "partial" if errors else "extracted", "errors": errors})
+            except Exception as error:
+                entries.append({"id": str(reader.path_id), "status": "failed", "errors": [{"type": "ParticleSystem", "error": str(error)}]})
+        return entries
+
     def extract(self):
         skeletons = []
         hierarchy = []
         errors = []
         for reader in self.objects:
-            if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript"):
+            if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "CanvasGroup", "SortingGroup"):
                 try:
                     hierarchy.append({"id": str(reader.path_id), "type": reader.type.name, "data": self.tree(reader)})
                 except Exception as exc:
@@ -157,7 +228,7 @@ class BundleExtractor:
             except Exception as exc:
                 errors.append({"id": str(reader.path_id), "type": "SkeletonDataAsset", "error": str(exc)})
         write_json(self.output / "hierarchy.json", precise_references(hierarchy))
-        return {"skeletons": skeletons, "errors": errors}
+        return {"skeletons": skeletons, "effects": self.extract_effects(), "errors": errors}
 
 
 def main():
@@ -166,7 +237,9 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
     parser.add_argument("--limit", type=int)
     parser.add_argument("--match", default="")
+    parser.add_argument("--merge", action="store_true", help="Update matching bundle records without dropping other extracted bundles")
     args = parser.parse_args()
+    sys.dont_write_bytecode = True
     source = args.source.resolve()
     sys.path.insert(0, str(source / "tools/python-libs"))
     import UnityPy
@@ -184,7 +257,14 @@ def main():
             key = path.relative_to(root).with_suffix("").as_posix()
             if args.match in key:
                 candidates[key] = path
-    catalog = []
+    catalog = json.loads((args.output / "extraction.json").read_text())["bundles"] if args.merge and (args.output / "extraction.json").exists() else []
+    shader_path = next((root / "Shaders.dat" for root in reversed(roots) if (root / "Shaders.dat").exists()), None)
+    shader_bytes = None
+    effect_texture_paths = {}
+    for root in roots:
+        for dependency in sorted((root / "Effects/Textures").rglob("*.dat")):
+            effect_texture_paths[dependency.relative_to(root).with_suffix("").as_posix()] = dependency
+    effect_texture_bytes = {}
     for key, path in list(candidates.items())[:args.limit]:
         destination = args.output / "spines" / key.removeprefix("Spines/")
         try:
@@ -194,12 +274,27 @@ def main():
                 raw = decoder.xor_prefix(raw, record.hash_code)
             environment = UnityPy.load(raw)
             destination.mkdir(parents=True, exist_ok=True)
-            result = BundleExtractor(environment, destination).extract()
+            extractor = BundleExtractor(environment, destination)
+            if shader_path and any(reader.type.name == "ParticleSystem" for reader in extractor.objects):
+                if shader_bytes is None:
+                    shader_bytes = shader_path.read_bytes()
+                    if not shader_bytes.startswith(b"UnityFS"):
+                        shader_bytes = decoder.xor_prefix(shader_bytes, records["Shaders"].hash_code)
+                environment.load_file(shader_bytes, name="Shaders.dat", is_dependency=True)
+                for dependency_key, dependency_path in effect_texture_paths.items():
+                    if dependency_key not in effect_texture_bytes:
+                        data = dependency_path.read_bytes()
+                        if not data.startswith(b"UnityFS"):
+                            data = decoder.xor_prefix(data, records[dependency_key].hash_code)
+                        effect_texture_bytes[dependency_key] = data
+                    environment.load_file(effect_texture_bytes[dependency_key], name=dependency_key, is_dependency=True)
+            result = extractor.extract()
             result.update(id=key, path=destination.relative_to(args.output).as_posix())
-            catalog.append(result)
-            print(key, "skeletons", len(result["skeletons"]), "errors", len(result["errors"]), flush=True)
+            catalog = [item for item in catalog if item["id"] != key] + [result]
+            print(key, "skeletons", len(result["skeletons"]), "effects", len(result["effects"]), "errors", len(result["errors"]) + sum(len(effect["errors"]) for effect in result["effects"]), flush=True)
         except Exception as exc:
-            catalog.append({"id": key, "skeletons": [], "errors": [{"type": "Bundle", "error": str(exc)}]})
+            if not args.merge:
+                catalog.append({"id": key, "skeletons": [], "errors": [{"type": "Bundle", "error": str(exc)}]})
             print(key, str(exc), flush=True)
         write_json(args.output / "extraction.json", {"schema": 1, "bundles": catalog})
 

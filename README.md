@@ -26,6 +26,15 @@ python3 tools/extract_portraits.py --source /path/to/archive
 python3 tools/build_library.py --source /path/to/archive
 ```
 
+Use `--match <bundle-name> --merge` to refresh selected Spine bundles without
+dropping other catalogue entries. Particle extraction retains source modules,
+render settings, material parameters, shared shader/texture dependencies and
+sprite frames. Native animation components and sorting groups are also kept.
+Infinite curve tangents are encoded as explicit strings in valid JSON.
+The current renderer does not yet play these additional effects; affected
+presentations say so in their details. Inspect original component coverage with
+`python3 tools/inspect_effects.py --source /path/to/archive`.
+
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
 plays the available source and Chinese tracks with subtitles and volume control.

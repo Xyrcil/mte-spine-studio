@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
+  const result=await page.evaluate(async()=>{
+    const catalog=await fetch('/assets/presentations.json').then(response=>response.json()),entries=[],images=new Map();
+    for(const presentation of catalog.presentations){
+      for(const effect of presentation.effects||[]){
+        if(effect.status!=='extracted'||effect.errors.length||!effect.transform)throw new Error(`Incomplete effect: ${presentation.id}/${effect.id}`);
+        for(const image of [...effect.sprites,...effect.materials.flatMap(material=>Object.values(material.textures))])images.set(`${presentation.path}/${image.path}`,image);
+        entries.push({bundle:presentation.id,name:effect.name,sprites:effect.sprites.length,shader:effect.materials[0]?.shader,transform:effect.transform});
+      }
+    }
+    let nonempty=0;
+    for(const [path,metadata] of images){const response=await fetch('/assets/'+path);if(!response.ok)throw new Error(`Image unavailable: ${path}`);const bitmap=await createImageBitmap(await response.blob());if(bitmap.width!==metadata.width||bitmap.height!==metadata.height)throw new Error('Effect image dimensions changed');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;if(pixels.some((value,index)=>index%4===3&&value>0))nonempty++;}
+    const onsen=catalog.presentations.find(presentation=>presentation.id==='Spines/ui/Onsen');
+    return {entries,images:images.size,nonempty,smoke:onsen.visualAnimations.filter(row=>row.type==='AnimationClip').map(row=>row.data.m_Name),bundles:catalog.presentations.length};
+  });
+  assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
+  for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
+    await page.locator(`[data-asset="${bundle}"]`).click();await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
+    assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
+  }
+  assert.deepEqual(errors,[]);console.log('Effect resource checks passed: five native particle systems, resolved dependencies, decoded sprite/texture pixels, preserved smoke clip and explicit rendering status',result);
+}finally{await browser.close();}
