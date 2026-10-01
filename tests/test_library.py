@@ -3,10 +3,21 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits
+from build_library import join_portraits, hot_spring_roles, join_hot_springs
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_hot_spring_pools_preserve_order_missing_references_and_source_levels(self):
+        roles = hot_spring_roles([{"Id": "1", "Skin": "skin", "Spine": "onsen_spine", "SpineSound": "water"}], [{"id": "1", "level": "2", "Conversation": "12, 11,missing"}, {"id": "1", "level": "1", "Conversation": "11"}, {"id": "other", "level": "1", "Conversation": "99"}])
+        self.assertEqual([pool["level"] for pool in roles[0]["levels"]], [1, 2])
+        self.assertEqual(roles[0]["levels"][1]["voiceIds"], ["12", "11", "missing"])
+        rows = [{"bundle": "Spines/painting/onsen_spine"}, {"bundle": "Spines/painting/onsen_spine_hx"}, {"bundle": "Spines/painting/unknown"}]
+        join_hot_springs(rows, roles, {"1": "Character"})
+        self.assertEqual(rows[0]["hotSpringRoleId"], "1")
+        self.assertEqual(rows[1]["characterName"], "Character")
+        self.assertNotIn("characterId", rows[2])
+        self.assertNotIn("ambientSound", rows[0])
+
     def test_static_preview_preserves_missing_spine_status(self):
         rows = [{"id": "role", "bundle": "Spines/painting/role", "status": "not-extracted", "portraitResource": "UI/Image/lihui/role"}]
         sprite = {"id": "1", "name": "role", "path": "portraits/role/1.png"}

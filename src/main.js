@@ -43,6 +43,7 @@ function describe(group){
   const gaps=(group.controllers||[]).flatMap(root=>root.missingAnimations());
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${group.presentation.hotspots.length} interaction regions`];
+  if(libraryData?.appearances.some(row=>row.bundle===group.presentation.id&&row.hotSpringRoleId)&&!group.controllers.length)parts.push('Hot spring click behavior unavailable in this standalone asset');
   if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
   if(effects)parts.push(`Additional effects unavailable: ${effects}`);
   if(group.effects?.some(effect=>effect.verification))parts.push('Effect visual verification pending');

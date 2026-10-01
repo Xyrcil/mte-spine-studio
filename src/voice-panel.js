@@ -1,4 +1,4 @@
-import {voiceCatalog} from './engine/voice-catalog.js';
+import {voiceCatalog,hotSpringRole} from './engine/voice-catalog.js';
 
 export function createVoicePanel(presentation,library,audio,editor,message){
   document.querySelector('#voice-panel')?.remove();if(!audio)return;
@@ -6,17 +6,24 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   panel.innerHTML=`<h2 id="voice-count">Voices</h2><label>Voice library<select id="voice-scope"><option value="scene">Selected character / skin</option><option value="story">All story voices</option></select></label><label>Search voices<input id="voice-search" type="search" placeholder="Subtitle, resource or ID"></label><label>Voice track<select id="voice-language" aria-label="Voice track"><option value="a_sound_voiceeff">Original track</option><option value="a_sound_voiceeff_ch">Chinese track</option></select></label><label>Voice<select id="voice-list" aria-label="Voice"></select></label><p id="voice-availability"></p><div class="actions"><button id="play-voice">Play voice</button><button id="stop-voice">Stop voice</button></div><label>Voice volume<input id="voice-volume" aria-label="Voice volume" type="range" min="0" max="1" step=".05"></label><label>Effect volume<input id="effect-volume" type="range" min="0" max="1" step=".05"></label><p id="subtitle" aria-live="polite"></p><p>Story lines are listed by source resource. Chapter and artwork associations are not inferred.</p>`;
   document.querySelector('.inspector').append(panel);
   const field=id=>panel.querySelector(`#${id}`),language=field('voice-language'),list=field('voice-list');let rows=[];
+  const role=hotSpringRole(library,presentation),selectedGroup=()=>{const group=editor.selected();return group&&(presentation.appearanceId?group.appearanceId===presentation.appearanceId:group.presentation?.id===presentation.id)?group:null;};
+  const levelLabel=document.createElement('label');levelLabel.textContent='Hot spring conversation level';const level=document.createElement('select');level.id='hot-spring-level';levelLabel.append(level);field('voice-scope').parentElement.after(levelLabel);
+  if(role){field('voice-scope').append(new Option('Hot spring conversations','hot-spring'));field('voice-scope').value='hot-spring';for(const pool of role.levels)level.append(new Option(`Level ${pool.level}`,String(pool.level)));level.value=String(selectedGroup()?.hotSpringLevel??1);}
+  const sourceNote=document.createElement('p');sourceNote.id='hot-spring-note';sourceNote.textContent='Conversation pools follow the source level tables. This standalone artwork has no extracted click regions; voice playback here is a manual preview.';levelLabel.after(sourceNote);
+  const sourceSound=document.createElement('button');sourceSound.id='hot-spring-sound';sourceSound.textContent='Preview source sound';sourceNote.after(sourceSound);const sound=role?.ambientSound&&audio.soundInfo(role.ambientSound);sourceSound.disabled=!sound?.clip;
+  sourceSound.onclick=async()=>{try{await audio.playEffect(role.ambientSound,sound.category,0,true,selectedGroup()?.id);editor.changed({audioOnly:true});}catch(error){message(error.message);}};
   language.value=audio.language;field('voice-volume').value=audio.volume;field('effect-volume').value=audio.effectVolume;
   function selection(){return rows.find(row=>row.id===list.value);}
   function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value);field('play-voice').disabled=!clip;field('voice-availability').textContent=row?clip?'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices';}
-  function refresh(){const previous=list.value;rows=voiceCatalog(library,[presentation],field('voice-scope').value,field('voice-search').value);list.replaceChildren();
+  function refresh(){const previous=list.value;levelLabel.hidden=sourceNote.hidden=sourceSound.hidden=field('voice-scope').value!=='hot-spring';if(selectedGroup()?.hotSpringLevel!==undefined)level.value=String(selectedGroup().hotSpringLevel);rows=voiceCatalog(library,[{...presentation,hotSpringLevel:Number(level.value)||1}],field('voice-scope').value,field('voice-search').value);list.replaceChildren();
     for(const row of rows){const option=new Option(`${row.title}${audio.resolve(row.resourceName,language.value)?'':' · Missing track'}`,row.id);list.append(option);}
     if(rows.some(row=>row.id===previous))list.value=previous;else{const first=rows.find(row=>audio.resolve(row.resourceName,language.value));if(first)list.value=first.id;}
     field('voice-count').textContent=`Voices (${rows.length})`;status();
   }
+  level.onchange=()=>{const group=selectedGroup(),value=Number(level.value);if(group)editor.mutate(()=>group.hotSpringLevel=value);refresh();};
   field('voice-scope').onchange=refresh;field('voice-search').oninput=refresh;list.onchange=status;
   language.onchange=()=>{editor.mutate(()=>audio.language=language.value);refresh();};
-  field('play-voice').onclick=async()=>{try{const group=editor.selected(),matches=group&&(presentation.appearanceId?group.appearanceId===presentation.appearanceId:group.presentation?.id===presentation.id);await audio.play(selection(),language.value,{group:field('voice-scope').value==='scene'&&matches?group.id:''});}catch(error){message(error.message);}};
+  field('play-voice').onclick=async()=>{try{const group=selectedGroup();await audio.play(selection(),language.value,{group:field('voice-scope').value!=='story'&&group?group.id:''});}catch(error){message(error.message);}};
   field('stop-voice').onclick=()=>audio.stop();
   field('voice-volume').onchange=event=>editor.mutate(()=>audio.setVolume(Number(event.target.value)));
   field('effect-volume').onchange=event=>editor.mutate(()=>audio.setEffectVolume(Number(event.target.value)));

@@ -87,6 +87,13 @@ device; unavailable browser storage does not prevent browsing. On small screens,
 the library opens as a bottom panel and closes after loading artwork.
 The voice panel plays the available source and Chinese tracks with subtitles
 and volume control.
+Hot spring artwork exposes the source conversation pools for six roles and
+five levels, including their alternate voice resources. Conversation level is
+an object-level preview setting retained by scenes, undo and duplication; no
+account progress is read. The source sound can also be previewed manually.
+These standalone bundles do not contain extracted click regions, so their
+original hot spring click behavior remains marked unavailable rather than
+being replaced with arbitrary canvas clicks.
 The searchable story voice library exposes every indexed source line, including
 missing-language and unvoiced entries. Story resources are not automatically
 assigned to artwork when the source provides no explicit association.

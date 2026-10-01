@@ -74,6 +74,10 @@ test('sequence export selects recorded speed and objects without mutating the ed
   assert.equal(selected.speed,1);assert.equal(selected.objects.length,1);assert.equal(original.objects.length,0);
   assert.equal(exportScene(original).speed,2);assert.throws(()=>exportScene(initial,true),/interaction sequence/);
 });
+test('saved objects and recorded initial scenes retain validated conversation levels',()=>{
+  const scene=structuredClone(initial);scene.objects[0].hotSpringLevel=5;assert.equal(validateScene(scene).objects[0].hotSpringLevel,5);assert.equal(validateSequence({...sequence(),initial:scene}).initial.objects[0].hotSpringLevel,5);
+  for(const level of [0,6,1.5,NaN,'2']){scene.objects[0].hotSpringLevel=level;assert.throws(()=>validateScene(scene),/hot spring level/);}
+});
 test('export replay advances the remainder beyond the final sequence timestamp',()=>{
   const stage=new FakeStage(),player=new InteractionPlayer(stage,sequence(),{continueAfterEnd:true});let elapsed=0;
   player.advance(1.1,delta=>elapsed+=delta);assert.ok(Math.abs(elapsed-1.1)<1e-10);assert.equal(player.finished,true);assert.equal(stage.calls.length,3);

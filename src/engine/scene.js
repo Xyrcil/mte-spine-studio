@@ -17,6 +17,7 @@ export function validateScene(value) {
     if(!['spine','image'].includes(object.kind))throw new Error('Unsupported object type');
     const result={id,kind:object.kind,name:text(object.name||'','object name'),x:finite(object.x,'x'),y:finite(object.y,'y'),scale:finite(object.scale,'scale'),rotation:finite(object.rotation,'rotation'),opacity:finite(object.opacity,'opacity'),flipX:Boolean(object.flipX),flipY:Boolean(object.flipY),visible:object.visible!==false,locked:Boolean(object.locked)};
     if(result.scale<=0||result.opacity<0||result.opacity>1)throw new Error('Invalid object scale or opacity');
+    if(object.hotSpringLevel!==undefined){if(!Number.isInteger(object.hotSpringLevel)||object.hotSpringLevel<1||object.hotSpringLevel>5)throw new Error('Invalid hot spring level');result.hotSpringLevel=object.hotSpringLevel;}
     if(object.kind==='spine') {
       result.bundle=text(object.bundle,'bundle');
       if(object.nativeAnimations!==undefined){if(!Array.isArray(object.nativeAnimations)||object.nativeAnimations.length>100)throw new Error('Invalid native animations');const ids=new Set();result.nativeAnimations=object.nativeAnimations.map(row=>{const checked=validateNativeAnimation(row);if(ids.has(checked.id))throw new Error('Duplicate native animation');ids.add(checked.id);return checked;});}

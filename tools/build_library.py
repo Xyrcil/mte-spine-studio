@@ -12,6 +12,24 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
+def hot_spring_roles(resources, levels):
+    result = []
+    for row in resources:
+        role_id = str(row["Id"])
+        spine = row.get("Spine", "")
+        bundle = spine if spine.startswith("Spines/") else "Spines/painting/" + spine
+        pools = [{"level": int(level["level"]), "voiceIds": [value.strip() for value in level.get("Conversation", "").split(",") if value.strip()]} for level in levels if str(level["id"]) == role_id]
+        result.append({"id": role_id, "skinId": str(row["Skin"]), "bundle": bundle, "ambientSound": row.get("SpineSound", ""), "levels": sorted(pools, key=lambda pool: pool["level"])})
+    return result
+
+
+def join_hot_springs(appearances, roles, names):
+    for appearance in appearances:
+        role = next((row for row in roles if appearance.get("bundle") in (row["bundle"], row["bundle"] + "_hx")), None)
+        if role:
+            appearance.update(hotSpringRoleId=role["id"], characterId=role["id"], characterName=names.get(role["id"], role["id"]))
+
+
 def join_portraits(appearances, portrait_entries, source_spines, names):
     portraits = {entry["resource"]: entry for entry in portrait_entries}
     used = set()
@@ -66,7 +84,7 @@ def build(source, output):
         plot = row.get("PlotPic", "")
         if plot and plot != "0":
             story_roles[plot.split("/")[0]] = row
-        if character_id and row.get("__unnamed_2"):
+        if character_id and row.get("__unnamed_2") and (character_id not in names or row["Id"] == character_id):
             names[character_id] = row["__unnamed_2"]
         if resource in ("", "0"):
             continue
@@ -98,6 +116,8 @@ def build(source, output):
         portrait_entries = json.loads(portrait_path.read_text())["entries"]
         source_spines = {"Spines/" + path.relative_to(folder).with_suffix("").as_posix() for folder in source.rglob("Spines") if folder.is_dir() for path in folder.rglob("*.dat")}
         join_portraits(appearances, portrait_entries, source_spines, names)
+    hot_springs = hot_spring_roles(records(raw_tables / "HotSpringRoleRes.json"), records(raw_tables / "HotSpringRoleLevel.json"))
+    join_hot_springs(appearances, hot_springs, names)
     voice_rows = [{"id": key, "targetId": str(row["target_id"]), "title": row["voice_title"], "text": row["voice_text"], "resourceName": row["file_name"], "type": row["type"], "groupId": row.get("group_id"), "targetType": row.get("target_type")} for key, row in voices.items()]
     story_rows = [{"id": key, "text": row["voice_text"], "resourceName": row["file_name"]} for key, row in stories.items()]
     raw_voice_rows = records(raw_tables / "VoiceRole.json")
@@ -114,7 +134,7 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 
