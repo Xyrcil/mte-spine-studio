@@ -1,0 +1,30 @@
+import workerUrl from './cache-worker.js?worker&url';
+import {sceneCacheUrls} from './engine/cache-policy.js';
+import {voiceCatalog} from './engine/voice-catalog.js';
+
+export function createCachePanel(stage,editor,getData,message){
+  const panel=document.createElement('section');panel.id='cache-panel';panel.innerHTML=`<h2>Resource cache</h2><p id="cache-status" role="status">Starting resource cache…</p><label class="check-label"><input id="cache-enabled" type="checkbox" checked>Cache resources I open</label><label>Resource limit (MiB)<input id="cache-budget" type="number" min="64" max="2048" step="64" value="256"></label><label class="check-label"><input id="cache-voices" type="checkbox">Include selected character voices</label><div class="actions"><button id="cache-scene">Prepare scene offline</button><button id="cache-cancel" disabled>Cancel preparation</button><button id="cache-clear">Clear resource cache</button><button id="cache-refresh">Refresh cache status</button><button id="cache-persist">Request persistent storage</button><button id="cache-update" hidden>Apply app update</button></div><p>Only prepared or previously cached resources work offline. Clearing this cache does not remove saved scenes. Browser storage may still be evicted.</p>`;
+  document.querySelector('.inspector').append(panel);const field=id=>panel.querySelector(`#cache-${id}`);let registration,busy=false,job;
+  const status=value=>field('status').textContent=value;
+  function request(type,data={},progress){return new Promise((resolve,reject)=>{const worker=navigator.serviceWorker.controller||registration?.active;if(!worker){reject(new Error('Resource cache is not ready'));return;}const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(new Error('Resource cache did not respond'));},120000);channel.port1.onmessage=event=>{if(event.data.progress){progress?.(event.data.progress);return;}clearTimeout(timer);channel.port1.close();event.data.error?reject(new Error(event.data.error)):resolve(event.data.result);};worker.postMessage({type,...data},[channel.port2]);});}
+  async function refresh(){const result=await request('STATUS');field('enabled').checked=result.enabled;field('budget').value=result.budget/1048576;const estimate=await navigator.storage?.estimate?.();status(`${(result.bytes/1048576).toFixed(1)} MiB cached · ${result.entries} resources${estimate?.quota?` · ${(estimate.quota/1048576).toFixed(0)} MiB browser quota`:''}${navigator.onLine?'':' · Offline'}`);return result;}
+  const ready=(async()=>{
+    if(import.meta.env.DEV){status('Resource caching is available in the production build');for(const button of panel.querySelectorAll('button,input'))button.disabled=true;return false;}
+    if(!('serviceWorker' in navigator)||!isSecureContext){status('Offline caching is unavailable in this browser or connection');for(const button of panel.querySelectorAll('button,input'))button.disabled=true;return false;}
+    const bounded=(promise)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Offline cache startup timed out; online playback remains available')),10000);promise.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
+    try{registration=await bounded(navigator.serviceWorker.register(workerUrl,{scope:import.meta.env.BASE_URL,updateViaCache:'none'}));await bounded(navigator.serviceWorker.ready);if(!navigator.serviceWorker.controller)await bounded(new Promise(resolve=>navigator.serviceWorker.addEventListener('controllerchange',resolve,{once:true})));
+      navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.type==='CACHE_NOTICE')status(event.data.message);});
+      const update=()=>{field('update').hidden=!registration.waiting;};update();registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',update));
+      await bounded(refresh());return true;
+    }catch(error){status(`Cache unavailable: ${error.message}`);return false;}
+  })();
+  field('refresh').onclick=()=>refresh().catch(error=>status(error.message));
+  const config=()=>request('CONFIG',{enabled:field('enabled').checked,budget:Number(field('budget').value)*1048576}).then(refresh).catch(error=>{status(error.message);message(error.message);});field('enabled').onchange=config;field('budget').onchange=config;
+  field('clear').onclick=()=>request('CLEAR').then(refresh).catch(error=>status(error.message));
+  field('persist').onclick=async()=>{try{status(await navigator.storage?.persist?.()?'Persistent storage granted':'Persistent storage was not granted; keep backups of saved scenes');}catch(error){status(error.message);}};
+  field('update').onclick=()=>{const channel=new MessageChannel();registration.waiting?.postMessage({type:'UPDATE'},[channel.port2]);navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload(),{once:true});};
+  field('scene').onclick=async()=>{if(busy)return;busy=true;job=crypto.randomUUID();field('cancel').disabled=false;field('scene').disabled=true;try{if(!await ready)throw new Error('Offline preparation is unavailable');const {audio,library}=getData(),group=editor.selected(),voices=field('voices').checked&&library&&group?voiceCatalog(library,[group.kind==='spine'?{id:group.presentation.id}:{appearanceId:group.appearanceId}]):[],urls=sceneCacheUrls(stage.groups,new URL(import.meta.env.BASE_URL,location.origin).href,audio,voices,audio?.language);if(!urls.length)throw new Error('No scene resources to prepare');await request('PREFETCH',{id:job,urls},info=>status(`Preparing ${info.done} / ${info.total} resources`));await refresh();}catch(error){status(error.message);}finally{busy=false;field('cancel').disabled=true;field('scene').disabled=false;}};
+  field('cancel').onclick=()=>request('CANCEL',{id:job}).catch(error=>status(error.message));
+  window.addEventListener('online',()=>registration&&refresh().catch(()=>{}));window.addEventListener('offline',()=>registration&&refresh().catch(()=>{}));
+  return {ready,request,refresh};
+}

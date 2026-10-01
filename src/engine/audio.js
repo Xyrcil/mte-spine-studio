@@ -57,8 +57,8 @@ export class AudioBus extends EventTarget {
   }
   releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
-  pause() {this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();}
-  async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);}
+  pause() {const voiceWasPlaying=this.currentVoice&&!this.element.paused;this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();if(voiceWasPlaying)this.dispatchEvent(new CustomEvent('voice-state'));}
+  async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);if(this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}

@@ -1,6 +1,8 @@
 # MTE Spine Studio
 
 Browser tools for animated character artwork, scene composition, and export.
+An unofficial Millennium Tour Elf project for learning and reference, not
+affiliated with the game's publisher. Game assets are not distributed here.
 
 ## Development
 
@@ -86,9 +88,24 @@ selected voices. They retain the captured language and position, follow scene
 loops and keep their pitch during forward playback. Captions expire with the
 source clip, work in PNG output and remain available when the video is muted.
 Simultaneous captured and additional subtitles use separate stacked rows.
+Production builds cache the application shell and valid same-origin resources.
+The cache panel can prepare the current scene and optional character voices,
+set a resource budget, cancel preparation, clear cached files and request
+persistent browser storage. Resource eviction uses least-recently-used order
+while retaining catalogues. Cached audio supports byte-range playback.
+Clearing resource files does not delete saved scenes or unrelated app caches.
+Catalogue changes invalidate older resource copies; invalid catalogues,
+unexpected HTML and partial audio responses are not stored as complete files.
+Preparation reports when the selected resources do not all fit. Browser permission
+or quota failures leave online playback available. Development mode disables
+service-worker caching to avoid stale source files.
+
+For a project URL such as `/mte-studio/`, build with
+`MTE_BASE_PATH=/mte-studio/ npm run build`. Test offline behavior with a local
+preview of the production build, not the development server.
 Other special controllers still need full behavioral validation. Effect
 rendering, complete voice routing, scheduled interaction recording/replay,
-browser fallbacks, resource caching and public deployment remain in progress.
+browser fallbacks and public deployment remain in progress.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without
