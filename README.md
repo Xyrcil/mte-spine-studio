@@ -37,8 +37,13 @@ presentations say so in their details. Inspect original component coverage with
 
 Particle value sampling supports cubic and weighted tangents, held segments,
 constant/curve ranges and independent gradient color/opacity keys. It preserves
-authored HDR values and caller-supplied random factors. Particle simulation and
-drawing are still pending; the sampler alone does not render an effect.
+authored HDR values and caller-supplied random factors. The independent particle
+model simulates the recovered edge/box emitters, one-loop prewarming, forces,
+lifetimes, capacity, size/color/rotation changes and texture frame selection.
+It retains a random stream and validated checkpoints; partial-frame sampling
+does not consume randomness. The model is not yet connected to scene rendering,
+scene files or media export. Additional unsupported enabled modules fail
+explicitly instead of producing placeholder effects.
 
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
