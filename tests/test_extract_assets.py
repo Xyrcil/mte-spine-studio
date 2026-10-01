@@ -77,6 +77,22 @@ class ExtractionTests(unittest.TestCase):
             self.assertEqual(rows[3]["status"], "partial")
             self.assertEqual(rows[3]["errors"][0]["type"], "Sprite")
 
+    def test_material_extraction_retains_variant_keywords_queue_and_disabled_passes(self):
+        shader = SimpleNamespace(path_id=2, assets_file="shared", read_typetree=lambda: {"m_ParsedForm": {"m_Name": "Test/Masked"}})
+        for extra, expected in [({"m_ShaderKeywords": "_MASK_ON _MASK_ON _OTHER"}, ["_MASK_ON", "_OTHER"]), ({"m_ValidKeywords": ["_MASK_ON"]}, ["_MASK_ON"])]:
+            tree = {"m_Name": "Masked particles", "m_Shader": {"m_FileID": 0, "m_PathID": 2}, "m_CustomRenderQueue": 3001, "disabledShaderPasses": ["SHADOWCASTER"], "m_EnableInstancingVariants": True, "stringTagMap": [("RenderType", "Transparent")], "m_SavedProperties": {"m_TexEnvs": [], "m_Floats": [("_SrcBlend", 1), ("_DstBlend", 1)]}, **extra}
+            material = SimpleNamespace(path_id=1, assets_file="bundle", read_typetree=lambda: tree)
+            with tempfile.TemporaryDirectory() as folder:
+                extractor = BundleExtractor(SimpleNamespace(objects=[]), Path(folder))
+                extractor.resolve = lambda owner, reference: material if reference["m_PathID"] == 1 else shader
+                result = extractor.effect_material(None, {"m_FileID": 0, "m_PathID": 1})
+                self.assertEqual(result["keywords"], expected)
+                self.assertEqual(result["renderQueue"], 3001)
+                self.assertEqual(result["disabledPasses"], ["SHADOWCASTER"])
+                self.assertEqual(result["tags"], [["RenderType", "Transparent"]])
+                self.assertEqual(result["instancing"], True)
+                self.assertNotIn("m_ParsedForm", result)
+
 
 if __name__ == "__main__":
     unittest.main()

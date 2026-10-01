@@ -30,6 +30,10 @@ Use `--match <bundle-name> --merge` to refresh selected Spine bundles without
 dropping other catalogue entries. Particle extraction retains source modules,
 render settings, material parameters, shared shader/texture dependencies and
 sprite frames. Native animation components and sorting groups are also kept.
+Material metadata includes active shader keywords, custom render queues,
+disabled passes, tags and instancing settings; shader implementation code is
+not included in converted resources. The masked particle material uses an
+additive blend and its own render queue, not the Legacy alpha-blended path.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.

@@ -128,7 +128,10 @@ class BundleExtractor:
         for name, value in envs.items():
             if value.get("m_Texture", {}).get("m_PathID"):
                 textures[name] = {**self.effect_texture(reader, value["m_Texture"]), "scale": value.get("m_Scale"), "offset": value.get("m_Offset")}
-        return {"id": str(reader.path_id), "name": tree.get("m_Name", ""), "shader": shader_name, "properties": precise_references(settings), "textures": textures}
+        keywords = tree.get("m_ValidKeywords", tree.get("m_ShaderKeywords", ""))
+        if isinstance(keywords, str):
+            keywords = keywords.split()
+        return {"id": str(reader.path_id), "name": tree.get("m_Name", ""), "shader": shader_name, "keywords": sorted(set(keywords)), "renderQueue": tree.get("m_CustomRenderQueue", -1), "disabledPasses": tree.get("disabledShaderPasses", []), "tags": precise_references(tree.get("stringTagMap", [])), "instancing": bool(tree.get("m_EnableInstancingVariants", False)), "properties": precise_references(settings), "textures": textures}
 
     def effect_sprite(self, owner, pointer):
         reader = self.resolve(owner, pointer)

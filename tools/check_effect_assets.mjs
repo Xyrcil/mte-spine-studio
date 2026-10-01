@@ -17,7 +17,11 @@ try{
       for(const effect of presentation.effects||[]){
         if(effect.status!=='extracted'||effect.errors.length||!effect.transform)throw new Error(`Incomplete effect: ${presentation.id}/${effect.id}`);
         for(const image of [...effect.sprites,...effect.materials.flatMap(material=>Object.values(material.textures))])images.set(`${presentation.path}/${image.path}`,image);
-        entries.push({bundle:presentation.id,name:effect.name,sprites:effect.sprites.length,shader:effect.materials[0]?.shader,transform:effect.transform});
+        const material=effect.materials[0];if(!Array.isArray(material?.keywords)||!Number.isInteger(material.renderQueue)||!Array.isArray(material.disabledPasses))throw new Error(`Incomplete material settings: ${presentation.id}/${effect.id}`);
+        if(material.shader==='AOI/Effect/AOI_Effect_UrpV2'){
+          const floats=Object.fromEntries(material.properties.m_Floats);if(material.renderQueue!==3001||!material.keywords.includes('_SCREEN_MASK_ON')||floats._SrcBlend!==1||floats._DstBlend!==1||!material.disabledPasses.includes('SHADOWCASTER'))throw new Error('Original masked particle material changed');
+        }
+        entries.push({bundle:presentation.id,name:effect.name,sprites:effect.sprites.length,shader:material.shader,keywords:material.keywords,renderQueue:material.renderQueue,transform:effect.transform});
       }
     }
     let nonempty=0;
