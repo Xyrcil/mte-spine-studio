@@ -16,9 +16,9 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   }
   field('voice-scope').onchange=refresh;field('voice-search').oninput=refresh;list.onchange=status;
   language.onchange=()=>{editor.mutate(()=>audio.language=language.value);refresh();};
-  field('play-voice').onclick=async()=>{try{await audio.play(selection(),language.value);}catch(error){message(error.message);}};
+  field('play-voice').onclick=async()=>{try{const group=editor.selected(),matches=group&&(presentation.appearanceId?group.appearanceId===presentation.appearanceId:group.presentation?.id===presentation.id);await audio.play(selection(),language.value,{group:field('voice-scope').value==='scene'&&matches?group.id:''});}catch(error){message(error.message);}};
   field('stop-voice').onclick=()=>audio.stop();
   field('voice-volume').onchange=event=>editor.mutate(()=>audio.setVolume(Number(event.target.value)));
   field('effect-volume').onchange=event=>editor.mutate(()=>audio.setEffectVolume(Number(event.target.value)));
-  refresh();return {refresh};
+  field('subtitle').textContent=audio.currentSubtitle?.text||'';refresh();return {refresh};
 }

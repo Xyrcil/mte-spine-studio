@@ -24,5 +24,14 @@ export function validateSoundScene(value,objects){
       return {name:track.name,category:track.category,time:track.time,...(track.group!==undefined?{group:track.group}:{})};
     });
   }
-  return {schema:1,voiceVolume:volume(value.voiceVolume,'voice volume'),effectVolume:volume(value.effectVolume,'effect volume'),ambientVolume:volume(value.ambientVolume,'ambient volume'),muted:value.muted,ambientEnabled:value.ambientEnabled,language:value.language,ambientTracks,...(effectTracks!==undefined?{effectTracks}:{})};
+  let voiceTrack;
+  if(value.voiceTrack!==undefined){voiceTrack=null;if(value.voiceTrack!==null){const track=value.voiceTrack;
+    if(typeof track.name!=='string'||!track.name||track.name.length>512)throw new Error('Invalid voice resource');
+    if(!['a_sound_voiceeff','a_sound_voiceeff_ch'].includes(track.category))throw new Error('Invalid voice category');
+    if(typeof track.time!=='number'||!Number.isFinite(track.time)||track.time<0||track.time>86400)throw new Error('Invalid voice time');
+    if(track.id!==undefined&&(typeof track.id!=='string'||!track.id||track.id.length>512))throw new Error('Invalid voice identifier');
+    if(track.group!==undefined&&(typeof track.group!=='string'||!objectIds.has(track.group)))throw new Error('Invalid voice object');
+    voiceTrack={name:track.name,category:track.category,time:track.time,...(track.id!==undefined?{id:track.id}:{}),...(track.group!==undefined?{group:track.group}:{})};
+  }}
+  return {schema:1,voiceVolume:volume(value.voiceVolume,'voice volume'),effectVolume:volume(value.effectVolume,'effect volume'),ambientVolume:volume(value.ambientVolume,'ambient volume'),muted:value.muted,ambientEnabled:value.ambientEnabled,language:value.language,ambientTracks,...(effectTracks!==undefined?{effectTracks}:{}),...(voiceTrack!==undefined?{voiceTrack}:{})};
 }

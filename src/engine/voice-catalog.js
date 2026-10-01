@@ -5,3 +5,8 @@ export function voiceCatalog(library,objects=[],scope='scene',query=''){
   const search=query.trim().toLocaleLowerCase();
   return rows.map(row=>({...row,kind:scope==='story'?'story':'character',title:row.title||row.resourceName||`Story line ${row.id}`,key:`${scope==='story'?'story':'character'}:${row.id}:${row.resourceName}`})).filter(row=>!search||`${row.title} ${row.text} ${row.id} ${row.resourceName}`.toLocaleLowerCase().includes(search));
 }
+
+export function savedVoiceRow(track,rows){
+  const name=track.name.split('/').at(-1),row=rows.find(row=>(!track.id||row.id===track.id)&&[row.resourceName,row.alias,row.resourcePath].some(value=>value?.split('/').at(-1)===name));
+  return {resourceName:track.name,title:row?.title||track.name,text:row?.text||'',...(track.id?{id:track.id}:row?.id?{id:row.id}:{})};
+}

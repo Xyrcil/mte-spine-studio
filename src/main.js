@@ -94,7 +94,7 @@ stage.addEventListener('voice-request',event=>{
   if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
   const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
   const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language);if(!voice)return;
-  audio.play(voice,language).catch(error=>message(error.message));
+  audio.play(voice,language,{group:event.detail.group||''}).catch(error=>message(error.message));
 });
 canvas.onwheel=event=>{event.preventDefault();if(editor.busy||view==='export')return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
 try {
@@ -103,7 +103,7 @@ try {
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
-  if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
+  if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices]);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('voice-state',()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
   library();message(`${catalog.presentations.length} bundles · ${runtime.summary.parsed} parsed skeletons`);
   const recovered=await editor.init(catalog.presentations,runtime.entries);
   const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);

@@ -9,7 +9,7 @@ export function createEditor(stage,message,onSelection){
   document.querySelector('.inspector h2').after(controls);
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
   const before=()=>{if(busy)return false;history.push(snapshot());return true;};
-  function changed(){stage.dispatchEvent(new CustomEvent('scene-change'));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;

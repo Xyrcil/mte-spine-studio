@@ -20,7 +20,7 @@ export function createSoundPanel(stage,audio,library,editor,message){
       list.append(row);
     }
   }
-  const sync=()=>{audio.paused=stage.paused;audio.syncAmbients(stage.groups,library.appearances);if(stage.paused)audio.pause();refresh();};
+  const sync=event=>{audio.paused=stage.paused;audio.syncAmbients(stage.groups,library.appearances);if(stage.paused&&!event?.detail?.audioOnly)audio.pause();refresh();};
   document.querySelector('#ambient-enabled').onchange=event=>{const enabled=event.target.checked;editor.mutate(()=>{audio.enableAmbients(enabled).catch(error=>message(error.message));});};
   document.querySelector('#sound-muted').onchange=event=>{const muted=event.target.checked;editor.mutate(()=>audio.setMuted(muted));};
   document.querySelector('#ambient-volume').onchange=event=>{const volume=Number(event.target.value);editor.mutate(()=>audio.setAmbientVolume(volume));};

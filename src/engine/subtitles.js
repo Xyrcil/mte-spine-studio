@@ -13,9 +13,9 @@ export function prepareSubtitle(ctx,text,width,height){
   if(size<8)throw new Error('Subtitle is too long for this output size; use a larger resolution');
   return {size,lines,padding,height:lines.length*size*1.35+padding*2};
 }
-export function drawSubtitle(ctx,layout,width,height){
-  const y=height-height*.035-layout.height;
-  ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(width*.05,y,width*.9,layout.height);
+export function drawSubtitle(ctx,layout,width,height,bottomOffset=0,opacity=1){
+  const y=height-height*.035-layout.height-bottomOffset;
+  ctx.save();ctx.globalAlpha=opacity;ctx.globalCompositeOperation='source-over';ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(width*.05,y,width*.9,layout.height);
   ctx.font=`${layout.size}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle='#ffffff';
   layout.lines.forEach((line,index)=>ctx.fillText(line,width/2,y+layout.padding+index*layout.size*1.35));ctx.restore();
 }

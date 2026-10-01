@@ -50,6 +50,10 @@ the resource's configured gain.
 Active effects retain resource, object and playback position in saved scenes.
 Hidden or removed objects release their effects; duplicated objects inherit
 their captured sound positions.
+Active speech also retains its resource, language, object and playback
+position. Scene files reference the voice ID rather than copying subtitles;
+restoration reads the source line from the local catalog. Story playback can
+remain independent of artwork. Completed speech does not restart on resume.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
 regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
 Standalone Spine bundles expose skeleton and animation previews, including
@@ -77,8 +81,13 @@ speed and loop boundaries. Forward effects keep their pitch; ping-pong reverses
 the sampled interval. Missing sounds are returned as export warnings.
 AAC export measures this device's encoder delay and offsets the audio track
 to avoid silent leading padding, including for very short clips.
+Captured speech and its subtitles can be included independently of additional
+selected voices. They retain the captured language and position, follow scene
+loops and keep their pitch during forward playback. Captions expire with the
+source clip, work in PNG output and remain available when the video is muted.
+Simultaneous captured and additional subtitles use separate stacked rows.
 Other special controllers still need full behavioral validation. Effect
-rendering, complete voice routing, captured/automatic interaction voices and their subtitles,
+rendering, complete voice routing, scheduled interaction recording/replay,
 browser fallbacks, resource caching and public deployment remain in progress.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build

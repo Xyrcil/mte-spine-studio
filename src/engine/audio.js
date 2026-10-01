@@ -1,7 +1,10 @@
+import {savedVoiceRow} from './voice-catalog.js';
+
 export class AudioBus extends EventTarget {
-  constructor(index, resources, base) {
+  constructor(index, resources, base,voiceRows=[]) {
     super();
     this.base=base;
+    this.voiceRows=voiceRows;this.currentVoice=null;this.currentSubtitle=null;
     this.volume=1;this.muted=false;this.token=0;this.effects=new Set();this.effectVolume=.8;
     this.ambientVolume=.5;this.ambientEnabled=false;this.language='a_sound_voiceeff';this.paused=false;this.unlocked=false;this.ambients=new Map();this.ambientPreferences=new Map();this.sceneGroups=[];this.appearances=[];
     this.resources=new Map(resources.map(row=>[row.name,row]));
@@ -11,7 +14,7 @@ export class AudioBus extends EventTarget {
       this.byName.set(entry.name,[...(this.byName.get(entry.name)||[]),entry]);
     }
     this.element=new Audio();this.element.preload='none';
-    this.element.addEventListener('ended',()=>this.dispatchEvent(new CustomEvent('subtitle',{detail:null})));
+    this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
     this.element.addEventListener('error',()=>this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'})));
   }
   resolve(name,category='a_sound_voiceeff') {
@@ -25,18 +28,23 @@ export class AudioBus extends EventTarget {
     const chosen=category||configuredCategory||'a_sound_ui',clip=this.resolve(name,chosen);
     const volume=Number(metadata?.volume??1);return {name,category:chosen,clip,volume:Number.isFinite(volume)?Math.max(0,Math.min(1,volume)):1,loop:metadata?.loop===true||metadata?.loop===1||metadata?.loop==='1'};
   }
-  async play(voice,category) {
+  setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
+  async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
+    if(!voice?.resourceName)throw new Error('No voice resource selected');
     const clip=this.resolve(voice.resourceName,category);
     if(!clip)throw new Error('Audio resource is unavailable for this track');
     this.stop();const token=this.token;
+    this.currentVoice={voice,category,time,group};
+    this.voiceMetadataAbort=new AbortController();
+    this.element.addEventListener('loadedmetadata',()=>{if(token===this.token&&time>0)this.element.currentTime=Math.min(time,this.element.duration);},{once:true,signal:this.voiceMetadataAbort.signal});
     this.element.src=this.base+clip.path;this.element.volume=this.volume;this.element.muted=this.muted;
     try {
-      await this.element.play();
+      if(autoplay){this.unlocked=true;await this.element.play();}
       if(token!==this.token)return;
-      this.dispatchEvent(new CustomEvent('subtitle',{detail:{title:voice.title,text:voice.text}}));
-    }catch(error){if(token===this.token)throw error;}
+      this.setSubtitle({title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
+    }catch(error){if(token===this.token&&!(this.paused&&error.name==='AbortError'))throw error;}
   }
-  stop() {this.token++;this.element.pause();this.element.removeAttribute('src');this.element.load();this.dispatchEvent(new CustomEvent('subtitle',{detail:null}));}
+  stop() {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}
   async playEffect(name,category='a_sound_ui',time=0,autoplay=true,group=''){
     const info=this.soundInfo(name,category),clip=info.clip;if(!clip)throw new Error(`Sound unavailable: ${name}`);
     if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
@@ -50,7 +58,7 @@ export class AudioBus extends EventTarget {
   releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
   pause() {this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();}
-  async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.element.currentSrc&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);}
+  async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}
@@ -64,6 +72,7 @@ export class AudioBus extends EventTarget {
   syncAmbients(groups,appearances){
     this.sceneGroups=groups;this.appearances=appearances;
     const present=new Set(groups.map(group=>group.id));
+    if(this.currentVoice?.group&&!groups.some(group=>group.id===this.currentVoice.group&&group.visible))this.stop();
     for(const effect of this.effects)if(effect.effectGroup&&!groups.some(group=>group.id===effect.effectGroup&&group.visible))this.releaseEffect(effect);
     const desired=new Map();
     for(const group of groups){const setting=this.ambientSetting(group);if(setting&&setting.enabled&&group.visible)desired.set(group.id,setting);}
@@ -94,7 +103,12 @@ export class AudioBus extends EventTarget {
   ambientSnapshot(){
     const tracks=[];for(const group of this.sceneGroups){const setting=this.ambientSetting(group);if(!setting)continue;const channel=this.ambients.get(group.id);tracks.push({...setting,time:channel?.element.currentTime||setting.time,ended:channel?.ended??setting.ended});}return tracks;
   }
-  snapshot(){return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})}))};}
+  snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
+  exportVoice(snapshot,objects){
+    const track=snapshot?.voiceTrack;if(!track||track.group&&!objects.some(object=>object.id===track.group&&object.visible))return null;
+    const clip=this.resolve(track.name,track.category);if(!clip)throw new Error(`Voice unavailable: ${track.name}`);
+    const row=savedVoiceRow(track,this.voiceRows);return {url:this.base+clip.path,text:row.text,position:track.time,gain:snapshot.voiceVolume,scene:true,repeat:false};
+  }
   exportAmbients(snapshot,objects){
     if(!snapshot||snapshot.muted||!snapshot.ambientEnabled)return [];
     const visible=new Set(objects.filter(object=>object.visible).map(object=>object.id));
@@ -108,6 +122,7 @@ export class AudioBus extends EventTarget {
     if(snapshot){this.setVolume(snapshot.voiceVolume);this.setEffectVolume(snapshot.effectVolume);this.setAmbientVolume(snapshot.ambientVolume);this.setMuted(snapshot.muted);this.ambientEnabled=snapshot.ambientEnabled;this.language=snapshot.language;for(const track of snapshot.ambientTracks)this.ambientPreferences.set(track.id,{...track});}
     this.syncAmbients(groups,appearances);
     for(const track of snapshot?.effectTracks||[])if(!track.group||groups.some(group=>group.id===track.group&&group.visible))this.playEffect(track.name,track.category,track.time,this.unlocked&&!paused,track.group).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
+    const track=snapshot?.voiceTrack;if(track&&(!track.group||groups.some(group=>group.id===track.group&&group.visible)))this.play(savedVoiceRow(track,this.voiceRows),track.category,{time:track.time,group:track.group,autoplay:this.unlocked&&!paused}).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
   }
   dispose(){this.stop();this.stopEffects();this.stopAmbients();}
 }

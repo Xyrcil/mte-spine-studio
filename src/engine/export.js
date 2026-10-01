@@ -3,7 +3,7 @@ import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
 import {validateScene} from './scene.js';
 import {exportPlan,frameSources,exportCamera} from './export-plan.js';
-import {mixExportSample} from './export-audio.js';
+import {mixExportSample,sceneAudioSources} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay} from './audio-delay.js';
 
@@ -46,7 +46,7 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
   await session.initialize();return {clips,warnings:[...warnings]};
 }
 
-export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider}){
+export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice}){
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
   if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
@@ -56,6 +56,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   const tracks=[];
   let interactionClips=[],warnings=[];
   let captionDuration=0,captionLayout;
+  let sceneCaption;
   let audioDelay=0;
   const audioCodec=plan.format==='mp4'?'aac':'opus';
   try{
@@ -64,18 +65,22 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
     const video=['mp4','webm'].includes(plan.format);
     if(video&&effectProvider&&!session.scene.audio?.muted&&(session.scene.audio?.effectVolume??.8)>0){const result=await collectInteractionEffects(session,plan,effectProvider,onProgress);interactionClips=result.clips;warnings=result.warnings;}
-    const hasAudio=video&&(audioClip||ambientClips.length||interactionClips.length);
-    if(hasAudio||subtitleClip){
+    const voiceAudio=video&&capturedVoice?.includeAudio&&!session.scene.audio?.muted?{...capturedVoice,scene:true,sceneRate:1/plan.speed}:null;
+    const voiceCaption=capturedVoice?.includeSubtitles&&capturedVoice.text?{...capturedVoice,captionOnly:true,sceneCaption:true,sceneRate:1/plan.speed}:null;
+    if(capturedVoice?.includeSubtitles&&!capturedVoice.text)warnings.push('Captured voice has no subtitle text');
+    const hasAudio=video&&(audioClip||ambientClips.length||interactionClips.length||voiceAudio);
+    if(hasAudio||subtitleClip||voiceCaption){
       if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
       if(hasAudio&&audioCodec==='aac')audioDelay=await aacEncodingDelay(signal);
       decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
-      for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[])]){
+      for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[])]){
         checkpoint(signal);let buffer=decoded.get(clip.url);
         if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
           buffer=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
           if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);
         }
-        if(clip.captionOnly){captionDuration=buffer.duration;captionLayout=prepareSubtitle(ctx,clip.text,plan.width,plan.height);}
+        if(clip.sceneCaption){sceneCaption={layout:prepareSubtitle(ctx,clip.text,plan.width,plan.height),duration:buffer.duration,position:clip.position,rate:clip.sceneRate};}
+        else if(clip.captionOnly){captionDuration=buffer.duration;captionLayout=prepareSubtitle(ctx,clip.text,plan.width,plan.height);}
         else tracks.push({...clip,channels:Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),sampleRate:buffer.sampleRate,options:{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1}});
       }
     }
@@ -103,7 +108,9 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       const frames=frameSources(plan,i);await session.seek(plan.start+frames[0].frame/plan.fps*plan.speed);
       ctx.clearRect(0,0,plan.width,plan.height);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=frames[0].weight;ctx.drawImage(session.canvas,0,0);
       if(frames.length===2){await head.seek(plan.start+frames[1].frame/plan.fps*plan.speed);ctx.globalCompositeOperation='lighter';ctx.globalAlpha=frames[1].weight;ctx.drawImage(head.canvas,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
-      if(captionLayout&&subtitleActive(i/plan.fps,captionDuration,{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat)}))drawSubtitle(ctx,captionLayout,plan.width,plan.height);
+      let captionOffset=0;
+      if(captionLayout&&subtitleActive(i/plan.fps,captionDuration,{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat)})){drawSubtitle(ctx,captionLayout,plan.width,plan.height);captionOffset=captionLayout.height+plan.height*.015;}
+      if(sceneCaption){const weight=sceneAudioSources(plan,i/plan.fps).reduce((sum,source)=>sum+(subtitleActive(sceneCaption.position+source.time*sceneCaption.rate,sceneCaption.duration)?source.weight:0),0);if(weight>0)drawSubtitle(ctx,sceneCaption.layout,plan.width,plan.height,captionOffset,weight);}
       if(plan.format==='png'){const blob=await png(canvas);checkpoint(signal);if(fileWriter){await fileWriter.write(await blob.arrayBuffer());checkpoint(signal);await fileWriter.close();}onProgress({frame:1,total:1,phase:'complete'});return {blob:fileWriter?null:blob,plan};}
       if(source)await Promise.all([addAudio(Math.min(plan.duration,(i+1)/plan.fps)),source.add(i/plan.fps,1/plan.fps,{keyFrame:i%plan.cycleFrames===0})]);
       else {const blob=await png(canvas);checkpoint(signal);const file=new ZipPassThrough(`frame-${String(i).padStart(6,'0')}.png`);zip.add(file);file.push(new Uint8Array(await blob.arrayBuffer()),true);await writeQueue;}
