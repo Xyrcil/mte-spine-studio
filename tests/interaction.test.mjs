@@ -56,6 +56,19 @@ test('card sequence pauses input, advances scheduled stages and restores interac
   root.advance(2);assert.match(root.value.animation,/^exp_(win|lose)$/);assert.equal(root.value.rounds,1);
   root.advance(2);assert.equal(root.value.cardClickable,true);assert.equal(root.value.playing,false);assert.equal(root.primary.state.getCurrent(0).animation.name,'animation4_1');
 });
+test('finished card results retain overlays until the next click dismisses them',()=>{
+  const {root,events}=fixture();root.value.state=3;root.value.cardStage=true;root.value.cardClickable=false;root.value.selectedCard=1;root.value.rounds=1;root.value.wins=1;
+  root.play('card_B',4,false);root.play('qipao_B',3,false);root.runTask({kind:'card-result',card:1});
+  assert.equal(root.value.animation,'game_win_1');assert.equal(root.primary.state.getCurrent(0).loop,false);assert.equal(root.value.rounds,0);
+  root.runTask({kind:'card-return',finished:true});assert.equal(root.primary.state.getCurrent(3).animation.name,'qipao_B');assert.equal(root.primary.state.getCurrent(4).animation.name,'card_B');assert.equal(root.value.cardClickable,true);
+  for(const layer of root.layers)layer.skeleton.data.findAnimation=()=>null;
+  const accepted=root.click({id:'cancel',event:18,track:4,animation:'card_A',audio:'explicit_voice'});assert.equal(accepted.accepted,true);assert.equal(accepted.animation,'');assert.equal(root.value.cardStage,false);for(const layer of root.layers)for(const track of [2,3,4])assert.equal(layer.state.getCurrent(track),null);
+  assert.ok(events.some(event=>event.explicit==='explicit_voice'));assert.ok(events.some(event=>event.name==='30161940201_cm_card_click'));
+});
+test('card loss resets scores and returns to the current clothing variant',()=>{
+  const {root}=fixture();root.value.state=3;root.clothing(2);root.value.cardStage=true;root.value.cardClickable=false;root.value.selectedCard=1;root.value.rounds=2;root.value.wins=0;
+  root.runTask({kind:'card-result',card:0});assert.equal(root.value.animation,'game_lose_2');assert.equal(root.value.rounds,0);assert.equal(root.value.wins,0);root.runTask({kind:'card-return',finished:true});assert.equal(root.primary.state.getCurrent(0).animation.name,'animation4_2');assert.equal(root.value.playing,false);assert.equal(root.value.cardStage,true);
+});
 test('paused evaluation does not execute scheduled controller actions',()=>{
   const {root}=fixture();root.value.tasks=[{kind:'card-reveal',due:0}];root.advance(0);assert.equal(root.value.tasks.length,1);assert.equal(root.value.clock,0);
 });

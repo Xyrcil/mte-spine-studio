@@ -2,6 +2,7 @@ import {validateScene} from './scene.js';
 
 const identifier=(value,label)=>{if(typeof value!=='string'||!value.length||value.length>512)throw new Error(`Invalid sequence ${label}`);return value;};
 const time=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>86400)throw new Error('Invalid sequence time');return value;};
+const SIMULATION_STEP=1/120,TIME_EPSILON=1e-9;
 
 export function validateSequence(value){
   if(!value||value.schema!==1||!Array.isArray(value.actions)||value.actions.length>10000)throw new Error('Unsupported interaction sequence');
@@ -68,9 +69,13 @@ export class InteractionPlayer {
   advance(delta,evaluate){
     if(!Number.isFinite(delta)||delta<0)throw new Error('Invalid playback step');
     if(this.finished){evaluate(delta);return;}
-    const target=this.elapsed+delta,end=Math.min(this.sequence.duration,target);
+    let target=this.elapsed+delta;
+    const next=this.sequence.actions[this.cursor]?.at;
+    if(next!==undefined&&Math.abs(target-next)<=TIME_EPSILON)target=next;
+    if(Math.abs(target-this.sequence.duration)<=TIME_EPSILON)target=this.sequence.duration;
+    const end=Math.min(this.sequence.duration,target);
     const timed=(at,action)=>{const previous=this.stage.sequenceTime;this.stage.sequenceTime=at;try{return action();}finally{if(previous===undefined)delete this.stage.sequenceTime;else this.stage.sequenceTime=previous;}};
-    const advanceTo=target=>{while(this.elapsed<target){const step=Math.min(1/120,target-this.elapsed);timed(this.elapsed+step,()=>evaluate(step));this.elapsed+=step;}this.elapsed=target;};
+    const advanceTo=target=>{while(target-this.elapsed>TIME_EPSILON){const remaining=target-this.elapsed,step=remaining>=SIMULATION_STEP-TIME_EPSILON?SIMULATION_STEP:remaining;timed(Math.min(target,this.elapsed+step),()=>evaluate(step));this.elapsed+=step;}this.elapsed=target;};
     while(this.cursor<this.sequence.actions.length&&this.sequence.actions[this.cursor].at<=end){
       const action=this.sequence.actions[this.cursor];advanceTo(action.at);
       const result=timed(action.at,()=>this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));

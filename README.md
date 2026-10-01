@@ -108,6 +108,10 @@ cursors, rotation history, attachments, deformation, draw order and pose state.
 Paused redraws do not reapply animations. Older track-only scenes remain readable.
 Interaction playback uses source colliders, moving-bone bindings, coordinated
 animation tracks and timeline events. Controller state is stored with scenes.
+The card game preserves its held card overlays after a terminal win or loss;
+the next accepted click dismisses them before another action can begin. Both
+clothing variants retain their matching idle and score-reset behavior. Saved
+mid-reveal scenes and recorded card sequences retain the random state and tasks.
 Interaction audio resolves source aliases and resource paths with the selected
 language and matching subtitle row. State-dependent special click sounds are
 separate from voices; hotspot effect references do not suppress character
@@ -198,8 +202,11 @@ The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports
 state divergence rather than skipping a failed action. Time-zero actions run
-once. The sequence panel records Gallery clicks, pauses/resumes playback and
-replays the captured starting scene. Editing is locked during recording and
+once. Streamed replay and independent export use canonical simulation steps.
+Near-boundary floating-point differences do not introduce sub-frame updates
+or leave the final action pending.
+The sequence panel records Gallery clicks, pauses/resumes playback and replays
+the captured starting scene. Editing is locked during recording and
 replay. Sequences round-trip through their own JSON files and saved scenes,
 including autosave recovery. Recursive sequence checkpoints are rejected.
 The export panel can replay a saved sequence from its recorded starting scene,

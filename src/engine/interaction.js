@@ -82,10 +82,11 @@ export class InteractionRoot {
     if(v.state===2&&name==='kaoji_04')name='kaoji_01';
     if(name==='rope_up'){this.clear(track);v.names[12]='rope_down';return {accepted:true,animation:name};}
     if([5,102].includes(event)&&hit.animation)v.variants[hit.animation]=!v.variants[hit.animation];
-    if(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name)))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`};
+    const dismissCard=v.cardStage&&v.cardClickable;
+    if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name))))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`};
     const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
     for(const sound of effects)this.sound(sound);
-    if(v.cardStage&&v.cardClickable){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
+    if(dismissCard){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
     if(event===102)this.clear(track);
     if(event===8&&v.state===1){v.isBig=true;v.names[8]='kaoji_01';}
     if(/^caidan_siwa[234]_1$/.test(name))v.stockingDown=true;
@@ -146,7 +147,7 @@ export class InteractionRoot {
       if(finished){this.sound(`${skin}01_cm_game_${won?'win':'lose'}`);v.rounds=0;v.wins=0;}
       v.animation=name;v.track=finished?0:2;const result=this.play(name,v.track,!finished,finished?undefined:1);v.playing=true;this.schedule('card-return',result.duration,{finished});
     }else if(task.kind==='card-return'){
-      if(task.finished)for(const track of [2,3,4])this.clear(track);
+      if(v.track>0&&v.rounds===0){this.clear(v.track);for(const track of [3,4])this.clear(track);}
       this.play(`animation${v.state===3?4:1}_${variant}`,0,true,v.rounds?1:undefined);v.track=0;v.cardClickable=true;this.unlocked();
     }
     this.emit('interaction-change',{event:v.event,animation:v.animation});

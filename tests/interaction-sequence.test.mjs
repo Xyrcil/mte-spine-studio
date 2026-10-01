@@ -56,6 +56,11 @@ test('divergent playback fails explicitly rather than skipping an interaction',(
   const stage=new FakeStage(),player=new InteractionPlayer(stage,sequence());stage.triggerInteraction=()=>({accepted:false,reason:'Locked'});
   assert.throws(()=>player.advance(0,()=>{}),/Locked/);assert.equal(player.cursor,0);
 });
+test('frame-sized streaming and one-shot replay use identical canonical simulation steps',()=>{
+  const value={schema:1,initial,duration:3,actions:[action(3)]},wholeStage=new FakeStage(),streamStage=new FakeStage(),whole=new InteractionPlayer(wholeStage,value),stream=new InteractionPlayer(streamStage,value),wholeSteps=[],streamSteps=[];
+  whole.advance(3,delta=>wholeSteps.push(delta));for(let i=0;i<360;i++)stream.advance(1/120,delta=>streamSteps.push(delta));stream.advance(0,delta=>streamSteps.push(delta));
+  assert.deepEqual(streamSteps.filter(delta=>delta>0),wholeSteps);assert.equal(wholeSteps.length,360);assert.ok(wholeSteps.every(delta=>delta===1/120));assert.equal(streamStage.calls.length,wholeStage.calls.length);assert.equal(streamStage.calls.length,1);assert.equal(stream.finished,true);
+});
 test('rendering loss closes recording without advancing through interruption',()=>{
   const stage=new FakeStage(),recorder=new InteractionRecorder(stage);recorder.start();stage.dispatchEvent(new CustomEvent('rendering-lost'));assert.equal(recorder.active,false);assert.equal(recorder.stop().duration,0);recorder.dispose();
 });
