@@ -18,6 +18,34 @@ export function validateSequence(value){
   return {schema:1,initial,duration,actions};
 }
 
+export function retimeSequenceAction(value,index,at){
+  const sequence=validateSequence(value);time(at);
+  if(!Number.isSafeInteger(index)||index<0||index>=sequence.actions.length)throw new Error('Sequence click is unavailable');
+  sequence.actions[index].at=at;sequence.actions.sort((a,b)=>a.at-b.at);sequence.duration=Math.max(sequence.duration,at);
+  return validateSequence(sequence);
+}
+
+export function removeSequenceAction(value,index){
+  const sequence=validateSequence(value);
+  if(!Number.isSafeInteger(index)||index<0||index>=sequence.actions.length)throw new Error('Sequence click is unavailable');
+  sequence.actions.splice(index,1);return sequence;
+}
+
+export async function previewSequenceAt(stage,value,target,{restore,signal,onProgress=()=>{}}){
+  const sequence=validateSequence(value);time(target);if(target>sequence.duration)throw new Error('Preview time exceeds sequence duration');
+  const initial=structuredClone(sequence.initial);initial.paused=true;
+  if(initial.audio){initial.audio.muted=true;initial.audio.voiceTrack=null;initial.audio.effectTracks=[];}
+  else if(stage.captureAudio)initial.audio={...stage.captureAudio(),muted:true,ambientEnabled:false,ambientTracks:[],effectTracks:[],voiceTrack:null};
+  const check=()=>{if(signal?.aborted)throw new DOMException('Sequence preview cancelled','AbortError');if(stage.recoveryPending)throw new Error('Sequence preview was interrupted by rendering loss');};check();
+  await restore(initial,signal);check();const epoch=stage.contextEpoch;stage.sequence=sequence;stage.sequenceBusy=true;stage.paused=true;
+  const player=new InteractionPlayer(stage,sequence,{notifyEnd:false});
+  try{
+    player.advance(0,delta=>stage.evaluateFrame(delta));
+    while(player.elapsed<target){check();if(stage.contextEpoch!==epoch)throw new Error('Sequence preview was interrupted by rendering loss');player.advance(Math.min(.125,target-player.elapsed),delta=>stage.evaluateFrame(delta));onProgress(player.elapsed,target);await new Promise(resolve=>setTimeout(resolve,0));}
+    check();stage.draw();return player.elapsed;
+  }finally{stage.sequenceBusy=false;}
+}
+
 export class InteractionRecorder {
   constructor(stage){
     this.stage=stage;this.active=false;this.elapsed=0;this.actions=[];
@@ -36,7 +64,7 @@ export class InteractionRecorder {
 }
 
 export class InteractionPlayer {
-  constructor(stage,sequence,{continueAfterEnd=false}={}){this.stage=stage;this.sequence=validateSequence(sequence);this.elapsed=0;this.cursor=0;this.finished=false;this.continueAfterEnd=continueAfterEnd;}
+  constructor(stage,sequence,{continueAfterEnd=false,notifyEnd=true}={}){this.stage=stage;this.sequence=validateSequence(sequence);this.elapsed=0;this.cursor=0;this.finished=false;this.continueAfterEnd=continueAfterEnd;this.notifyEnd=notifyEnd;}
   advance(delta,evaluate){
     if(!Number.isFinite(delta)||delta<0)throw new Error('Invalid playback step');
     if(this.finished){evaluate(delta);return;}
@@ -50,6 +78,6 @@ export class InteractionPlayer {
       this.cursor++;
     }
     advanceTo(end);if(delta===0)timed(this.elapsed,()=>evaluate(0));
-    if(end===this.sequence.duration){this.finished=true;this.stage.dispatchEvent(new CustomEvent('sequence-ended'));if(this.continueAfterEnd&&target>end){timed(target,()=>evaluate(target-end));this.elapsed=target;}}
+    if(end===this.sequence.duration){this.finished=true;if(this.notifyEnd)this.stage.dispatchEvent(new CustomEvent('sequence-ended'));if(this.continueAfterEnd&&target>end){timed(target,()=>evaluate(target-end));this.elapsed=target;}}
   }
 }

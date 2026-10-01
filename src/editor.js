@@ -52,11 +52,11 @@ export function createEditor(stage,message,onSelection){
     document.querySelector('#undo').disabled=busy||!history.past.length;document.querySelector('#redo').disabled=busy||!history.future.length;
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
-  async function restore(scene){
+  async function restore(scene,signal){
     if(stage.sequenceBusy)throw new Error('Stop the interaction sequence before loading a scene');
     if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
-    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
+    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries,signal);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
     catch(error){changed();throw error;}
     finally{busy=false;refresh();stage.dispatchEvent(new CustomEvent('scene-ready'));}
   }

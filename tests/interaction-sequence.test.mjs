@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {InteractionRecorder,InteractionPlayer,validateSequence} from '../src/engine/interaction-sequence.js';
+import {InteractionRecorder,InteractionPlayer,validateSequence,retimeSequenceAction,removeSequenceAction,previewSequenceAt} from '../src/engine/interaction-sequence.js';
 import {validateScene} from '../src/engine/scene.js';
 import {exportScene} from '../src/engine/export-source.js';
 
@@ -17,6 +17,25 @@ class FakeStage extends EventTarget {snapshot(){return structuredClone(initial);
 test('sequence validates scene references, ordering and bounded times',()=>{
   const original=sequence(),checked=validateSequence(original);original.initial.name='Changed';assert.equal(checked.initial.name,'Test');
   for(const update of [{duration:Infinity},{duration:.5},{actions:[action(.5),action(.1)]},{actions:[{...action(0),controller:'missing'}]},{actions:[{...action(0),at:-1}]}])assert.throws(()=>validateSequence({...sequence(),...update}));
+});
+test('click-time editing keeps stable simultaneous ordering, extends duration and does not mutate its source',()=>{
+  const original=sequence(),before=structuredClone(original),edited=retimeSequenceAction(original,0,.35);assert.deepEqual(edited.actions.map(row=>row.at),[.35,.35,1]);assert.deepEqual(original,before);
+  const extended=retimeSequenceAction(original,1,2);assert.equal(extended.duration,2);assert.deepEqual(extended.actions.map(row=>row.at),[0,1,2]);assert.equal(removeSequenceAction(original,1).actions.length,2);assert.throws(()=>retimeSequenceAction(original,4,1),/unavailable/);assert.throws(()=>retimeSequenceAction(original,0,-1),/time/);assert.throws(()=>removeSequenceAction(original,-1),/unavailable/);
+});
+test('silent preview rebuilds exact action times from the initial scene and does not emit playback-end notifications',async()=>{
+  const stage=new FakeStage();let elapsed=0,ended=0,restored;stage.addEventListener('sequence-ended',()=>ended++);stage.evaluateFrame=delta=>{elapsed+=delta;};stage.draw=()=>{};
+  const seek=target=>previewSequenceAt(stage,sequence(),target,{restore:async scene=>{restored=scene;elapsed=0;stage.calls=[];}});
+  await seek(.6);assert.equal(restored.paused,true);assert.equal(stage.paused,true);assert.equal(stage.sequenceBusy,false);assert.equal(stage.calls.length,2);assert.ok(Math.abs(elapsed-.6)<1e-10);
+  await seek(0);assert.equal(stage.calls.length,1);await seek(1);assert.equal(stage.calls.length,3);assert.equal(ended,0);
+});
+test('preview cancellation and divergent actions release the editing lock',async()=>{
+  const stage=new FakeStage(),controller=new AbortController();stage.evaluateFrame=()=>{};stage.draw=()=>{};
+  await assert.rejects(previewSequenceAt(stage,sequence(),.6,{restore:async()=>{},signal:controller.signal,onProgress:()=>controller.abort()}),error=>error.name==='AbortError');assert.equal(stage.sequenceBusy,false);
+  stage.triggerInteraction=()=>({accepted:false,reason:'Locked'});await assert.rejects(previewSequenceAt(stage,sequence(),0,{restore:async()=>{}}),/Locked/);assert.equal(stage.sequenceBusy,false);
+});
+test('legacy sequence previews silence current sound without adding settings to the recorded initial scene',async()=>{
+  const stage=new FakeStage();stage.captureAudio=()=>({schema:1,voiceVolume:1,effectVolume:.8,ambientVolume:.5,muted:false,ambientEnabled:true,language:'a_sound_voiceeff',ambientTracks:[],effectTracks:[],voiceTrack:null});stage.evaluateFrame=()=>{};stage.draw=()=>{};let restored;
+  await previewSequenceAt(stage,sequence(),0,{restore:async scene=>{restored=scene;}});assert.equal(restored.audio.muted,true);assert.equal(restored.audio.ambientEnabled,false);assert.equal(stage.sequence.initial.audio,undefined);
 });
 test('recording uses simulation time, ignores rejected and replayed interactions',()=>{
   const stage=new FakeStage(),recorder=new InteractionRecorder(stage);recorder.start();

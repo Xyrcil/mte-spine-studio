@@ -190,7 +190,17 @@ Scheduled interactions also resolve skin voices and subtitles in the recorded
 scene language. A new voice cuts the previous captured or interaction speech
 at its source timestamp. Muting leaves optional subtitles available, including
 in PNG output. Explicit effect references remain separate from voice routing.
-Action-time editing is not connected yet.
+Click timestamps can be edited or removed; time changes retain stable order
+for simultaneous actions and extend duration when necessary. Duration edits
+cannot discard later clicks. The click list is paged rather than rendering
+every action at once. Replay reports state divergence after timing edits.
+Silent preview rebuilds the recorded initial scene at a selected time and
+leaves it paused and muted, with captured speech and click sounds cleared.
+It does not change the sequence's original audio settings. Cancelling a
+preview or encountering an unreproducible action restores the previous scene;
+preview loading is cancellable too. Rendering loss during preview retains the
+previous scene for recovery. Full replay and export start from the
+recorded initial scene and retain their normal audio event processing.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without
