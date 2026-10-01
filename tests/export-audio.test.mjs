@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exportPlan} from '../src/engine/export-plan.js';
-import {sceneAudioSources,mixExportSample} from '../src/engine/export-audio.js';
+import {sceneAudioSources,mixExportSample,voiceTimeline,sceneCaptionWeight} from '../src/engine/export-audio.js';
 const plan=(options={})=>exportPlan({format:'webm',width:100,height:100,fps:10,speed:1,start:1,end:3,loops:2,loopMode:'repeat',fade:.2,fit:'contain',background:'#000000',crop:{x:0,y:0,width:1,height:1},...options});
 const track=(options={})=>({scene:true,channels:[Float32Array.from({length:1000},(_,i)=>i/1000)],sampleRate:100,position:2,repeat:false,gain:1,...options});
 test('ambient sampling follows captured position, interval, speed and repeat',()=>{
@@ -23,4 +23,15 @@ test('event effects begin at their source event and keep forward playback pitch'
   const p=plan({start:0,end:2,speed:2}),effect=track({position:0,offset:.5,sceneRate:1/p.speed});
   assert.deepEqual(mixExportSample(p,.2,[effect]),[0,0]);assert.ok(Math.abs(mixExportSample(p,.35,[effect])[0]-.01)<1e-6);
   const captured=track({position:2,offset:0,sceneRate:1/p.speed});assert.ok(Math.abs(mixExportSample(p,.35,[captured])[0]-.235)<1e-6);
+});
+test('scheduled voice replacements cut previous speech and captions on the same timestamp',()=>{
+  const p=plan({start:0,end:2}),voices=voiceTimeline([{offset:0,position:.2},{offset:.5,position:0}]);assert.equal(voices[0].until,.5);assert.equal(voices[1].until,undefined);
+  const previous=track({...voices[0],channels:[new Float32Array(1000).fill(.2)]}),next=track({...voices[1],channels:[new Float32Array(1000).fill(.4)]});
+  assert.ok(Math.abs(mixExportSample(p,.25,[previous,next])[0]-.2)<1e-6);assert.ok(Math.abs(mixExportSample(p,.75,[previous,next])[0]-.4)<1e-6);
+  const caption={...voices[0],rate:1,duration:5};assert.equal(sceneCaptionWeight(p,.25,caption),1);assert.equal(sceneCaptionWeight(p,.5,caption),0);assert.equal(sceneCaptionWeight(p,2.25,caption),1);
+});
+test('scene caption weights retain event offsets during speed changes and crossfade',()=>{
+  const p=plan({start:0,end:2,speed:2}),caption={offset:.5,position:0,rate:1/p.speed,duration:1,until:1};
+  assert.equal(sceneCaptionWeight(p,.2,caption),0);assert.equal(sceneCaptionWeight(p,.3,caption),1);assert.equal(sceneCaptionWeight(p,.5,caption),0);
+  const cross=plan({start:0,end:2,loopMode:'crossfade',fade:.3}),weight=sceneCaptionWeight(cross,1.45,{offset:0,position:0,rate:1,duration:.5});assert.ok(weight>0&&weight<1);
 });

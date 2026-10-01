@@ -13,10 +13,20 @@ export function mixExportSample(plan,time,tracks,result=[0,0]){
   for(const track of tracks){
     if(track.scene){
       sources??=sceneAudioSources(plan,time);
-      for(const source of sources){clipSample(track.channels,track.sampleRate,track.position+(source.time-(track.offset||0))*(track.sceneRate??1),{repeat:track.repeat,gain:track.gain},sample);result[0]+=sample[0]*source.weight;result[1]+=sample[1]*source.weight;}
+      for(const source of sources){if(track.until!==undefined&&source.time>=track.until)continue;clipSample(track.channels,track.sampleRate,track.position+(source.time-(track.offset||0))*(track.sceneRate??1),{repeat:track.repeat,gain:track.gain},sample);result[0]+=sample[0]*source.weight;result[1]+=sample[1]*source.weight;}
     }else{clipSample(track.channels,track.sampleRate,time,track.options,sample);result[0]+=sample[0];result[1]+=sample[1];}
   }
   const fade=Math.max(0,Math.min(1,(plan.duration-time)/.005));
   result[0]=Math.max(-1,Math.min(1,result[0]))*fade;result[1]=Math.max(-1,Math.min(1,result[1]))*fade;
   return result;
+}
+
+export function voiceTimeline(voices){
+  return voices.map((voice,index)=>({...voice,...(voices[index+1]?{until:voices[index+1].offset}:{})}));
+}
+export function sceneCaptionWeight(plan,time,caption){
+  return sceneAudioSources(plan,time).reduce((sum,source)=>{
+    const elapsed=caption.position+(source.time-(caption.offset||0))*caption.rate;
+    return sum+(elapsed>=0&&elapsed<caption.duration&&(caption.until===undefined||source.time<caption.until)?source.weight:0);
+  },0);
 }

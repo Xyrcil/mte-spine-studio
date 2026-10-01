@@ -126,8 +126,11 @@ including its click sounds and automatic animation sound events. Seeking back
 rebuilds the sequence, and all loop modes use the same source interval. Failed
 actions stop export instead of silently skipping state transitions. Current
 scene edits do not replace the recorded transforms or sound settings.
-Action-time editing and voices triggered by scheduled interactions are not
-connected yet.
+Scheduled interactions also resolve skin voices and subtitles in the recorded
+scene language. A new voice cuts the previous captured or interaction speech
+at its source timestamp. Muting leaves optional subtitles available, including
+in PNG output. Explicit effect references remain separate from voice routing.
+Action-time editing is not connected yet.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without

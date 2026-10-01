@@ -1,6 +1,7 @@
 import {exportPlan} from './engine/export-plan.js';
 import {voiceCatalog} from './engine/voice-catalog.js';
 import {exportScene} from './engine/export-source.js';
+import {interactionExportProvider} from './engine/interaction-export.js';
 
 export function createExportPanel(stage,editor,getData,message){
   const panel=document.createElement('section');panel.id='export-panel';panel.hidden=true;
@@ -17,7 +18,7 @@ export function createExportPanel(stage,editor,getData,message){
     <p>Crop: percentages of the captured viewport.</p><div class="export-pair"><label>Left <input id="export-crop-x" type="number" min="0" max="100" value="0"></label><label>Top <input id="export-crop-y" type="number" min="0" max="100" value="0"></label><label>Crop width <input id="export-crop-width" type="number" min=".1" max="100" value="100"></label><label>Crop height <input id="export-crop-height" type="number" min=".1" max="100" value="100"></label></div>
     <label>Crop fit <select id="export-fit"><option value="contain">Contain, with letterboxing</option><option value="cover">Cover, with clipping</option></select></label>
     <label>Background <input id="export-background" type="color" value="#191b20"></label><label class="check-label"><input id="export-transparent" type="checkbox">Transparent PNG output</label>
-    <label class="check-label"><input id="export-scene-voice" type="checkbox" checked>Include captured voice</label><label class="check-label"><input id="export-scene-subtitles" type="checkbox" checked>Burn in captured voice subtitles</label><p>Captured speech retains its language and position. Forward playback keeps its pitch; scene loops repeat or reverse the selected interval.</p>
+    <label class="check-label"><input id="export-scene-voice" type="checkbox" checked>Include scene voices</label><label class="check-label"><input id="export-scene-subtitles" type="checkbox" checked>Burn in scene voice subtitles</label><p>Scene voices include captured speech and recorded interactions. They retain the scene language; a new interaction voice replaces previous speech. Forward playback keeps its pitch.</p>
     <label>Voice track <select id="export-language"><option value="a_sound_voiceeff">Original track</option><option value="a_sound_voiceeff_ch">Chinese track</option></select></label><label>Voice library <select id="export-voice-scope"><option value="scene">Scene characters / skins</option><option value="story">All story voices</option></select></label><label>Search export voices <input id="export-voice-search" type="search" placeholder="Subtitle, resource or ID"></label><label>Additional voice <select id="export-audio"><option value="">No additional voice</option></select></label>
     <div class="export-pair"><label>Audio offset (s) <input id="export-audio-offset" type="number" min="0" step=".1" value="0"></label><label>Audio volume <input id="export-audio-gain" type="number" min="0" max="2" step=".1" value="1"></label></div>
     <label class="check-label"><input id="export-audio-repeat" type="checkbox">Loop selected audio</label><label class="check-label"><input id="export-audio-speed" type="checkbox">Audio follows speed (changes pitch)</label>
@@ -43,7 +44,7 @@ export function createExportPanel(stage,editor,getData,message){
     try{
       let options=settings();const sourceScene=exportScene(captured,options.useSequence);exportPlan(options,sourceScene.speed);
       progress({frame:0,total:exportPlan(options,sourceScene.speed).frames,phase:'loading'});
-      const {catalog,runtime,audio}=getData(),voice=availableVoices.find(voice=>voice.key===field('audio').value),clip=voice&&audio?.resolve(voice.resourceName,field('language').value);
+      const {catalog,runtime,audio,library}=getData(),voice=availableVoices.find(voice=>voice.key===field('audio').value),clip=voice&&audio?.resolve(voice.resourceName,field('language').value);
       for(const node of formStates.keys())node.disabled=true;
       const extension=options.format==='sequence'?'zip':options.format,filename=`${captured.name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.${extension}`;
       if(!preview&&field('direct').checked){const handle=await window.showSaveFilePicker({suggestedName:filename});writable=await handle.createWritable();}
@@ -53,7 +54,8 @@ export function createExportPanel(stage,editor,getData,message){
       const subtitleClip=field('subtitles').checked&&clip&&voice.text?{url:audio.base+clip.path,text:voice.text}:null;
       const effectProvider=field('effects').checked&&audio?(name,category)=>{const info=audio.soundInfo(name,category);return info.clip?{url:audio.base+info.clip.path,gain:info.volume}:null;}:null;
       const sceneVoice=(field('scene-voice').checked||field('scene-subtitles').checked)&&audio?.exportVoice(sourceScene.audio,sourceScene.objects),capturedVoice=sceneVoice?{...sceneVoice,includeAudio:field('scene-voice').checked,includeSubtitles:field('scene-subtitles').checked}:null;
-      const result=await exportMedia({scene:captured,catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,sourceAspect,settings:options,signal:controller.signal,onProgress:progress,writable,audioClip:clip&&!sourceScene.audio?.muted?{url:audio.base+clip.path}:null,ambientClips,subtitleClip,effectProvider,capturedVoice});
+      const interactionProvider=options.useSequence&&audio?interactionExportProvider(library,audio,sourceScene,{includeAudio:field('scene-voice').checked,includeSubtitles:field('scene-subtitles').checked}):null;
+      const result=await exportMedia({scene:captured,catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,sourceAspect,settings:options,signal:controller.signal,onProgress:progress,writable,audioClip:clip&&!sourceScene.audio?.muted?{url:audio.base+clip.path}:null,ambientClips,subtitleClip,effectProvider,capturedVoice,interactionProvider});
       if(preview){const bitmap=await createImageBitmap(result.blob),canvas=field('preview');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);bitmap.close();field('status').textContent='First frame preview ready';}
       else {if(result.blob){const url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}field('status').textContent=`Export complete: ${result.plan.frames} frames${result.warnings?.length?` · ${result.warnings.join('; ')}`:''}`;}return result;
     }catch(error){if(writable)await writable.abort().catch(()=>{});field('status').textContent=error.name==='AbortError'?'Export cancelled':error.message;message(field('status').textContent);}

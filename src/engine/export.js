@@ -2,7 +2,7 @@ import {Output,BufferTarget,StreamTarget,Mp4OutputFormat,WebMOutputFormat,Canvas
 import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
 import {exportPlan,frameSources,exportCamera} from './export-plan.js';
-import {mixExportSample,sceneAudioSources} from './export-audio.js';
+import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay} from './audio-delay.js';
 import {exportScene} from './export-source.js';
@@ -32,24 +32,34 @@ export class RenderSession {
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }
 
-export async function collectInteractionEffects(session,plan,provider,onProgress=()=>{}){
-  const clips=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>object.visible).map(object=>object.id));let error,eventCount=0;
+export async function collectInteractionEffects(session,plan,provider,onProgress=()=>{},interactionProvider){
+  const clips=[],voices=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>object.visible).map(object=>object.id));let error,eventCount=0;
   const add=(name,category,position,offset,group)=>{
+    if(!provider||session.scene.audio?.muted||(session.scene.audio?.effectVolume??.8)<=0)return;
     if(group&&!visible.has(group))return;
     const clip=provider(name,category);if(!clip){warnings.add(`Sound unavailable: ${name}`);return;}
     clips.push({...clip,scene:true,position,offset,sceneRate:1/plan.speed,repeat:false,gain:clip.gain*(session.scene.audio?.effectVolume??.8)});
   };
   for(const track of session.scene.audio?.effectTracks||[])add(track.name,track.category,track.time,0,track.group);
   const listener=event=>{if(++eventCount>10000){error=new Error('Too many interaction sound events; export a shorter interval');return;}try{add(event.detail.name,event.detail.category,0,Math.max(0,(session.stage.sequenceTime??session.pendingTime)-(event.detail.lateness||0)),event.detail.group);}catch(reason){error=reason;}};
+  const voiceListener=event=>{
+    if(!interactionProvider||event.detail.group&&!visible.has(event.detail.group))return;
+    if(++eventCount>10000){error=new Error('Too many interaction audio events; export a shorter interval');return;}
+    try{const result=interactionProvider(event.detail),offset=Math.max(0,(session.stage.sequenceTime??session.pendingTime)-(event.detail.lateness||0));
+      if(result?.effect)add(result.effect.name,result.effect.category,0,offset,event.detail.group);
+      if(result?.voice){const voice=result.voice;voices.push({...voice,scene:true,position:0,offset,sceneRate:1/plan.speed,repeat:false,gain:session.scene.audio?.voiceVolume??1});if(voice.includeSubtitles&&!voice.text)warnings.add('Interaction voice has no subtitle text');}
+    }catch(reason){error=reason;}
+  };
   session.stage.addEventListener('sound-request',listener);
-  const end=Math.max(plan.end,plan.start+plan.segmentFrames/plan.fps*plan.speed);
+  session.stage.addEventListener('voice-request',voiceListener);
+  const end=plan.format==='png'?plan.start:Math.max(plan.end,plan.start+plan.segmentFrames/plan.fps*plan.speed);
   onProgress({phase:'analyzing-audio',frame:0,total:Math.ceil(end*120)});
   try{await session.seek(end,time=>{if(error)throw error;onProgress({phase:'analyzing-audio',frame:Math.ceil(time*120),total:Math.ceil(end*120)});});if(error)throw error;}
-  finally{session.stage.removeEventListener('sound-request',listener);}
-  await session.initialize();return {clips,warnings:[...warnings]};
+  finally{session.stage.removeEventListener('sound-request',listener);session.stage.removeEventListener('voice-request',voiceListener);}
+  await session.initialize();return {clips,voices:voiceTimeline(voices),warnings:[...warnings]};
 }
 
-export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice}){
+export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice,interactionProvider}){
   scene=exportScene(scene,Boolean(settings.useSequence));
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=plan.format==='mp4'?'avc':'vp9';
   if(['mp4','webm'].includes(plan.format)&&!await canEncodeVideo(codec,{width:plan.width,height:plan.height,frameRate:plan.fps,quality}))throw new Error(`${plan.format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`);
@@ -58,9 +68,9 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
   let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
   const tracks=[];
-  let interactionClips=[],warnings=[];
+  let interactionClips=[],interactionVoices=[],warnings=[];
   let captionDuration=0,captionLayout;
-  let sceneCaption;
+  const sceneCaptions=[];
   let audioDelay=0;
   const audioCodec=plan.format==='mp4'?'aac':'opus';
   try{
@@ -68,22 +78,25 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     await session.initialize();if(head)await head.initialize();
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
     const video=['mp4','webm'].includes(plan.format);
-    if(video&&effectProvider&&!session.scene.audio?.muted&&(session.scene.audio?.effectVolume??.8)>0){const result=await collectInteractionEffects(session,plan,effectProvider,onProgress);interactionClips=result.clips;warnings=result.warnings;}
-    const voiceAudio=video&&capturedVoice?.includeAudio&&!session.scene.audio?.muted?{...capturedVoice,scene:true,sceneRate:1/plan.speed}:null;
-    const voiceCaption=capturedVoice?.includeSubtitles&&capturedVoice.text?{...capturedVoice,captionOnly:true,sceneCaption:true,sceneRate:1/plan.speed}:null;
+    if((video&&effectProvider)||interactionProvider){const result=await collectInteractionEffects(session,plan,video?effectProvider:null,onProgress,interactionProvider);interactionClips=result.clips;interactionVoices=result.voices;warnings=result.warnings;}
+    const replacement=interactionVoices.length?{until:interactionVoices[0].offset}:{};
+    const voiceAudio=video&&capturedVoice?.includeAudio&&!session.scene.audio?.muted?{...capturedVoice,...replacement,scene:true,sceneRate:1/plan.speed}:null;
+    const voiceCaption=capturedVoice?.includeSubtitles&&capturedVoice.text?{...capturedVoice,...replacement,captionOnly:true,sceneCaption:true,sceneRate:1/plan.speed}:null;
+    const scheduledAudio=video&&!session.scene.audio?.muted?interactionVoices.filter(voice=>voice.includeAudio):[];
+    const scheduledCaptions=interactionVoices.filter(voice=>voice.includeSubtitles&&voice.text).map(voice=>({...voice,captionOnly:true,sceneCaption:true}));
     if(capturedVoice?.includeSubtitles&&!capturedVoice.text)warnings.push('Captured voice has no subtitle text');
-    const hasAudio=video&&(audioClip||ambientClips.length||interactionClips.length||voiceAudio);
-    if(hasAudio||subtitleClip||voiceCaption){
+    const hasAudio=video&&(audioClip||ambientClips.length||interactionClips.length||voiceAudio||scheduledAudio.length);
+    if(hasAudio||subtitleClip||voiceCaption||scheduledCaptions.length){
       if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format');
       if(hasAudio&&audioCodec==='aac')audioDelay=await aacEncodingDelay(signal);
       decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
-      for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[])]){
+      for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...scheduledAudio,...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[]),...scheduledCaptions]){
         checkpoint(signal);let buffer=decoded.get(clip.url);
         if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
           buffer=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
           if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);
         }
-        if(clip.sceneCaption){sceneCaption={layout:prepareSubtitle(ctx,clip.text,plan.width,plan.height),duration:buffer.duration,position:clip.position,rate:clip.sceneRate};}
+        if(clip.sceneCaption){sceneCaptions.push({layout:prepareSubtitle(ctx,clip.text,plan.width,plan.height),duration:buffer.duration,position:clip.position,rate:clip.sceneRate,offset:clip.offset||0,until:clip.until});}
         else if(clip.captionOnly){captionDuration=buffer.duration;captionLayout=prepareSubtitle(ctx,clip.text,plan.width,plan.height);}
         else tracks.push({...clip,channels:Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),sampleRate:buffer.sampleRate,options:{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat),gain:settings.audioGain??1}});
       }
@@ -114,15 +127,15 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       if(frames.length===2){await head.seek(plan.start+frames[1].frame/plan.fps*plan.speed);ctx.globalCompositeOperation='lighter';ctx.globalAlpha=frames[1].weight;ctx.drawImage(head.canvas,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
       let captionOffset=0;
       if(captionLayout&&subtitleActive(i/plan.fps,captionDuration,{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat)})){drawSubtitle(ctx,captionLayout,plan.width,plan.height);captionOffset=captionLayout.height+plan.height*.015;}
-      if(sceneCaption){const weight=sceneAudioSources(plan,i/plan.fps).reduce((sum,source)=>sum+(subtitleActive(sceneCaption.position+source.time*sceneCaption.rate,sceneCaption.duration)?source.weight:0),0);if(weight>0)drawSubtitle(ctx,sceneCaption.layout,plan.width,plan.height,captionOffset,weight);}
-      if(plan.format==='png'){const blob=await png(canvas);checkpoint(signal);if(fileWriter){await fileWriter.write(await blob.arrayBuffer());checkpoint(signal);await fileWriter.close();}onProgress({frame:1,total:1,phase:'complete'});return {blob:fileWriter?null:blob,plan};}
+      for(const caption of sceneCaptions){const weight=sceneCaptionWeight(plan,i/plan.fps,caption);if(weight>0){drawSubtitle(ctx,caption.layout,plan.width,plan.height,captionOffset,weight);captionOffset+=caption.layout.height+plan.height*.015;}}
+      if(plan.format==='png'){const blob=await png(canvas);checkpoint(signal);if(fileWriter){await fileWriter.write(await blob.arrayBuffer());checkpoint(signal);await fileWriter.close();}onProgress({frame:1,total:1,phase:'complete'});return {blob:fileWriter?null:blob,plan,warnings,interactionVoices:interactionVoices.length};}
       if(source)await Promise.all([addAudio(Math.min(plan.duration,(i+1)/plan.fps)),source.add(i/plan.fps,1/plan.fps,{keyFrame:i%plan.cycleFrames===0})]);
       else {const blob=await png(canvas);checkpoint(signal);const file=new ZipPassThrough(`frame-${String(i).padStart(6,'0')}.png`);zip.add(file);file.push(new Uint8Array(await blob.arrayBuffer()),true);await writeQueue;}
       onProgress({frame:i+1,total:plan.frames,phase:'rendering'});if(i%8===0)await yieldBrowser();
     }
     checkpoint(signal);if(zipError)throw zipError;onProgress({frame:plan.frames,total:plan.frames,phase:'finalizing'});
-    if(output){source.close();audioSource?.close();await output.finalize();checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob([output.target.buffer],{type:plan.format==='mp4'?'video/mp4':'video/webm'}),plan,warnings,interactionSounds:interactionClips.length};}
-    zip.end();await writeQueue;if(zipError)throw zipError;checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob(chunks,{type:'application/zip'}),plan};
+    if(output){source.close();audioSource?.close();await output.finalize();checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob([output.target.buffer],{type:plan.format==='mp4'?'video/mp4':'video/webm'}),plan,warnings,interactionSounds:interactionClips.length,interactionVoices:interactionVoices.length};}
+    zip.end();await writeQueue;if(zipError)throw zipError;checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob(chunks,{type:'application/zip'}),plan,warnings,interactionVoices:interactionVoices.length};
   }catch(error){if(output&&output.state!=='finalized')await output.cancel().catch(()=>{});zip?.terminate();if(fileWriter)await fileWriter.abort(error).catch(()=>{});if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');throw error;}
   finally{if(abortOutput)signal?.removeEventListener('abort',abortOutput);if(abortWrite)signal?.removeEventListener('abort',abortWrite);fileWriter?.releaseLock();session.dispose();head?.dispose();if(decoder)await decoder.close();}
 }
