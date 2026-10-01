@@ -28,8 +28,13 @@ plays the available source and Chinese tracks with subtitles and volume control.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
-Interaction state machines, event-driven audio, static portraits and media
-export are still being implemented.
+Interaction playback uses source colliders, moving-bone bindings, coordinated
+animation tracks and timeline events. Controller state is stored with scenes.
+The Clarissa skin has browser checks for 13 reachable idle states and 38 click
+regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
+Other special controllers still need full behavioral validation. Effect
+rendering, complete voice routing, static portraits and media export are still
+being implemented.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without

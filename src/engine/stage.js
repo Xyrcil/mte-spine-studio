@@ -1,15 +1,8 @@
+import {validateScene} from './scene.js';
+import {identity,multiply,unityTransform,objectTransform} from './geometry.js';
+import {InteractionRoot} from './interaction.js';
+export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
-const identity = () => [1, 0, 0, 1, 0, 0];
-export function objectTransform(group){const angle=(group.rotation||0)*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle),x=group.scale*(group.flipX?-1:1),y=group.scale*(group.flipY?-1:1);return [c*x,s*x,-s*y,c*y,group.x,group.y];}
-export function multiply(a, b) {
-  return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1], a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3], a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
-}
-export function unityTransform(data) {
-  const q = data.m_LocalRotation || {x:0,y:0,z:0,w:1};
-  const scale = data.m_LocalScale || {x:1,y:1};
-  const p = data.m_LocalPosition || {x:0,y:0};
-  return [(1-2*(q.y*q.y+q.z*q.z))*scale.x, 2*(q.x*q.y+q.w*q.z)*scale.x, 2*(q.x*q.y-q.w*q.z)*scale.y, (1-2*(q.x*q.x+q.z*q.z))*scale.y, p.x, p.y];
-}
 
 export class Stage extends EventTarget {
   constructor(canvas,options={}) {
@@ -56,6 +49,7 @@ export class Stage extends EventTarget {
         const go = tree.get(String(transform.data.m_GameObject?.m_PathID));
         return Boolean(go?.data.m_IsActive ?? true) && isActive(String(transform.data.m_Father?.m_PathID || '0'), seen);
       };
+      group.nodes=tree;group.transforms=new Map([...tree.values()].filter(node=>node.type.includes('Transform')).map(node=>[String(node.data.m_GameObject?.m_PathID),node]));group.world=world;group.isActiveTransform=isActive;
       const instances = presentation.instances.filter(instance => isActive(instance.transform));
       for (const instance of instances) {
         const entry = byId.get(instance.skeletonId);
@@ -89,11 +83,16 @@ export class Stage extends EventTarget {
         mix.defaultMix = layer.entry.defaultMix;
         layer.entry.mixes.fromAnimation.forEach((name,index) => mix.setMix(name, layer.entry.mixes.toAnimation[index], layer.entry.mixes.duration[index]));
         layer.state = new (s().AnimationState)(mix);
-        layer.state.addListener({event:(track,event) => this.dispatchEvent(new CustomEvent('animation-event', {detail:{group:group.id, layer:layer.instance.id, track:track.trackIndex, name:event.data.name, time:event.time}}))});
+        layer.state.addListener({event:(track,event) => {
+          if(this.suppressEvents)return;
+          for(const root of group.controllers||[])root.onEvent(layer,track,event);
+          this.dispatchEvent(new CustomEvent('animation-event', {detail:{group:group.id, layer:layer.instance.id, track:track.trackIndex, name:event.data.name, time:event.time,int:event.intValue,float:event.floatValue,string:event.stringValue}}));
+        }});
         const name = layer.instance.animation;
         if (name && data.findAnimation(name)) layer.state.setAnimation(0, name, layer.instance.loop);
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
+      group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
@@ -102,6 +101,7 @@ export class Stage extends EventTarget {
     }
   }
   evaluate(delta) {
+    for(const group of this.groups)for(const root of group.controllers||[])root.advance(delta);
     for (const group of this.groups.filter(group=>group.kind==='spine')) for (const layer of group.layers) {
       const sk = layer.skeleton;
       layer.state.update(delta * (layer.instance.timeScale ?? 1));
@@ -127,7 +127,7 @@ export class Stage extends EventTarget {
     return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.kind==='image')return {...row,src:group.src,width:group.width,height:group.height};
-      return {...row,bundle:group.presentation.id,layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
+      return {...row,bundle:group.presentation.id,interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
     })};
   }
   async restore(scene,presentations,entries,signal) {
@@ -150,17 +150,26 @@ export class Stage extends EventTarget {
         if(group.kind==='image')return;
         if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);}
+        for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
       });
       scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(group.kind==='image'){group.width=row.width;group.height=row.height;}});
       scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const saved of row.layers){const layer=group.layers.find(layer=>layer.instance.id===saved.id);layer.active=saved.active;layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}}});
+      scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else root.reset();}});
       for(const group of old)if(!created.includes(group))this.release(group);
-      this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;this.evaluate(0);this.draw();
+      this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
+      this.suppressEvents=true;try{this.evaluate(0);}finally{this.suppressEvents=false;}this.draw();
     }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}
   }
   release(group){if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
+  screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
+  interact(clientX,clientY){
+    if(this.paused)return {accepted:false,reason:'Playback is paused'};
+    const {x,y}=this.screenToWorld(clientX,clientY);
+    for(const group of [...this.groups].reverse())if(group.visible)for(const root of group.controllers||[]){const hit=root.hitAt(x,y);if(hit)return {...root.click(hit),group:group.id,hit:hit.id};}
+    return {accepted:false,reason:'No interaction region here'};
+  }
   hitTest(clientX,clientY){
-    const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect),height=width/aspect;
-    const x=this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y=this.camera.y+(.5-(clientY-rect.top)/rect.height)*height;
+    const {x,y}=this.screenToWorld(clientX,clientY);
     for(const group of [...this.groups].reverse())if(group.visible){
       if(group.kind==='image'){
         const m=objectTransform(group),det=m[0]*m[3]-m[1]*m[2],dx=x-m[4],dy=y-m[5],localX=(m[3]*dx-m[2]*dy)/det,localY=(-m[1]*dx+m[0]*dy)/det;
@@ -216,4 +225,3 @@ export class Stage extends EventTarget {
     this.renderer.dispose();
   }
 }
-import {validateScene} from './scene.js';

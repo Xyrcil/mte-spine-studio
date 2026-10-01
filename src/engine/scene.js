@@ -1,3 +1,4 @@
+import {validateInteraction} from './interaction.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
@@ -13,6 +14,7 @@ export function validateScene(value) {
     if(result.scale<=0||result.opacity<0||result.opacity>1)throw new Error('Invalid object scale or opacity');
     if(object.kind==='spine') {
       result.bundle=text(object.bundle,'bundle');
+      if(object.interactions!==undefined){if(!Array.isArray(object.interactions)||object.interactions.length>100)throw new Error('Invalid interaction controllers');const ids=new Set();result.interactions=object.interactions.map(row=>{const id=text(row.id,'controller ID');if(ids.has(id))throw new Error('Duplicate controller ID');ids.add(id);return {id,state:validateInteraction(row.state)};});}
       if(!object.layers||!Array.isArray(object.layers))throw new Error('Missing animation state');
       const layerIds=new Set();
       result.layers=object.layers.map(layer=>{

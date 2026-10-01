@@ -12,25 +12,23 @@ document.querySelector('#app').innerHTML = `
 const status = document.querySelector('#status');
 const stage = new Stage(document.querySelector('#stage'));
 window.mteStudio = stage;
-let view = 'gallery', selection, catalog, runtime, request, libraryData, audio;
+let view = 'gallery', catalog, runtime, request, libraryData, audio;
 const message = value => {status.textContent=value;};
-const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){selection=group.presentation;voicePanel(group.presentation);}});
+const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else document.querySelector('#details').textContent=group?'Image layer':'';});
 window.mteEditor=editor;
-function refreshLayers() {
-  editor.refresh();
-}
+function describe(group){const gaps=(group.controllers||[]).flatMap(root=>root.missingVariants());document.querySelector('#details').textContent=`${group.presentation.instances.length} skeleton instances · ${group.presentation.hotspots.length} interaction regions${gaps.length?` · Missing source animations: ${gaps.map(row=>row.animation).join(', ')}`:''}`;}
 async function select(presentation) {
   if(editor.busy)return;
-  request?.abort();request=new AbortController();selection=presentation;
+  request?.abort();request=new AbortController();
   audio?.stop();
+  audio?.stopEffects();
   message(`Loading ${presentation.id}…`);
   try {
     const old=[...stage.groups];editor.before();
     const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===presentation.id),request.signal);
     if(view==='gallery')for(const previous of old)stage.remove(previous.id);
     editor.choose(group);editor.changed();
-    refreshLayers();
-    document.querySelector('#details').textContent=`${presentation.instances.length} skeleton instances · ${presentation.hotspots.length} interaction regions`;
+    describe(group);
     message(presentation.id);
     voicePanel(presentation);
   } catch(error) { if(error.name!=='AbortError')message(error.message); }
@@ -68,7 +66,9 @@ function voicePanel(presentation) {
   const stop=document.createElement('button');stop.textContent='Stop voice';stop.onclick=()=>audio.stop();
   const volume=document.createElement('input');volume.type='range';volume.min='0';volume.max='1';volume.step='.05';volume.value=audio.volume;volume.setAttribute('aria-label','Voice volume');volume.oninput=()=>audio.setVolume(Number(volume.value));
   const subtitle=document.createElement('p');subtitle.id='subtitle';
-  panel.append(heading,language,list,play,stop,volume,subtitle);document.querySelector('.inspector').append(panel);
+  const effectsLabel=document.createElement('label');effectsLabel.textContent='Effect volume';
+  const effects=document.createElement('input');effects.type='range';effects.min='0';effects.max='1';effects.step='.05';effects.value=audio.effectVolume;effects.oninput=()=>audio.setEffectVolume(Number(effects.value));effectsLabel.append(effects);
+  panel.append(heading,language,list,play,stop,volume,effectsLabel,subtitle);document.querySelector('.inspector').append(panel);
 }
 document.querySelector('#search').oninput=library;document.querySelector('#category').onchange=library;
 document.querySelector('#editor-toggle').onclick=event=>{event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
@@ -83,10 +83,23 @@ for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=
 };
 let drag;
 const canvas=document.querySelector('#stage');
-canvas.onpointerdown=event=>{if(view!=='studio'||editor.busy)return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
+canvas.onpointerdown=event=>{if(editor.busy)return;if(view==='gallery'){const result=stage.interact(event.clientX,event.clientY);if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);return;}if(view!=='studio')return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
 canvas.onpointermove=event=>{if(!drag)return;const width=Math.max(stage.camera.width,stage.camera.height*canvas.clientWidth/canvas.clientHeight);drag.group.x=drag.startX+(event.clientX-drag.x)*width/canvas.clientWidth;drag.group.y=drag.startY-(event.clientY-drag.y)*width/canvas.clientWidth;};
 const endDrag=()=>{if(drag){drag=null;editor.changed();}};canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
 let wheelTimer;
+stage.addEventListener('sound-request',event=>{if(!audio||stage.paused)return;audio.playEffect(event.detail.name,event.detail.category).catch(error=>message(error.message));});
+stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
+stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
+stage.addEventListener('voice-request',event=>{
+  if(!audio||stage.paused)return;
+  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-panel select')?.value||'a_sound_voiceeff';
+  const suffix=({1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'})[kind];
+  let name=explicit|| (suffix?`Voice_${skinId}_Touch_${suffix}`:'');if(!name)return;
+  if(!audio.resolve(name,language)&&!explicit&&skinId.length===9)name=`Voice_${skinId.slice(0,-2)}_Touch_${suffix}`;
+  if(!audio.resolve(name,language))return;
+  const voice=libraryData.voices.find(row=>row.resourceName===name)||{resourceName:name,title:name,text:''};
+  audio.play(voice,language).catch(error=>message(error.message));
+});
 canvas.onwheel=event=>{event.preventDefault();if(editor.busy)return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
 try {
   const base=import.meta.env.BASE_URL;

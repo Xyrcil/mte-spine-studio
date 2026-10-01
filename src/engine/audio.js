@@ -2,7 +2,7 @@ export class AudioBus extends EventTarget {
   constructor(index, resources, base) {
     super();
     this.base=base;
-    this.volume=1;this.muted=false;this.token=0;
+    this.volume=1;this.muted=false;this.token=0;this.effects=new Set();this.effectVolume=.8;
     this.resources=new Map(resources.map(row=>[row.name,row]));
     this.byName=new Map();
     for(const entry of index.entries)if(!entry.errors.length) {
@@ -29,8 +29,19 @@ export class AudioBus extends EventTarget {
     }catch(error){if(token===this.token)throw error;}
   }
   stop() {this.token++;this.element.pause();this.element.removeAttribute('src');this.element.load();this.dispatchEvent(new CustomEvent('subtitle',{detail:null}));}
-  pause() {this.element.pause();}
-  async resume() {if(this.element.currentSrc)await this.element.play();}
+  async playEffect(name,category='a_sound_ui'){
+    const clip=this.resolve(name,category);if(!clip)throw new Error(`Sound unavailable: ${name}`);
+    if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
+    const element=new Audio(this.base+clip.path);element.volume=this.effectVolume;element.muted=this.muted;this.effects.add(element);
+    element.addEventListener('ended',()=>this.releaseEffect(element),{once:true});
+    try{await element.play();}catch(error){this.releaseEffect(element);throw error;}
+    return element;
+  }
+  releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
+  stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
+  pause() {this.element.pause();for(const effect of this.effects)effect.pause();}
+  async resume() {await Promise.all([...(this.element.currentSrc?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play())]);}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
-  setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;}
+  setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume;}
+  setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;}
 }
