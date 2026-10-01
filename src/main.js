@@ -1,9 +1,11 @@
 import './style.css';
+import './editor.css';
 import {Stage} from './engine/stage.js';
 import {AudioBus} from './engine/audio.js';
+import {createEditor} from './editor.js';
 
 document.querySelector('#app').innerHTML = `
-  <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="pause">Pause</button></header>
+  <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
   <main><aside class="library"><label for="search">Asset library</label><input id="search" placeholder="Search asset or category"><select id="category"><option value="">All categories</option><option>painting</option><option>story</option><option>storyCG</option><option>ui</option></select><div id="assets" role="list"></div></aside>
   <section class="workspace"><canvas id="stage" aria-label="Animated scene"></canvas><div id="status" role="status">Loading asset catalog…</div></section>
   <aside class="inspector"><h2>Scene</h2><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Interaction rules and audio are being connected to the extracted source data.</p></aside></main>`;
@@ -12,23 +14,21 @@ const stage = new Stage(document.querySelector('#stage'));
 window.mteStudio = stage;
 let view = 'gallery', selection, catalog, runtime, request, libraryData, audio;
 const message = value => {status.textContent=value;};
+const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){selection=group.presentation;voicePanel(group.presentation);}});
+window.mteEditor=editor;
 function refreshLayers() {
-  const container=document.querySelector('#layers'); container.replaceChildren();
-  for (const group of stage.groups) {
-    const row=document.createElement('div'); row.className='layer';
-    const title=document.createElement('span'); title.textContent=group.presentation.label || group.presentation.id.split('/').at(-1);
-    const remove=document.createElement('button'); remove.textContent='×'; remove.title='Remove layer'; remove.onclick=()=>{stage.remove(group.id);refreshLayers();};
-    const scale=document.createElement('input');scale.type='range';scale.min='.1';scale.max='3';scale.step='.05';scale.value=group.scale;scale.title='Scale';scale.oninput=()=>{group.scale=Number(scale.value);};
-    row.append(title,remove,scale);container.append(row);
-  }
+  editor.refresh();
 }
 async function select(presentation) {
+  if(editor.busy)return;
   request?.abort();request=new AbortController();selection=presentation;
   audio?.stop();
   message(`Loading ${presentation.id}…`);
   try {
-    if (view==='gallery') for (const group of [...stage.groups]) stage.remove(group.id);
-    await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===presentation.id),request.signal);
+    const old=[...stage.groups];editor.before();
+    const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===presentation.id),request.signal);
+    if(view==='gallery')for(const previous of old)stage.remove(previous.id);
+    editor.choose(group);editor.changed();
     refreshLayers();
     document.querySelector('#details').textContent=`${presentation.instances.length} skeleton instances · ${presentation.hotspots.length} interaction regions`;
     message(presentation.id);
@@ -71,10 +71,11 @@ function voicePanel(presentation) {
   panel.append(heading,language,list,play,stop,volume,subtitle);document.querySelector('.inspector').append(panel);
 }
 document.querySelector('#search').oninput=library;document.querySelector('#category').onchange=library;
-document.querySelector('#background').oninput=event=>{stage.background=event.target.value;};
-document.querySelector('#speed').oninput=event=>{stage.speed=Number(event.target.value);};
-document.querySelector('#pause').onclick=event=>{stage.paused=!stage.paused;event.target.textContent=stage.paused?'Play':'Pause';};
-document.querySelector('#fit').onclick=()=>stage.fit();
+document.querySelector('#editor-toggle').onclick=event=>{event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
+document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};
+document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
+document.querySelector('#pause').onclick=()=>editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});
+document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   view=button.dataset.view;
   for(const tab of document.querySelectorAll('[data-view]'))tab.classList.toggle('selected',tab===button);
@@ -82,10 +83,11 @@ for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=
 };
 let drag;
 const canvas=document.querySelector('#stage');
-canvas.onpointerdown=event=>{if(view!=='studio'||!stage.groups.length)return;canvas.setPointerCapture(event.pointerId);const group=stage.groups.at(-1);drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
+canvas.onpointerdown=event=>{if(view!=='studio'||editor.busy)return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
 canvas.onpointermove=event=>{if(!drag)return;const width=Math.max(stage.camera.width,stage.camera.height*canvas.clientWidth/canvas.clientHeight);drag.group.x=drag.startX+(event.clientX-drag.x)*width/canvas.clientWidth;drag.group.y=drag.startY-(event.clientY-drag.y)*width/canvas.clientWidth;};
-canvas.onpointerup=()=>{drag=null;};canvas.onpointercancel=()=>{drag=null;};
-canvas.onwheel=event=>{event.preventDefault();const factor=Math.exp(event.deltaY*.001);stage.camera.width*=factor;stage.camera.height*=factor;};
+const endDrag=()=>{if(drag){drag=null;editor.changed();}};canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
+let wheelTimer;
+canvas.onwheel=event=>{event.preventDefault();if(editor.busy)return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
 try {
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
@@ -93,5 +95,6 @@ try {
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
   if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;}
   library();message(`${catalog.presentations.length} bundles · ${runtime.summary.parsed} parsed skeletons`);
-  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(initial)await select(initial);
+  const recovered=await editor.init(catalog.presentations,runtime.entries);
+  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);
 }catch(error){message(error.message);}

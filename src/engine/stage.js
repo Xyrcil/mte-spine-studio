@@ -1,5 +1,6 @@
 const s = () => window.spine;
 const identity = () => [1, 0, 0, 1, 0, 0];
+export function objectTransform(group){const angle=(group.rotation||0)*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle),x=group.scale*(group.flipX?-1:1),y=group.scale*(group.flipY?-1:1);return [c*x,s*x,-s*y,c*y,group.x,group.y];}
 export function multiply(a, b) {
   return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1], a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3], a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
 }
@@ -11,9 +12,10 @@ export function unityTransform(data) {
 }
 
 export class Stage extends EventTarget {
-  constructor(canvas) {
+  constructor(canvas,options={}) {
     super();
     this.canvas = canvas;
+    this.options=options;
     this.gl = canvas.getContext('webgl', {alpha:true, antialias:true, preserveDrawingBuffer:true});
     if (!this.gl) throw new Error('WebGL is unavailable');
     this.renderer = new (s().webgl.SceneRenderer)(canvas, this.gl);
@@ -23,18 +25,16 @@ export class Stage extends EventTarget {
     this.background = '#191b20';
     this.camera = {x:0,y:0,width:20,height:20};
     this.previous = performance.now();
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(canvas);
-    this.frame = requestAnimationFrame(time => this.tick(time));
+    if(!options.manual){this.resizeObserver = new ResizeObserver(() => this.resize());this.resizeObserver.observe(canvas);this.frame = requestAnimationFrame(time => this.tick(time));}
   }
   resize() {
     const ratio = Math.min(devicePixelRatio || 1, 2);
     this.canvas.width = Math.max(1, Math.round(this.canvas.clientWidth * ratio));
     this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
   }
-  async add(presentation, entries, signal) {
+  async add(presentation, entries, signal,detached=false) {
     const manager = new (s().webgl.AssetManager)(this.gl);
-    const group = {id:crypto.randomUUID(), presentation, manager, layers:[], x:0, y:0, scale:1, visible:true};
+    const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager, layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
     try {
       const base = `${import.meta.env.BASE_URL}assets/${presentation.path}/`;
       const byId = new Map(entries.map(entry => [entry.id, entry]));
@@ -94,9 +94,7 @@ export class Stage extends EventTarget {
         if (name && data.findAnimation(name)) layer.state.setAnimation(0, name, layer.instance.loop);
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
-      this.groups.push(group);
-      this.evaluate(0);
-      this.fit();
+      if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
       manager.dispose();
@@ -104,12 +102,12 @@ export class Stage extends EventTarget {
     }
   }
   evaluate(delta) {
-    for (const group of this.groups) for (const layer of group.layers) {
+    for (const group of this.groups.filter(group=>group.kind==='spine')) for (const layer of group.layers) {
       const sk = layer.skeleton;
       layer.state.update(delta * (layer.instance.timeScale ?? 1));
       layer.state.apply(sk);
       sk.updateWorldTransform();
-      const m = multiply([group.scale,0,0,group.scale,group.x,group.y], layer.transform);
+      const m = multiply(objectTransform(group), layer.transform);
       for (const bone of sk.bones) {
         const a=bone.a,b=bone.b,c=bone.c,d=bone.d,x=bone.worldX,y=bone.worldY;
         bone.a=m[0]*a+m[2]*c; bone.b=m[0]*b+m[2]*d;
@@ -118,9 +116,64 @@ export class Stage extends EventTarget {
       }
     }
   }
+  async addImage(src,name='Background image',detached=false) {
+    const image=new Image();image.src=src;await image.decode();
+    const width=this.camera.width,height=width*image.naturalHeight/image.naturalWidth;
+    const texture=new (s().webgl.GLTexture)(this.gl,image);
+    const group={id:crypto.randomUUID(),kind:'image',src,name,texture,width,height,x:this.camera.x,y:this.camera.y,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[]};
+    if(!detached)this.groups.unshift(group);return group;
+  }
+  snapshot(name='Untitled scene') {
+    return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,objects:this.groups.map(group=>{
+      const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
+      if(group.kind==='image')return {...row,src:group.src,width:group.width,height:group.height};
+      return {...row,bundle:group.presentation.id,layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
+    })};
+  }
+  async restore(scene,presentations,entries,signal) {
+    scene=validateScene(scene);
+    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused;this.paused=true;
+    const created=[];
+    try {
+      for(const row of scene.objects){
+        const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?group.src===row.src:group.presentation.id===row.bundle));
+        if(group){created.push(group);continue;}
+        if(row.kind==='image')created.push(await this.addImage(row.src,row.name,true));
+        else {
+          const presentation=presentations.find(item=>item.id===row.bundle);if(!presentation)throw new Error(`Scene asset unavailable: ${row.bundle}`);
+          created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===row.bundle),signal,true));
+        }
+      }
+      if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
+      scene.objects.forEach((row,index)=>{
+        const group=created[index];
+        if(group.kind==='image')return;
+        if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
+        for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);}
+      });
+      scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(group.kind==='image'){group.width=row.width;group.height=row.height;}});
+      scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const saved of row.layers){const layer=group.layers.find(layer=>layer.instance.id===saved.id);layer.active=saved.active;layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}}});
+      for(const group of old)if(!created.includes(group))this.release(group);
+      this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;this.evaluate(0);this.draw();
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}
+  }
+  release(group){if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
+  hitTest(clientX,clientY){
+    const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect),height=width/aspect;
+    const x=this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y=this.camera.y+(.5-(clientY-rect.top)/rect.height)*height;
+    for(const group of [...this.groups].reverse())if(group.visible){
+      if(group.kind==='image'){
+        const m=objectTransform(group),det=m[0]*m[3]-m[1]*m[2],dx=x-m[4],dy=y-m[5],localX=(m[3]*dx-m[2]*dy)/det,localY=(-m[1]*dx+m[0]*dy)/det;
+        if(Math.abs(localX)<=group.width/2&&Math.abs(localY)<=group.height/2)return group;
+      }else for(const layer of group.layers.filter(layer=>layer.active)){
+        const offset=new (s().Vector2)(),size=new (s().Vector2)();layer.skeleton.getBounds(offset,size,[]);
+        if(x>=offset.x&&x<=offset.x+size.x&&y>=offset.y&&y<=offset.y+size.y)return group;
+      }
+    }return null;
+  }
   fit() {
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for (const group of this.groups) for (const layer of group.layers) {
+    for (const group of this.groups.filter(group=>group.visible&&group.kind==='spine')) for (const layer of group.layers.filter(layer=>layer.active)) {
       const offset=new (s().Vector2)(), size=new (s().Vector2)();
       layer.skeleton.getBounds(offset,size,[]);
       if (![offset.x,offset.y,size.x,size.y].every(Number.isFinite)) continue;
@@ -139,7 +192,12 @@ export class Stage extends EventTarget {
     renderer.camera.viewportWidth=width; renderer.camera.viewportHeight=width/aspect;
     renderer.camera.position.x=this.camera.x; renderer.camera.position.y=this.camera.y;
     renderer.begin();
-    for (const group of this.groups) if (group.visible) for (const layer of group.layers) if (layer.active) renderer.drawSkeleton(layer.skeleton,false);
+    for (const group of this.groups) if(group.visible) {
+      if(group.kind==='image'){
+        const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
+        renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
+      }else for(const layer of group.layers)if(layer.active){layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(layer.skeleton,false);}
+    }
     renderer.end();
   }
   tick(time) {
@@ -150,11 +208,12 @@ export class Stage extends EventTarget {
   remove(id) {
     const index=this.groups.findIndex(group=>group.id===id);
     if (index<0) return;
-    this.groups[index].manager.dispose(); this.groups.splice(index,1);
+    this.release(this.groups[index]); this.groups.splice(index,1);
   }
   dispose() {
-    cancelAnimationFrame(this.frame); this.resizeObserver.disconnect();
-    for (const group of this.groups) group.manager.dispose();
+    cancelAnimationFrame(this.frame); this.resizeObserver?.disconnect();
+    for (const group of this.groups) this.release(group);
     this.renderer.dispose();
   }
 }
+import {validateScene} from './scene.js';

@@ -25,8 +25,11 @@ python3 tools/build_library.py --source /path/to/archive
 The current implementation loads composite Spine presentations from real
 resources and joins their character names and voice tables. The voice panel
 plays the available source and Chinese tracks with subtitles and volume control.
-Interaction state machines, event-driven audio, scene persistence, static
-portraits, and media export are still being implemented.
+The scene editor supports object selection, transforms, image backgrounds,
+layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
+import/export. Scene files embed background images and retain animation times.
+Interaction state machines, event-driven audio, static portraits and media
+export are still being implemented.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without
