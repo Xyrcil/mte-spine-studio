@@ -1,4 +1,5 @@
 import {multiply,inversePoint,objectTransform,unityTransform,colliderContains} from './geometry.js';
+import {interactionEffects} from './interaction-audio.js';
 
 const DEFAULT_ANIMATIONS={1:'click_01',2:'click_02',3:'click_03',4:'stand_down',6:'click_01_down',7:'click_tail',8:'kaoji_01',9:'door_down',10:'click_lleg_1',11:'click_rleg_1',12:'rope_down',13:'click_03_head_1',14:'click_03_down',15:'stand_up1',16:'click_03_dleg_1',17:'game_down1',18:'card_A',19:'card_B',20:'card_C',21:'card_None',22:'card_None',50:'click_03'};
 const STATIC_BONES=new Set(['HitArea_tail','HitArea_lleg','HitArea_rope','HitArea_rleg','HitArea_head','HitArea_dleg','HitArea_chicken1','HitArea_chicken2','HitArea_chicken3','HitArea_chicken4','HitArea_door2','HitArea_door3','HitArea_chest1','HitArea_chest2','HitArea_chest3','HitArea_chest4','HitArea_hand','HitArea_game','HitArea_game2','HitArea_cardA','HitArea_cardB','HitArea_cardC']);
@@ -78,6 +79,8 @@ export class InteractionRoot {
     if(name==='rope_up'){this.clear(track);v.names[12]='rope_down';return {accepted:true,animation:name};}
     if([5,102].includes(event)&&hit.animation)v.variants[hit.animation]=!v.variants[hit.animation];
     if(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name)))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`};
+    const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
+    for(const sound of effects)this.sound(sound);
     if(v.cardStage&&v.cardClickable){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
     if(event===102)this.clear(track);
     if(event===8&&v.state===1){v.isBig=true;v.names[8]='kaoji_01';}
@@ -85,8 +88,7 @@ export class InteractionRoot {
     if(/^caidan_siwa[234]_2$/.test(name))v.stockingDown=false;
     Object.assign(v,{playing:true,event,track,animation:name});
     const result=this.play(name,track,false,[1,2,3].includes(event)?.25:name==='animation_game'?1:undefined);
-    this.sound(this.sounds.get(hit.animation));
-    this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name});
+    this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});
     if(event===8)this.schedule('approach',result.duration);
     this.emit('interaction-change',{hit:hit.id,event,track,animation:name});return {accepted:true,animation:name};
   }

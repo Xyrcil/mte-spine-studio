@@ -12,6 +12,8 @@ test('voice aliases resolve to actual resources without crossing language tracks
     ]},[{name:'Voice_Costume_Notification',resource:'SoundRes/Voice_Base_Notification'}],'/assets/');
     assert.equal(bus.resolve('Voice_Costume_Notification','a_sound_voiceeff').path,'original.m4a');
     assert.equal(bus.resolve('Voice_Costume_Notification','a_sound_voiceeff_ch').path,'chinese.m4a');
+    assert.equal(bus.resolve('SoundRes/a_sound_voiceeff/Voice_Costume_Notification','a_sound_voiceeff').path,'original.m4a');
+    assert.equal(bus.resolve('a_sound_voiceeff/Voice_Base_Notification','a_sound_voiceeff_ch').path,'chinese.m4a');
     assert.equal(bus.resolve('Voice_Costume_Notification','missing-track'),null);
     assert.equal(bus.resolve('Broken'),null);
   }finally{globalThis.Audio=previous;}

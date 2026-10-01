@@ -15,12 +15,13 @@ export class AudioBus extends EventTarget {
     this.element.addEventListener('error',()=>this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'})));
   }
   resolve(name,category='a_sound_voiceeff') {
-    const configured=this.resources.get(name);
-    const actual=configured?.resource.split('/').at(-1)||name;
+    if(typeof name!=='string'||!name)return null;
+    const basename=name.split('/').at(-1),configured=this.resources.get(name)||this.resources.get(basename);
+    const actual=configured?.resource.split('/').at(-1)||basename;
     return this.byName.get(actual)?.find(entry=>entry.category===category)?.clips[0] || null;
   }
   soundInfo(name,category){
-    const metadata=this.resources.get(name),path=metadata?.resource||'',configuredCategory=path.startsWith('SoundRes/')?path.split('/')[1]:null;
+    const metadata=this.resources.get(name)||this.resources.get(name.split('/').at(-1)),path=metadata?.resource||name,configuredCategory=path.startsWith('SoundRes/')?path.split('/')[1]:path.startsWith('a_sound_')?path.split('/')[0]:null;
     const chosen=category||configuredCategory||'a_sound_ui',clip=this.resolve(name,chosen);
     const volume=Number(metadata?.volume??1);return {name,category:chosen,clip,volume:Number.isFinite(volume)?Math.max(0,Math.min(1,volume)):1,loop:metadata?.loop===true||metadata?.loop===1||metadata?.loop==='1'};
   }
@@ -37,9 +38,9 @@ export class AudioBus extends EventTarget {
   }
   stop() {this.token++;this.element.pause();this.element.removeAttribute('src');this.element.load();this.dispatchEvent(new CustomEvent('subtitle',{detail:null}));}
   async playEffect(name,category='a_sound_ui'){
-    const clip=this.resolve(name,category);if(!clip)throw new Error(`Sound unavailable: ${name}`);
+    const info=this.soundInfo(name,category),clip=info.clip;if(!clip)throw new Error(`Sound unavailable: ${name}`);
     if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
-    const element=new Audio(this.base+clip.path);element.volume=this.effectVolume;element.muted=this.muted;this.effects.add(element);
+    const element=new Audio(this.base+clip.path);element.volume=this.effectVolume*info.volume;element.resourceVolume=info.volume;element.muted=this.muted;this.effects.add(element);
     element.addEventListener('ended',()=>this.releaseEffect(element),{once:true});
     try{await element.play();}catch(error){this.releaseEffect(element);throw error;}
     return element;
@@ -49,7 +50,7 @@ export class AudioBus extends EventTarget {
   pause() {this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();}
   async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.element.currentSrc&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
-  setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume;}
+  setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}
   setAmbientVolume(value){this.ambientVolume=Math.max(0,Math.min(1,value));for(const channel of this.ambients.values())channel.element.volume=this.ambientVolume*channel.gain*channel.resourceVolume;}
   async enableAmbients(enabled){this.ambientEnabled=Boolean(enabled);this.unlocked=true;if(!enabled){for(const channel of this.ambients.values())channel.element.pause();}else await this.activateAmbients();}

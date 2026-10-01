@@ -42,6 +42,11 @@ cursors, rotation history, attachments, deformation, draw order and pose state.
 Paused redraws do not reapply animations. Older track-only scenes remain readable.
 Interaction playback uses source colliders, moving-bone bindings, coordinated
 animation tracks and timeline events. Controller state is stored with scenes.
+Interaction audio resolves source aliases and resource paths with the selected
+language and matching subtitle row. State-dependent special click sounds are
+separate from voices; hotspot effect references do not suppress character
+speech or duplicate an already requested sound. Effect volume also retains
+the resource's configured gain.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
 regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
 Standalone Spine bundles expose skeleton and animation previews, including

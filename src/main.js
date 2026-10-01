@@ -6,6 +6,7 @@ import {createEditor} from './editor.js';
 import {createExportPanel} from './export-panel.js';
 import {createSoundPanel} from './sound-panel.js';
 import {createVoicePanel} from './voice-panel.js';
+import {resolveInteractionVoice,explicitInteractionEffect} from './engine/interaction-audio.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
@@ -90,12 +91,8 @@ stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed(
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
-  const {event:kind,skinId,explicit}=event.detail,language=document.querySelector('#voice-language')?.value||audio.language;
-  const suffix=({1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'})[kind];
-  let name=explicit|| (suffix?`Voice_${skinId}_Touch_${suffix}`:'');if(!name)return;
-  if(!audio.resolve(name,language)&&!explicit&&skinId.length===9)name=`Voice_${skinId.slice(0,-2)}_Touch_${suffix}`;
-  if(!audio.resolve(name,language))return;
-  const voice=libraryData.voices.find(row=>row.resourceName===name)||{resourceName:name,title:name,text:''};
+  const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category).catch(error=>message(error.message));
+  const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language);if(!voice)return;
   audio.play(voice,language).catch(error=>message(error.message));
 });
 canvas.onwheel=event=>{event.preventDefault();if(editor.busy||view==='export')return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
