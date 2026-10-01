@@ -8,6 +8,7 @@ import {createSoundPanel} from './sound-panel.js';
 import {createVoicePanel} from './voice-panel.js';
 import {createCachePanel} from './cache-panel.js';
 import {createSequencePanel} from './sequence-panel.js';
+import {createCanvasInput} from './canvas-input.js';
 import {resolveInteractionVoice,explicitInteractionEffect} from './engine/interaction-audio.js';
 
 document.querySelector('#app').innerHTML = `
@@ -49,11 +50,12 @@ function describe(group){
 }
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 async function selectPortrait(appearance){
-  if(editor.busy)return;request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();if(view==='gallery')audio?.stopAmbients();
+  if(editor.busy)return;canvasInput.clear();request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();if(view==='gallery')audio?.stopAmbients();
   try{const old=[...stage.groups];editor.before();const group=await stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,request.signal);if(view==='gallery')for(const previous of old)stage.remove(previous.id);stage.fit();editor.choose(group);editor.changed();message('Static portrait loaded');}catch(error){if(error.name!=='AbortError')message(error.message);}
 }
 async function select(presentation) {
   if(editor.busy)return;
+  canvasInput.clear();
   request?.abort();request=new AbortController();
   audio?.stop();
   audio?.stopEffects();
@@ -100,17 +102,14 @@ document.querySelector('#speed').onchange=event=>{const value=Number(event.targe
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
+  canvasInput.clear();
   view=button.dataset.view;
   for(const tab of document.querySelectorAll('[data-view]'))tab.classList.toggle('selected',tab===button);
   exporter.setOpen(view==='export');
   document.querySelector('.library').inert=view==='export';document.querySelector('.library').classList.toggle('export-disabled',view==='export');
 };
-let drag;
-const canvas=document.querySelector('#stage');
-canvas.onpointerdown=event=>{if(editor.busy&&!(view==='gallery'&&window.mteSequence.recorder.active))return;if(view==='gallery'){const result=stage.interact(event.clientX,event.clientY);if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);return;}if(view!=='studio')return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
-canvas.onpointermove=event=>{if(!drag)return;const width=Math.max(stage.camera.width,stage.camera.height*canvas.clientWidth/canvas.clientHeight);drag.group.x=drag.startX+(event.clientX-drag.x)*width/canvas.clientWidth;drag.group.y=drag.startY-(event.clientY-drag.y)*width/canvas.clientWidth;};
-const endDrag=()=>{if(drag){drag=null;editor.changed();}};canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
-let wheelTimer;
+const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,isRecording:()=>window.mteSequence.recorder.active,onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);}});
+document.querySelector('#notice').textContent='Click to interact in Gallery; drag objects in Studio. Drag empty space to pan, or hold Space to pan anywhere. Scroll or pinch to zoom. With the canvas focused, use arrow keys to pan, +/− to zoom, and Home to fit.';
 stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(error=>message(error.message));});
 stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
@@ -121,7 +120,6 @@ stage.addEventListener('voice-request',event=>{
   const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language);if(!voice)return;
   audio.play(voice,language,{group:event.detail.group||''}).catch(error=>message(error.message));
 });
-canvas.onwheel=event=>{event.preventDefault();if(editor.busy||view==='export')return;if(!wheelTimer)editor.before();const factor=Math.exp(event.deltaY*.001);stage.camera.width=Math.max(.01,Math.min(1e6,stage.camera.width*factor));stage.camera.height=Math.max(.01,Math.min(1e6,stage.camera.height*factor));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelTimer=null;editor.changed();},150);};
 try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;

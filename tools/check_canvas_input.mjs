@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
+  await page.evaluate(()=>{window.gestureClicks=0;window.mteStudio.addEventListener('interaction-invoked',()=>window.gestureClicks++);window.mteStudio.paused=true;});
+  const box=await page.locator('#stage').boundingBox(),point={x:box.x+box.width*.7,y:box.y+box.height*.4};
+  const camera=()=>page.evaluate(()=>({...window.mteStudio.camera}));
+  const original=await camera();await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+70,point.y+30,{steps:5});await page.mouse.up();
+  assert.notEqual((await camera()).x,original.x);assert.equal(await page.evaluate(()=>window.gestureClicks),0);
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.deepEqual(await camera(),original);
+  const world=()=>page.evaluate(p=>window.mteStudio.screenToWorld(p.x,p.y),point),anchor=await world();
+  await page.mouse.move(point.x,point.y);await page.mouse.wheel(0,-250);await page.waitForTimeout(200);const zoomed=await camera(),after=await world();
+  assert.ok(zoomed.width<original.width);assert.ok(Math.abs(anchor.x-after.x)<1e-6);assert.ok(Math.abs(anchor.y-after.y)<1e-6);
+  await page.locator('#stage').focus();await page.keyboard.press('ArrowRight');assert.notEqual((await camera()).x,zoomed.x);
+  await page.getByRole('button',{name:'Studio',exact:true}).click();
+  const hit=await page.evaluate(()=>{const s=window.mteStudio,r=s.canvas.getBoundingClientRect();for(let y=r.top+10;y<r.bottom;y+=20)for(let x=r.left+10;x<r.right;x+=20)if(s.hitTest(x,y))return {x,y};});assert.ok(hit,'Real character has an editable hit area');
+  const beforeDrag=await page.evaluate(()=>{const g=window.mteStudio.groups[0];return {x:g.x,y:g.y};});
+  await page.mouse.move(hit.x,hit.y);await page.mouse.down();await page.mouse.move(hit.x+40,hit.y+20,{steps:4});await page.mouse.up();
+  assert.notEqual(await page.evaluate(()=>window.mteStudio.groups[0].x),beforeDrag.x);
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);
+  assert.deepEqual(await page.evaluate(()=>{const g=window.mteStudio.groups[0];return {x:g.x,y:g.y};}),beforeDrag);
+  const object=await page.evaluate(()=>{const g=window.mteStudio.groups[0];return {x:g.x,y:g.y};});
+  await page.mouse.move(point.x,point.y);await page.keyboard.down('Space');await page.mouse.down();await page.mouse.move(point.x+60,point.y,{steps:4});await page.mouse.up();await page.keyboard.up('Space');
+  assert.deepEqual(await page.evaluate(()=>{const g=window.mteStudio.groups[0];return {x:g.x,y:g.y};}),object);
+  const session=await page.context().newCDPSession(page),beforePinch=await camera(),cx=box.x+box.width*.5,cy=box.y+box.height*.5;
+  const touch=(type,d)=>session.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x:cx-d,y:cy,id:1},{x:cx+d,y:cy,id:2}]});
+  await touch('touchStart',50);await touch('touchMove',100);await touch('touchEnd',0);assert.ok((await camera()).width<beforePinch.width);
+  await page.getByRole('button',{name:'Export',exact:true}).click();const frozen=await camera();await page.mouse.move(point.x,point.y);await page.mouse.wheel(0,250);await page.waitForTimeout(200);assert.deepEqual(await camera(),frozen);
+  assert.deepEqual(errors,[]);console.log('Canvas browser checks passed: real-asset pan/undo, anchored zoom, keyboard, object drag/undo, Space pan, Chrome touch pinch and Export lock');
+}finally{await browser.close();}

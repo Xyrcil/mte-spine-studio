@@ -90,6 +90,12 @@ Available background music can be assigned independently to scene objects.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
+Gallery clicks fire on release; dragging pans without triggering character
+interactions. Studio drags objects or pans from empty space. Space-drag, Alt-drag
+and middle-button drag pan over objects too. Wheel and two-finger zoom preserve
+their screen anchor. With the canvas focused, arrow keys pan, plus/minus zoom
+and Home fits the scene. Camera edits participate in undo and scene persistence;
+recording, replay and export lock camera editing.
 Animation checkpoints also retain active mix chains, queued tracks, event
 cursors, rotation history, attachments, deformation, draw order and pose state.
 Paused redraws do not reapply animations. Older track-only scenes remain readable.
