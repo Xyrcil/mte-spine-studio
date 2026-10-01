@@ -168,7 +168,7 @@ export class Stage extends EventTarget {
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
-    return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
+    return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
       return {...row,bundle:group.presentation.id,interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
@@ -210,6 +210,7 @@ export class Stage extends EventTarget {
       this.draw();
     }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
+    this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }
   recoverRendering(){
     if(this.recoveryPromise)return this.recoveryPromise;

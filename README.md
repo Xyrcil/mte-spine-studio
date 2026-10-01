@@ -117,8 +117,11 @@ The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports
 state divergence rather than skipping a failed action. Time-zero actions run
-once. The sequence editor, scene-file integration and scheduled voice/video
-export are not connected yet.
+once. The sequence panel records Gallery clicks, pauses/resumes playback and
+replays the captured starting scene. Editing is locked during recording and
+replay. Sequences round-trip through their own JSON files and saved scenes,
+including autosave recovery. Recursive sequence checkpoints are rejected.
+Action-time editing and scheduled voice/video export are not connected yet.
 
 Audio extraction uses macOS `afconvert` for AAC output or a full FFmpeg build
 for Opus output. Use `--retry-failed` to retry failed conversions without

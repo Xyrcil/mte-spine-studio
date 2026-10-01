@@ -9,7 +9,8 @@ export function createEditor(stage,message,onSelection){
   controls.innerHTML=`<label>Scene name <input id="scene-name" value="Untitled scene" maxlength="512"></label><div class="actions"><button id="undo">Undo</button><button id="redo">Redo</button></div><div class="actions"><button id="save-scene">Save locally</button><button id="download-scene">Export scene</button><button id="import-scene">Import scene</button></div><label>Saved scenes <select id="saved-scenes"><option value="">Choose a scene</option></select></label><div class="actions"><button id="load-scene">Load</button><button id="delete-scene">Delete saved</button></div><button id="add-background">Add background image</button><input id="scene-file" type="file" accept="application/json,.json" hidden><input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>`;
   document.querySelector('.inspector h2').after(controls);
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
-  const before=()=>{if(busy||stage.recoveryPending)return false;history.push(snapshot());return true;};
+  const isBusy=()=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy);
+  const before=()=>{if(isBusy())return false;history.push(snapshot());return true;};
   function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
@@ -43,7 +44,7 @@ export function createEditor(stage,message,onSelection){
       const reorder=direction=>{const index=stage.groups.indexOf(group),target=index+direction;if(target<0||target>=stage.groups.length)return;[stage.groups[index],stage.groups[target]]=[stage.groups[target],stage.groups[index]];};
       panel.append(button('Move forward',()=>reorder(1)),button('Move backward',()=>reorder(-1)));
       const duplicate=document.createElement('button');duplicate.textContent='Duplicate';duplicate.onclick=async()=>{
-        if(busy)return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);const sound=scene.audio?.ambientTracks.find(track=>track.id===group.id);if(sound)scene.audio.ambientTracks.push({...sound,id:copy.id});if(scene.audio?.effectTracks)scene.audio.effectTracks=[...scene.audio.effectTracks,...scene.audio.effectTracks.filter(track=>track.group===group.id).map(track=>({...track,group:copy.id}))].slice(-12);
+        if(isBusy())return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);const sound=scene.audio?.ambientTracks.find(track=>track.id===group.id);if(sound)scene.audio.ambientTracks.push({...sound,id:copy.id});if(scene.audio?.effectTracks)scene.audio.effectTracks=[...scene.audio.effectTracks,...scene.audio.effectTracks.filter(track=>track.group===group.id).map(track=>({...track,group:copy.id}))].slice(-12);
         try{await restore(scene);history.push(previous);choose(stage.groups.at(-1));changed();}catch(error){message(error.message);}
       };panel.append(duplicate);container.append(panel);
     }
@@ -51,11 +52,12 @@ export function createEditor(stage,message,onSelection){
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
   async function restore(scene){
+    if(stage.sequenceBusy)throw new Error('Stop the interaction sequence before loading a scene');
     if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
     try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
     catch(error){changed();throw error;}
-    finally{busy=false;refresh();}
+    finally{busy=false;refresh();stage.dispatchEvent(new CustomEvent('scene-ready'));}
   }
   async function recall(scene){const previous=snapshot();await restore(scene);history.push(previous);changed();message('Scene loaded');}
   async function savedList(){const select=document.querySelector('#saved-scenes');select.replaceChildren(new Option('Choose a scene',''));for(const key of await listLocalScenes())select.append(new Option(key,key));}
@@ -72,10 +74,10 @@ export function createEditor(stage,message,onSelection){
   document.querySelector('#delete-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(key){await deleteLocalScene(key);await savedList();message(`Deleted local scene ${key}`);}}catch(error){message(error.message);}};
   document.querySelector('#add-background').onclick=()=>document.querySelector('#background-file').click();
   document.querySelector('#background-file').onchange=async event=>{
-    const file=event.target.files[0];event.target.value='';if(!file||busy)return;
+    const file=event.target.files[0];event.target.value='';if(!file||isBusy())return;
     const previous=snapshot();busy=true;refresh();
     try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);history.push(previous);selectedId=group.id;changed();}
     catch(error){message(error.message);}finally{busy=false;refresh();}
   };
-  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return busy||stage.recoveryPending;},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
+  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return isBusy();},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }

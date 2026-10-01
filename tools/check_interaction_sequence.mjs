@@ -25,9 +25,9 @@ try{
     const states=[];let invoked=0;stage.addEventListener('interaction-invoked',()=>invoked++);
     for(let run=0;run<2;run++){
       await stage.restore(sequence.initial,presentations,entries);
-      stage.sequencePlayer=new InteractionPlayer(stage,sequence);
-      stage.evaluate(0);for(let i=0;i<10000&&!stage.sequencePlayer.finished;i++)stage.evaluate(run===0?1/30:1/60);
-      if(!stage.sequencePlayer?.finished)throw new Error('Sequence did not finish');
+      const player=new InteractionPlayer(stage,sequence);stage.sequencePlayer=player;
+      stage.evaluate(0);for(let i=0;i<10000&&!player.finished;i++)stage.evaluate(run===0?1/30:1/60);
+      if(!player.finished)throw new Error('Sequence did not finish');
       states.push(stage.groups[0].controllers[0].snapshot());stage.sequencePlayer=null;
     }
     return {first,second,actions:sequence.actions,duration:sequence.duration,states,invoked};

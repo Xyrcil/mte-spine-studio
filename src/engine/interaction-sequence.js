@@ -5,6 +5,7 @@ const time=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0|
 
 export function validateSequence(value){
   if(!value||value.schema!==1||!Array.isArray(value.actions)||value.actions.length>10000)throw new Error('Unsupported interaction sequence');
+  if(value.initial?.sequence!==undefined)throw new Error('Nested interaction sequences are not supported');
   const initial=validateScene(value.initial),duration=time(value.duration);let previous=0;
   const actions=value.actions.map(action=>{
     const at=time(action.at);if(at<previous||at>duration)throw new Error('Sequence actions must be ordered within its duration');previous=at;
@@ -23,14 +24,15 @@ export class InteractionRecorder {
     this.onStep=event=>{if(this.active){this.elapsed+=event.detail.delta;if(this.elapsed>86400){this.elapsed=86400;this.stop();}}};
     this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000){this.stop();return;}const {group,controller,hit,animation=''}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation});}};
     this.onLost=()=>{if(this.active)this.stop();};
-    stage.addEventListener('simulation-step',this.onStep);stage.addEventListener('interaction-invoked',this.onInteraction);stage.addEventListener('rendering-lost',this.onLost);
+    stage.addEventListener('simulation-step',this.onStep);stage.addEventListener('interaction-invoked',this.onInteraction);stage.addEventListener('rendering-pausing',this.onLost);stage.addEventListener('rendering-lost',this.onLost);
   }
   start(){
     if(this.active||this.stage.sequencePlayer||this.stage.recoveryPending)throw new Error('Finish the current recording or playback first');
-    this.initial=validateScene(this.stage.captureScene?.()||this.stage.snapshot());this.elapsed=0;this.actions=[];this.active=true;return structuredClone(this.initial);
+    const initial=structuredClone(this.stage.captureScene?.()||this.stage.snapshot());delete initial.sequence;
+    this.initial=validateScene(initial);this.elapsed=0;this.actions=[];this.active=true;return structuredClone(this.initial);
   }
-  stop(){this.active=false;if(!this.initial)return null;return validateSequence({schema:1,initial:this.initial,duration:this.elapsed,actions:this.actions});}
-  dispose(){this.active=false;this.stage.removeEventListener('simulation-step',this.onStep);this.stage.removeEventListener('interaction-invoked',this.onInteraction);this.stage.removeEventListener('rendering-lost',this.onLost);}
+  stop(){const active=this.active;this.active=false;if(!this.initial)return null;const sequence=validateSequence({schema:1,initial:this.initial,duration:this.elapsed,actions:this.actions});if(active)this.stage.dispatchEvent(new CustomEvent('sequence-recorded',{detail:sequence}));return sequence;}
+  dispose(){this.active=false;this.stage.removeEventListener('simulation-step',this.onStep);this.stage.removeEventListener('interaction-invoked',this.onInteraction);this.stage.removeEventListener('rendering-pausing',this.onLost);this.stage.removeEventListener('rendering-lost',this.onLost);}
 }
 
 export class InteractionPlayer {

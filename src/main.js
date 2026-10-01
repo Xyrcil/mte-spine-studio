@@ -7,6 +7,7 @@ import {createExportPanel} from './export-panel.js';
 import {createSoundPanel} from './sound-panel.js';
 import {createVoicePanel} from './voice-panel.js';
 import {createCachePanel} from './cache-panel.js';
+import {createSequencePanel} from './sequence-panel.js';
 import {resolveInteractionVoice,explicitInteractionEffect} from './engine/interaction-audio.js';
 
 document.querySelector('#app').innerHTML = `
@@ -23,6 +24,9 @@ const editor=createEditor(stage,message,group=>{if(group?.kind==='spine'){descri
 window.mteEditor=editor;
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
 const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio}),message);window.mteCache=resourceCache;
+window.mteSequence=createSequencePanel(stage,editor,message);
+stage.addEventListener('sequence-paused',()=>audio?.pause());
+stage.addEventListener('sequence-playing',()=>audio?.resume().catch(error=>message(error.message)));
 const renderingRetry=document.createElement('button');renderingRetry.id='rendering-retry';renderingRetry.textContent='Retry rendering';renderingRetry.hidden=true;document.querySelector('header').append(renderingRetry);
 let recoverySelection;
 stage.addEventListener('rendering-pausing',()=>audio?.pause());
@@ -82,7 +86,7 @@ document.querySelector('#search').oninput=library;document.querySelector('#categ
 document.querySelector('#editor-toggle').onclick=event=>{event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
 document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
-document.querySelector('#pause').onclick=()=>editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});
+document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   view=button.dataset.view;
@@ -92,7 +96,7 @@ for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=
 };
 let drag;
 const canvas=document.querySelector('#stage');
-canvas.onpointerdown=event=>{if(editor.busy)return;if(view==='gallery'){const result=stage.interact(event.clientX,event.clientY);if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);return;}if(view!=='studio')return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
+canvas.onpointerdown=event=>{if(editor.busy&&!(view==='gallery'&&window.mteSequence.recorder.active))return;if(view==='gallery'){const result=stage.interact(event.clientX,event.clientY);if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);return;}if(view!=='studio')return;const group=stage.hitTest(event.clientX,event.clientY);if(!group)return;editor.choose(group);if(group.locked)return;canvas.setPointerCapture(event.pointerId);editor.before();drag={group,x:event.clientX,y:event.clientY,startX:group.x,startY:group.y};};
 canvas.onpointermove=event=>{if(!drag)return;const width=Math.max(stage.camera.width,stage.camera.height*canvas.clientWidth/canvas.clientHeight);drag.group.x=drag.startX+(event.clientX-drag.x)*width/canvas.clientWidth;drag.group.y=drag.startY-(event.clientY-drag.y)*width/canvas.clientWidth;};
 const endDrag=()=>{if(drag){drag=null;editor.changed();}};canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
 let wheelTimer;

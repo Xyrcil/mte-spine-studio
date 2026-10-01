@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {chromium} from '@playwright/test';
+
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+  const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
+  await page.locator('[data-asset="Spines/painting/301619402_spine"]').click();
+  await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
+  await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];stage.paused=true;root.reset();for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.play('animation',0,true);stage.evaluate(0);stage.fit();});
+  await page.locator('[data-view="studio"]').click();await page.locator('#sequence-record').click();
+  assert.equal(await page.locator('[data-view="gallery"]').getAttribute('class'),'selected');
+  assert.equal(await page.evaluate(()=>window.mteEditor.busy),true);
+  const position=await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0],hit=root.hotspots.find(hit=>hit.name==='HitArea_anim_anim2'),m=root.matrix(hit),rect=stage.canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;return {x:rect.left+((m[4]-stage.camera.x)/width+.5)*rect.width,y:rect.top+(.5-(m[5]-stage.camera.y)/height)*rect.height};});
+  await page.mouse.click(position.x,position.y);await page.waitForFunction(()=>window.mteSequence.recorder.actions.length===1);
+  await page.locator('#pause').click();const before=await page.evaluate(()=>window.mteSequence.recorder.elapsed);await page.waitForTimeout(150);assert.equal(await page.evaluate(()=>window.mteSequence.recorder.elapsed),before);
+  assert.equal(await page.evaluate(()=>{const stage=window.mteStudio,x=stage.groups[0].x;window.mteEditor.mutate(()=>stage.groups[0].x=999);return stage.groups[0].x===x;}),true);
+  await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];for(let i=0;i<1200&&root.value.playing;i++)stage.evaluate(1/120);stage.evaluate(.2);});
+  await page.locator('#sequence-stop').click();assert.equal(await page.evaluate(()=>window.mteEditor.busy),false);
+  const expected=await page.evaluate(()=>window.mteSequence.sequence);assert.equal(expected.actions.length,1);
+  const downloadPromise=page.waitForEvent('download');await page.locator('#sequence-save').click();const download=await downloadPromise;assert.deepEqual(JSON.parse(await readFile(await download.path(),'utf8')),expected);
+  await page.locator('#sequence-file').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"schema":1}')});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Unsupported interaction sequence'));assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence),expected);
+  await page.locator('#sequence-file').setInputFiles({name:'sequence.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(expected))});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent==='Interaction sequence imported');
+  await page.locator('#sequence-replay').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Interaction sequence finished',null,{timeout:20000});
+  assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].controllers[0].primary.state.getCurrent(0).animation.name),'animation2');assert.equal(await page.evaluate(()=>window.mteStudio.paused),true);
+  assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot().sequence),expected);
+  await page.evaluate(async()=>{const {saveLocalScene}=await import('/src/engine/scene.js');await saveLocalScene(window.mteEditor.snapshot());});await page.reload();
+  await page.waitForFunction(()=>window.mteSequence?.sequence?.actions.length===1);assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence),expected);
+  await page.locator('#sequence-record').click();await page.locator('#sequence-stop').click();assert.equal(await page.evaluate(()=>window.mteSequence.sequence.initial.sequence),undefined);
+  await page.locator('#sequence-record').click();await page.waitForTimeout(100);
+  await page.evaluate(()=>{window.sequenceLoss=window.mteStudio.gl.getExtension('WEBGL_lose_context');if(!window.sequenceLoss)throw new Error('Context loss testing unavailable');window.sequenceLoss.loseContext();});
+  await page.waitForFunction(()=>window.mteStudio.recoveryPending&&!window.mteSequence.recorder.active);
+  const interrupted=await page.evaluate(()=>window.mteStudio.snapshot().sequence);assert.ok(interrupted.duration>0);
+  await page.evaluate(()=>window.sequenceLoss.restoreContext());await page.waitForFunction(()=>!window.mteStudio.recoveryPending,null,{timeout:20000});
+  assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence),interrupted);assert.equal(await page.evaluate(()=>window.mteEditor.busy),false);
+  assert.deepEqual(errors,[]);console.log('Sequence UI checks passed: real click, edit lock, pause, replay, file round-trip, corrupt import, refresh and rendering-loss recovery');
+}finally{await browser.close();}
