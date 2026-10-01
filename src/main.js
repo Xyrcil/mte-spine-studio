@@ -11,6 +11,7 @@ import {createCachePanel} from './cache-panel.js';
 import {createSequencePanel} from './sequence-panel.js';
 import {createCanvasInput} from './canvas-input.js';
 import {createAssetLibrary} from './asset-library.js';
+import {createResourcePackPanel} from './resource-pack-panel.js';
 import {resolveInteractionVoice,explicitInteractionEffect} from './engine/interaction-audio.js';
 
 document.querySelector('#app').innerHTML = `
@@ -30,8 +31,11 @@ const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(gro
 window.mteEditor=editor;
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
 const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio,catalog,runtime}),message);window.mteCache=resourceCache;
+window.mtePack=createResourcePackPanel(resourceCache,editor,message,stage);
 window.mteSequence=createSequencePanel(stage,editor,message);
 stage.addEventListener('sequence-paused',()=>audio?.pause());
+stage.addEventListener('resource-import-start',()=>audio?.pause());
+stage.addEventListener('resource-import-ended',()=>{if(!stage.paused)audio?.resume().catch(error=>message(error.message));});
 stage.addEventListener('sequence-playing',()=>audio?.resume().catch(error=>message(error.message)));
 const renderingRetry=document.createElement('button');renderingRetry.id='rendering-retry';renderingRetry.textContent='Retry rendering';renderingRetry.hidden=true;document.querySelector('header').append(renderingRetry);
 let recoverySelection;

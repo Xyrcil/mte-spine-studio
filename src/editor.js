@@ -9,7 +9,7 @@ export function createEditor(stage,message,onSelection){
   controls.innerHTML=`<label>Scene name <input id="scene-name" value="Untitled scene" maxlength="512"></label><div class="actions"><button id="undo">Undo</button><button id="redo">Redo</button></div><div class="actions"><button id="save-scene">Save locally</button><button id="download-scene">Export scene</button><button id="import-scene">Import scene</button></div><label>Saved scenes <select id="saved-scenes"><option value="">Choose a scene</option></select></label><div class="actions"><button id="load-scene">Load</button><button id="delete-scene">Delete saved</button></div><button id="add-background">Add background image</button><input id="scene-file" type="file" accept="application/json,.json" hidden><input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>`;
   document.querySelector('.inspector h2').after(controls);
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
-  const isBusy=()=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy);
+  const isBusy=()=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired);
   const before=()=>{if(isBusy())return false;history.push(snapshot());return true;};
   function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}

@@ -7,7 +7,7 @@ export function createSequencePanel(stage,editor,message){
   document.querySelector('.inspector').append(panel);
   const field=name=>panel.querySelector(`#sequence-${name}`);
   function refresh(){
-    const active=recorder.active||Boolean(stage.sequencePlayer),busy=active||loading||stage.recoveryPending;
+    const active=recorder.active||Boolean(stage.sequencePlayer),busy=active||loading||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired;
     stage.sequenceBusy=active;
     field('record').disabled=busy||editor.busy;field('replay').disabled=busy||!stage.sequence;field('stop').disabled=!active;field('load').disabled=busy;field('save').disabled=active||loading||!stage.sequence;
     field('duration').disabled=busy||editor.busy||!stage.sequence;field('position').disabled=busy||editor.busy||!stage.sequence;field('preview').disabled=busy||editor.busy||!stage.sequence;field('cancel-preview').disabled=!previewController;

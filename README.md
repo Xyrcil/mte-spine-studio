@@ -14,6 +14,23 @@ python3 -m unittest discover -s tests
 ```
 
 Converted assets are read from `public/assets/` and kept outside Git.
+`npm run build` produces a code-only `dist/`; game resources are not copied into
+the deployable output. `npm run build:local` creates a separate `dist-local/`
+with local assets for offline-cache testing. Do not publish that local build.
+Development still reads the local assets folder.
+
+The production app can import a converted assets folder or a resource ZIP
+without uploading files. For large libraries, create a local archive with
+`python3 tools/pack_assets.py --assets /path/to/assets --output /path/to/resources.zip`,
+then choose **Import resource ZIP** under **Local resource pack** and reload.
+The archive contains the five catalogues and their indexed resources, not the
+game client. Do not publish game-resource archives without appropriate permission.
+Imported files use separate browser storage; ordinary cache clearing does not
+remove them. Cancellation, invalid catalogues, missing indexed
+files and storage failures retain the previous pack. Replacement pauses open
+scenes and asks each app tab to reload rather than mixing resource versions.
+Keep the original folder or ZIP: browser storage may still be evicted.
+
 The extractor accepts a local archive with the resource tables and decoding
 utilities. It preserves Unity references, scene hierarchy, and atlas materials.
 
@@ -193,6 +210,11 @@ media resources. Cancellation applies to sequence analysis and downloading.
 For a project URL such as `/mte-studio/`, build with
 `MTE_BASE_PATH=/mte-studio/ npm run build`. Test offline behavior with a local
 preview of the production build, not the development server.
+`MTE_BASE_PATH=/pack-check/ npm run build` followed by
+`node tools/check_resource_pack.mjs` tests import against a code-only host.
+Add `--full` after creating `private/mte-resources.zip` to test the entire local
+library in an isolated browser profile. The isolated test profile is removed after the
+test; original game files and the resource archive are retained.
 Interactive rendering preserves a CPU scene checkpoint when WebGL is lost,
 pauses sound and rebuilds textures and draw resources after the browser restores
 the context. Failed recovery keeps the checkpoint available for scene export
