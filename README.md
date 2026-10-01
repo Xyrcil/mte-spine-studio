@@ -34,10 +34,16 @@ Native animation bundles load their declared shared dependencies before image
 extraction. UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.
 The recovered smoke images and skill-animation graphics are local resources,
-not generated replacements. Their native animation playback is still pending.
+not generated replacements. The smoke clip plays its original looping color
+and anchored-position curves, inherits CanvasGroup opacity and pauses under
+inactive hierarchy nodes. Native clocks survive scene restore, duplication,
+context recovery and independent export, including backward export seeking.
+Legacy scenes without native checkpoints start at the clip's initial time.
+Native clips with events, text, vector channels or unsupported image layouts
+remain explicitly unavailable; the skill-animation clip is not yet played.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
-Custom particle materials and native animation clips are not yet rendered;
+Custom particle materials and unsupported native animation clips are not yet rendered;
 affected presentations say so in their details. Inspect original component coverage with
 `python3 tools/inspect_effects.py --source /path/to/archive`.
 
@@ -136,7 +142,7 @@ and manual retry. Animation mixes, poses and playback settings are retained;
 previously playing scenes resume without advancing through the interruption.
 Independent media exports stop on context loss instead of recording blank frames.
 Other special controllers still need full behavioral validation. Effect
-rendering for custom materials and native clips, complete voice routing,
+rendering for custom materials and remaining native clips, complete voice routing,
 browser fallbacks and public deployment remain in progress.
 
 Interactive presentations with `start` and `animation` play the entrance once

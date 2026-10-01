@@ -4,6 +4,7 @@ import {validateScene,History} from '../src/engine/scene.js';
 import {Stage,objectTransform} from '../src/engine/stage.js';
 const scene=()=>({schema:1,name:'Scene',camera:{x:0,y:0,width:10,height:10},background:'#191b20',speed:1,paused:true,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:1,y:2,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[{id:'body',active:true,tracks:[{index:0,name:'Idle',time:2,loop:true,timeScale:1}]}]}]});
 test('scene round trip preserves transforms and animation time',()=>assert.deepEqual(validateScene(scene()),scene()));
+test('native scene animations round-trip clocks and reject duplicate or invalid checkpoints',()=>{const value=scene(),saved={schema:1,id:'animation',clip:'smoke',time:1.25,playing:true};value.objects[0].nativeAnimations=[saved];assert.deepEqual(validateScene(value),value);value.objects[0].nativeAnimations.push(saved);assert.throws(()=>validateScene(value),/Duplicate native/);value.objects[0].nativeAnimations=[{...saved,time:-1}];assert.throws(()=>validateScene(value),/native animation/);});
 test('scene rejects duplicate identifiers, invalid tracks and external images',()=>{
   let value=scene();value.objects.push(structuredClone(value.objects[0]));assert.throws(()=>validateScene(value),/Duplicate object/);
   value=scene();value.objects[0].layers.push(structuredClone(value.objects[0].layers[0]));assert.throws(()=>validateScene(value),/Duplicate layer/);

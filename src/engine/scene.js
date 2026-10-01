@@ -3,6 +3,7 @@ import {validateAnimation,validatePose} from './animation-state.js';
 import {validateSoundScene} from './sound-scene.js';
 import {validateSequence} from './interaction-sequence.js';
 import {validateParticleCheckpoint} from './particles.js';
+import {validateNativeAnimation} from './native-visuals.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
@@ -18,6 +19,7 @@ export function validateScene(value) {
     if(result.scale<=0||result.opacity<0||result.opacity>1)throw new Error('Invalid object scale or opacity');
     if(object.kind==='spine') {
       result.bundle=text(object.bundle,'bundle');
+      if(object.nativeAnimations!==undefined){if(!Array.isArray(object.nativeAnimations)||object.nativeAnimations.length>100)throw new Error('Invalid native animations');const ids=new Set();result.nativeAnimations=object.nativeAnimations.map(row=>{const checked=validateNativeAnimation(row);if(ids.has(checked.id))throw new Error('Duplicate native animation');ids.add(checked.id);return checked;});}
       if(object.effects!==undefined){if(!Array.isArray(object.effects)||object.effects.length>32)throw new Error('Invalid particle effects');const ids=new Set();result.effects=object.effects.map(row=>{if(ids.has(row.id))throw new Error('Duplicate particle effect');ids.add(row.id);return validateParticleCheckpoint(row);});}
       if(object.interactions!==undefined){if(!Array.isArray(object.interactions)||object.interactions.length>100)throw new Error('Invalid interaction controllers');const ids=new Set();result.interactions=object.interactions.map(row=>{const id=text(row.id,'controller ID');if(ids.has(id))throw new Error('Duplicate controller ID');ids.add(id);return {id,state:validateInteraction(row.state)};});}
       if(!object.layers||!Array.isArray(object.layers))throw new Error('Missing animation state');

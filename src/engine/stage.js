@@ -4,6 +4,7 @@ import {InteractionRoot} from './interaction.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
 import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareHierarchy} from './particle-layer.js';
+import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -49,7 +50,7 @@ export class Stage extends EventTarget {
     try {
       const base = `${import.meta.env.BASE_URL}assets/${presentation.path}/`;
       const byId = new Map(entries.map(entry => [entry.id, entry]));
-      const tree = new Map(presentation.hierarchy.map(node => [node.id, node]));
+      const tree = new Map(structuredClone(presentation.hierarchy).map(node => [node.id, node]));
       const world = (id, seen = new Set()) => {
         if (!id || id === '0') return identity();
         if (seen.has(id)) throw new Error('Cyclic transform hierarchy');
@@ -81,6 +82,7 @@ export class Stage extends EventTarget {
         group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:instance.active!==false});
       }
       group.effects=createParticleLayers(group,base,manager);
+      createNativeVisuals(group,base,manager);
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
         if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
@@ -129,6 +131,7 @@ export class Stage extends EventTarget {
     if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
   }
   evaluateFrame(delta) {
+    for(const group of this.groups)if(group.visible)for(const native of group.nativeAnimations||[])if(native.model&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject.m_PathID))?.id))native.model.advance(delta);
     if(delta>0)for(const group of this.groups)if(group.visible)for(const effect of group.effects||[])if(effect.model&&group.isActiveTransform(effect.source.transform))effect.model.advance(delta);
     for(const group of this.groups)for(const root of group.controllers||[])root.advance(delta);
     for (const group of this.groups.filter(group=>group.kind==='spine')) for (const layer of group.layers) {
@@ -174,7 +177,7 @@ export class Stage extends EventTarget {
     return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
-      return {...row,bundle:group.presentation.id,...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
+      return {...row,bundle:group.presentation.id,...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
     })};
   }
   async restore(scene,presentations,entries,signal) {
@@ -201,6 +204,7 @@ export class Stage extends EventTarget {
         const group=created[index];
         if(group.kind==='image')return;
         preflightParticles(group,row.effects);
+        preflightNativeAnimations(group,row.nativeAnimations);
         if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(track.name!=='<empty>'&&!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);assertCheckpoint(layer,state.animationState,state.pose);}
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
@@ -210,6 +214,7 @@ export class Stage extends EventTarget {
       try{scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const saved of row.layers){const layer=group.layers.find(layer=>layer.instance.id===saved.id);layer.active=saved.active;if(saved.animationState){restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);}else{layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=track.name==='<empty>'?layer.state.setEmptyAnimation(track.index,0):layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}layer.state.update(0);layer.state.apply(layer.skeleton);}this.recordApplied(layer);this.transformLayer(group,layer);}});}finally{this.suppressEvents=false;}
       scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else root.reset();}});
       scene.objects.forEach((row,index)=>{for(const effect of created[index].effects||[])if(effect.model){const saved=row.effects?.find(saved=>saved.id===effect.source.id);if(saved)effect.model.restore(saved);else effect.model=effect.make(effect.model.seed);}});
+      scene.objects.forEach((row,index)=>{for(const native of created[index].nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(saved=>saved.id===native.source.id)||{...native.model.snapshot(),time:0,playing:Boolean(native.source.data.m_PlayAutomatically)};native.model.restore(saved);}});
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
       this.draw();
@@ -294,8 +299,8 @@ export class Stage extends EventTarget {
         const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
         renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
       }else{
-        const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),path:hierarchyOrder(group,effect.source.transform),effect}))].sort((a,b)=>a.order-b.order||compareHierarchy(a.path,b.path));
-        for(const draw of draws)if(draw.effect)drawParticleLayer(renderer,group,draw.effect);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
+        const draws=[...group.layers.map(layer=>({order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer})),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort((a,b)=>a.order-b.order||compareHierarchy(a.path,b.path));
+        for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;renderer.drawSkeleton(draw.layer.skeleton,false);}
       }
     }
     renderer.end();

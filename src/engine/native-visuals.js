@@ -1,0 +1,63 @@
+import {compileAnimationCurve} from './particle-values.js';
+import {multiply,objectTransform,point} from './geometry.js';
+
+export function validateNativeAnimation(value){
+  if(value?.schema!==1||typeof value.id!=='string'||value.id.length>512||typeof value.clip!=='string'||value.clip.length>512||typeof value.time!=='number'||!Number.isFinite(value.time)||value.time<0||typeof value.playing!=='boolean')throw new Error('Invalid native animation checkpoint');
+  return {schema:1,id:value.id,clip:value.clip,time:value.time,playing:value.playing};
+}
+function resolvePath(group,root,path){
+  let node=group.transforms.get(root);
+  for(const name of path?path.split('/'):[]){
+    const matches=(node?.data.m_Children||[]).map(ref=>group.nodes.get(String(ref.m_PathID))).filter(child=>group.nodes.get(String(child?.data.m_GameObject?.m_PathID))?.data.m_Name===name);
+    if(matches.length!==1)throw new Error(`Native animation target unavailable: ${path}`);node=matches[0];
+  }
+  if(!node)throw new Error(`Native animation root unavailable: ${root}`);return node;
+}
+
+export class NativeAnimation {
+  constructor(group,source,clip){
+    this.source=source;this.clip=clip;this.time=0;this.playing=Boolean(source.data.m_PlayAutomatically);this.group=group;
+    const data=clip?.data;if(!data?.m_Legacy||data.m_Compressed||(data.m_Events||[]).length||['m_RotationCurves','m_CompressedRotationCurves','m_EulerCurves','m_PositionCurves','m_ScaleCurves','m_PPtrCurves'].some(key=>data[key]?.length))throw new Error('Native animation channels or events are not supported yet');
+    this.wrap=data.m_WrapMode||source.data.m_WrapMode;if(this.wrap!==2)throw new Error('Native animation wrap mode is not supported yet');
+    this.duration=0;
+    this.channels=(data.m_FloatCurves||[]).map(row=>{
+      const node=resolvePath(group,String(source.data.m_GameObject.m_PathID),row.path);let target,key;
+      if(row.classID===224&&/^m_AnchoredPosition\.[xy]$/.test(row.attribute)){if(!group.nativeImages.some(image=>image.source.transform===node.id&&!image.reason))throw new Error('Native animated transform is not supported yet');target=node;key=row.attribute.at(-1);}
+      else if(row.classID===114&&/^m_Color\.[rgba]$/.test(row.attribute)){target=group.nativeImages.find(image=>image.source.gameObject===String(node.data.m_GameObject.m_PathID)&&image.source.data.m_Script?.m_PathID===row.script?.m_PathID);key=row.attribute.at(-1);if(!target||target.reason)throw new Error('Native animation image is not supported yet');}
+      else throw new Error(`Native animation property is not supported yet: ${row.attribute}`);
+      const keys=row.curve?.m_Curve||[];this.duration=Math.max(this.duration,...keys.map(key=>key.time));return {target,key,kind:row.classID===224?'position':'color',offset:row.classID===224?target.data.m_LocalPosition[key]-target.data.m_AnchoredPosition[key]:0,sample:compileAnimationCurve(row.curve)};
+    });
+    if(!this.channels.length||!Number.isFinite(this.duration)||this.duration<=0)throw new Error('Invalid native animation duration');
+  }
+  advance(delta){if(typeof delta!=='number'||!Number.isFinite(delta)||delta<0||!Number.isFinite(this.time+delta))throw new Error('Invalid native animation delta');if(this.playing)this.time=Math.round((this.time+delta)*1e12)/1e12;this.apply();}
+  apply(){const time=this.time%this.duration;for(const channel of this.channels){const value=channel.sample(time);if(channel.kind==='color')channel.target.color[channel.key]=value;else{const data=channel.target.data;data.m_LocalPosition[channel.key]=channel.offset+value;data.m_AnchoredPosition[channel.key]=value;}}}
+  snapshot(){return {schema:1,id:this.source.id,clip:this.clip.id,time:this.time,playing:this.playing};}
+  restore(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');this.time=value.time;this.playing=value.playing;this.apply();}
+}
+
+export function createNativeVisuals(group,base,manager){
+  group.nativeImages=(group.presentation.images||[]).map(source=>{
+    const node=group.nodes.get(source.transform),data=node?.data;
+    const reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||!data||data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y?'Native image layout or material is not supported yet':undefined;
+    return {source,color:{...source.data.m_Color},texture:base+source.sprite?.path,reason,used:false};
+  });
+  group.nativeAnimations=(group.presentation.visualAnimations||[]).filter(row=>row.type==='Animation').map(source=>{
+    const clip=group.presentation.visualAnimations.find(row=>row.type==='AnimationClip'&&row.id===String(source.data.m_Animation?.m_PathID));
+    try{const model=new NativeAnimation(group,source,clip);for(const channel of model.channels)if(channel.kind==='color')channel.target.used=true;model.apply();return {source,model};}catch(error){return {source,reason:error.message};}
+  });
+  const urls=new Set(group.nativeImages.filter(image=>image.used&&!image.reason).map(image=>image.texture));for(const url of urls)manager.loadTexture(url);
+}
+export function preflightNativeAnimations(group,rows){
+  if(rows===undefined)return;
+  const models=(group.nativeAnimations||[]).filter(row=>row.model),seen=new Set();if(rows.length!==models.length)throw new Error('Native animation count does not match asset');
+  for(const row of rows){validateNativeAnimation(row);const model=models.find(layer=>layer.source.id===row.id)?.model;if(seen.has(row.id)||!model||model.clip.id!==row.clip)throw new Error('Native animation source does not match checkpoint');seen.add(row.id);}
+}
+export function drawNativeImage(renderer,group,image){
+  if(!image.used||image.reason||image.source.data.m_Enabled===0||image.source.data.m_Enabled===false||!group.isActiveTransform(image.source.transform))return;
+  const texture=group.manager.get(image.texture);if(!texture)return;
+  const node=group.nodes.get(image.source.transform),size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m=multiply(objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
+  while(current){if(seen.has(current.id))throw new Error('Cyclic native image hierarchy');seen.add(current.id);const id=String(current.data.m_GameObject?.m_PathID);for(const canvas of group.presentation.canvasGroups||[])if(String(canvas.data.m_GameObject?.m_PathID)===id&&canvas.data.m_Enabled!==0&&canvas.data.m_Enabled!==false){alpha*=canvas.data.m_Alpha;if(canvas.data.m_IgnoreParentGroups){current=null;break;}}if(current)current=group.nodes.get(String(current.data.m_Father?.m_PathID));}
+  const quad=[],vertices=[[-pivot.x*size.x,-pivot.y*size.y,0,1],[(1-pivot.x)*size.x,-pivot.y*size.y,1,1],[(1-pivot.x)*size.x,(1-pivot.y)*size.y,1,0],[-pivot.x*size.x,(1-pivot.y)*size.y,0,0]];
+  for(const [x,y,u,v] of vertices){const p=point(m,x,y);quad.push(p.x,p.y,image.color.r,image.color.g,image.color.b,alpha,u,v);if(renderer.twoColorTint)quad.push(0,0,0,0);}
+  renderer.enableRenderer(renderer.batcher);const gl=renderer.context.gl;renderer.batcher.setBlendMode(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);renderer.batcher.draw(texture,quad,[0,1,2,2,3,0]);
+}
