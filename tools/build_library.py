@@ -1,8 +1,10 @@
 """Join character, appearance, and voice tables to extracted presentations."""
 import argparse
 import json
+import math
 from pathlib import Path
-from extract_assets import write_json
+import sys
+from extract_assets import write_json, load_decoder
 
 
 def records(path):
@@ -10,6 +12,75 @@ def records(path):
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("records", data.get("rows", []))
+
+
+def skill_role_bindings(people, gospels, skills, skins=(), drawings=()):
+    result = []
+    for row in people + gospels:
+        values = json.loads(row.get("skill") or "[]")
+        for key in ("skill_normal", "skill_qte"):
+            if row.get(key, 0) > 0:
+                values.append(row[key])
+        values.extend(int(value) for value in (row.get("skill_ub") or "").split(",") if value)
+        ids = list(dict.fromkeys(str(value) for value in values))
+        result.append({"id": str(row["id"]), "skillIds": ids, "missingSkillIds": [value for value in ids if value not in skills]})
+    by_id = {row["id"]: row for row in result}
+    for row in list(skins) + list(drawings):
+        identifier = str(row["id"])
+        parent_id = str(row.get("people_id") or row.get("gospel_id") or "")
+        parent = by_id.get(parent_id)
+        if identifier not in by_id and parent:
+            child = {"id": identifier, "parentId": parent_id, "skillIds": list(parent["skillIds"]), "missingSkillIds": list(parent["missingSkillIds"])}
+            by_id[identifier] = child
+            result.append(child)
+    return result
+
+
+def skill_stand_transforms(main, witch, gospel, people, drawings):
+    people = {str(row["id"]) for row in people}
+    drawings = {str(row["id"]): row for row in drawings}
+    result = []
+    for identifier, row in main.items():
+        drawing = drawings.get(identifier)
+        management = witch if identifier in people or drawing and drawing.get("people_id", 0) > 0 else gospel
+        base = management.get(identifier) or management.get("3000001")
+        if base is None:
+            result.append({"id": identifier, "status": "missing-management-config"})
+            continue
+        position, scale = {}, {}
+        for axis in "xyz":
+            a, b = base.get("pos2D", {}).get(axis, 0), row.get("pos2D", {}).get(axis, 0)
+            c, d = base.get("scale2D", {}).get(axis, 1), row.get("scale2D", {}).get(axis, 1)
+            if any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in (a, b, c, d)):
+                raise ValueError("Invalid original skill stand transform")
+            position[axis], scale[axis] = a + b, c * d
+        result.append({"id": identifier, "status": "available", "position": position, "scale": scale})
+    return result
+
+
+def skill_display_catalogue(source):
+    root = source / "generated/content"
+    skills = {str(row["id"]): row for row in records(root / "a_skill.json")}
+    people, gospels = records(root / "a_people.json"), records(root / "a_gospel.json")
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(source / "tools/python-libs"))
+    import UnityPy
+    decoder = load_decoder(source)
+    files = source / "full-files/files"
+    record = next((row for row in decoder.iter_local_records((files / "FrameworkList.dat").read_bytes()) if row.resource_name == "Configs/StandConfigs"), None)
+    if record is None:
+        raise ValueError("Original skill stand configuration is unavailable")
+    raw = (files / "Configs/StandConfigs.dat").read_bytes()
+    environment = UnityPy.load(raw if raw.startswith(b"UnityFS") else decoder.xor_prefix(raw, record.hash_code))
+    configs = {}
+    for reader in environment.objects:
+        if reader.type.name == "TextAsset" and reader.peek_name() in ("MainStandConfig", "WitchCultivateStandConfig", "GospelCultivateStandConfig"):
+            asset = reader.read()
+            configs[asset.m_Name] = json.loads(asset.m_Script)
+    if len(configs) != 3:
+        raise ValueError("Original skill stand configuration is incomplete")
+    drawings = records(root / "a_station_drawing.json")
+    return {"sourceVersion": "legacy", "skills": [{"id": key, "name": row["skill_name"], "englishName": row["skill_name_e"]} for key, row in skills.items()], "roles": skill_role_bindings(people, gospels, skills, records(root / "a_gospel_skin.json"), drawings), "stands": skill_stand_transforms(configs["MainStandConfig"], configs["WitchCultivateStandConfig"], configs["GospelCultivateStandConfig"], people, drawings)}
 
 
 def hot_spring_roles(resources, levels):
@@ -144,7 +215,7 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source), "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

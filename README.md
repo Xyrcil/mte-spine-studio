@@ -131,6 +131,11 @@ descendant images. Native clips with unresolved events, text or unsupported
 image layouts remain explicitly unavailable; the skill-animation clip is not
 yet played. Its original Unity Text, text-spacing, layout, item-generation and
 event-receiver references are retained for the dynamic role/skill display.
+The local library also retains the legacy skill names, explicit role/skin skill
+references and combined main/management stand transforms used by that receiver.
+These records remain version-specific rather than taking names from newer
+tables. Missing portraits and stand configuration remain explicit; this data
+binding does not yet enable the skill display's events or dynamic text rendering.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser
