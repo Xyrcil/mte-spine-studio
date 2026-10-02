@@ -1,4 +1,4 @@
-"""Extract original font files and bind them to recovered TMP font assets."""
+"""Extract original font files and bind TMP and Unity Text references."""
 import argparse
 from pathlib import Path
 import sys
@@ -26,6 +26,11 @@ def font_asset_entries(assets, files):
             continue
         entries.append({"assetId": str(asset_id), "name": data["m_Name"], "path": primary["path"], "format": primary["format"], "bytes": primary["bytes"], "face": data["m_FaceInfo"], "characters": [row["m_Unicode"] for row in data.get("m_CharacterTable", [])], "fallbacks": [str(pointer["m_PathID"]) for pointer in data.get("m_FallbackFontAssetTable", []) if pointer.get("m_PathID")]})
     return entries
+
+
+def native_font_entry(reader, font, file):
+    fields = ("m_FontSize", "m_Ascent", "m_Descent", "m_LineSpacing", "m_Tracking", "m_CharacterSpacing", "m_DefaultStyle", "m_ShouldRoundAdvanceValue", "m_FontNames")
+    return {"assetId": str(reader.path_id), "serializedFile": reader.assets_file.name, "name": font.m_Name, **file, "metrics": {field: getattr(font, field) for field in fields}}
 
 
 def line_breaking_rules(source, unity):
@@ -72,13 +77,14 @@ def extract(source, output, names):
         raw = path.read_bytes()
         return UnityPy.load(raw if raw.startswith(b"UnityFS") else decoder.xor_prefix(raw, record.hash_code))
 
-    files = {}
+    files, native_fonts = {}, []
     for name in names:
         environment = load("Fonts/" + name)
-        fonts = [reader.read() for reader in environment.objects if reader.type.name == "Font"]
-        font = next((font for font in fonts if font.m_Name == name), None)
-        if font is None:
+        fonts = [(reader, reader.read()) for reader in environment.objects if reader.type.name == "Font"]
+        selected = next(((reader, font) for reader, font in fonts if font.m_Name == name), None)
+        if selected is None:
             raise ValueError("Original font name does not match the requested asset: " + name)
+        reader, font = selected
         raw = bytes(font.m_FontData)
         extension = font_format(raw)
         relative = Path("spines/interfaces/fonts") / (safe_name(name) + "." + extension)
@@ -88,6 +94,7 @@ def extract(source, output, names):
         temporary.write_bytes(raw)
         temporary.replace(destination)
         files[name] = {"path": relative.as_posix(), "format": extension, "bytes": len(raw)}
+        native_fonts.append(native_font_entry(reader, font, files[name]))
     assets = []
     for reader in load("Fonts/TMP").objects:
         if reader.type.name == "MonoBehaviour":
@@ -95,13 +102,13 @@ def extract(source, output, names):
             if "m_FaceInfo" in data:
                 assets.append((reader.path_id, data))
     entries = font_asset_entries(assets, files)
-    if set(names) != {row["name"] for row in entries}:
+    if not (set(names) & {"SOURCE", "NOTO_light"}).issubset({row["name"] for row in entries}):
         raise ValueError("Original font files could not be bound to their TMP assets")
     rules = line_breaking_rules(source, UnityPy)
     for entry in entries:
         entry["lineBreaking"] = rules
-    write_json(output / "font-index.json", {"schema": 1, "entries": entries})
-    print({"fonts": len(entries), "bytes": sum(file["bytes"] for file in files.values())})
+    write_json(output / "font-index.json", {"schema": 1, "entries": entries, "nativeFonts": native_fonts})
+    print({"tmpFonts": len(entries), "nativeFonts": len(native_fonts), "bytes": sum(file["bytes"] for file in files.values())})
 
 
 if __name__ == "__main__":
@@ -110,4 +117,4 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
     parser.add_argument("--name", action="append")
     args = parser.parse_args()
-    extract(args.source, args.output, args.name or ["SOURCE", "NOTO_light"])
+    extract(args.source, args.output, args.name or ["SOURCE", "NOTO_light", "PERTIBD"])

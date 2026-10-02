@@ -2,10 +2,20 @@ import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from tools.extract_fonts import font_format, font_asset_entries, line_breaking_rules
+from tools.extract_fonts import font_format, font_asset_entries, line_breaking_rules, native_font_entry
 
 
 class OriginalFontTests(unittest.TestCase):
+    def test_native_fonts_retain_resolved_serialized_file_identity_and_original_metrics(self):
+        reader = SimpleNamespace(path_id=-6600258720009304763, assets_file=SimpleNamespace(name="original-font-file"))
+        values = {"m_Name": "PERTIBD", "m_FontSize": 16, "m_Ascent": 12, "m_Descent": -4, "m_LineSpacing": 19.25, "m_Tracking": 1, "m_CharacterSpacing": 0, "m_DefaultStyle": 0, "m_ShouldRoundAdvanceValue": True, "m_FontNames": ["PERTIBD", "Perpetua Titling MT"]}
+        row = native_font_entry(reader, SimpleNamespace(**values), {"path": "spines/interfaces/fonts/PERTIBD.ttf", "format": "ttf", "bytes": 39344})
+        self.assertEqual(row["assetId"], "-6600258720009304763")
+        self.assertEqual(row["serializedFile"], "original-font-file")
+        self.assertEqual(row["metrics"]["m_LineSpacing"], 19.25)
+        self.assertTrue(row["metrics"]["m_ShouldRoundAdvanceValue"])
+        self.assertEqual(row["path"], "spines/interfaces/fonts/PERTIBD.ttf")
+
     def test_original_font_headers_do_not_accept_arbitrary_resource_files(self):
         self.assertEqual(font_format(b"OTTO" + bytes(8)), "otf")
         self.assertEqual(font_format(b"\x00\x01\x00\x00" + bytes(8)), "ttf")

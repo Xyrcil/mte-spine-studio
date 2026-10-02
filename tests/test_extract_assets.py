@@ -11,6 +11,22 @@ from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_unity_text_fonts_resolve_external_pointers_before_export(self):
+        assets_file = SimpleNamespace(name="text-file")
+        reader = SimpleNamespace(path_id=1, assets_file=assets_file, type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: {"m_FontData": {"m_Font": {"m_FileID": 2, "m_PathID": -99}}})
+        font = SimpleNamespace(path_id=-99, assets_file=SimpleNamespace(name="font-file"), type=SimpleNamespace(name="Font"))
+        with tempfile.TemporaryDirectory() as directory:
+            extractor = BundleExtractor(SimpleNamespace(objects=[reader]), Path(directory))
+            extractor.resolve = lambda owner, pointer: font
+            result = extractor.extract()
+            rows = json.loads((Path(directory) / "hierarchy.json").read_text())
+            self.assertEqual(rows[0]["fontReference"], {"assetId": "-99", "serializedFile": "font-file"})
+            self.assertEqual(result["errors"], [])
+            font.type.name = "Texture2D"
+            result = extractor.extract()
+            self.assertEqual(result["errors"][0]["type"], "FontReference")
+            self.assertNotIn("fontReference", json.loads((Path(directory) / "hierarchy.json").read_text())[0])
+
     def test_sprite_bounds_use_atlas_offsets_and_unrotate_packed_dimensions(self):
         render = {"textureRect": {"width": 205, "height": 243}, "textureRectOffset": {"x": 4, "y": 24}, "settingsRaw": 17}
         atlas = SimpleNamespace(m_RenderDataMap=[("key", render)])

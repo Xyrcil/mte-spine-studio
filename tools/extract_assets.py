@@ -325,7 +325,16 @@ class BundleExtractor:
                                 data = {**data, "packedCurves": packed}
                         except (ValueError, KeyError, TypeError, struct.error) as exc:
                             errors.append({"id": str(reader.path_id), "type": "PackedAnimation", "error": str(exc)})
-                    hierarchy.append({"id": str(reader.path_id), "type": reader.type.name, "data": data})
+                    node = {"id": str(reader.path_id), "type": reader.type.name, "data": data}
+                    if reader.type.name == "MonoBehaviour" and data.get("m_FontData", {}).get("m_Font", {}).get("m_PathID"):
+                        try:
+                            font = self.resolve(reader, data["m_FontData"]["m_Font"])
+                            if font.type.name != "Font":
+                                raise ValueError("Unity Text font reference does not resolve to a Font")
+                            node["fontReference"] = {"assetId": str(font.path_id), "serializedFile": font.assets_file.name}
+                        except Exception as exc:
+                            errors.append({"id": str(reader.path_id), "type": "FontReference", "error": str(exc)})
+                    hierarchy.append(node)
                 except Exception as exc:
                     errors.append({"id": str(reader.path_id), "type": reader.type.name, "error": str(exc)})
             if reader.type.name != "MonoBehaviour":

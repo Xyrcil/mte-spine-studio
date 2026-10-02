@@ -82,6 +82,11 @@ pending. General Animator transitions remain pending.
 The font extractor reads the original SOURCE and NOTO_light font files and
 binds their exact names to the recovered TMP assets. Font paths, face metrics,
 character coverage and fallback references are retained in presentations.
+Unity Text font references resolve through their original dependency files,
+not by matching path IDs across unrelated bundles. Skill text binds the
+original SOURCE and PERTIBD files, including their size, ascent, descent,
+line spacing and advance-rounding settings. Native font references and files
+are retained in presentations without adding another required pack catalogue.
 These files are local resources, not part of the public code build. OTF and
 TTF files are included in resource packs and scene cache preparation.
 Hot spring checkpoints retain the displayed voice ID and text start separately
