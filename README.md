@@ -49,8 +49,10 @@ For interface resources outside the Spine directory, use repeated
 `--bundle UI/Prefab/Onsen` arguments with a separate local output folder.
 Explicit bundle selection does not scan the rest of the library. The extractor
 retains Animator controllers, overrides, clip bindings and packed curve data
-alongside Legacy animations; retaining these records does not imply playback
-support for their channels.
+alongside Legacy animations. Packed clips also retain decoded polynomial,
+dense and constant channels with their original binding order and component
+indices. Object-reference channels remain unsupported. Extracted channels are
+not yet played by the browser Animator renderer.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

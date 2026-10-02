@@ -9,6 +9,10 @@ import re
 import struct
 import sys
 from pathlib import Path
+if __package__:
+    from .unity_animation import decode_packed_animation
+else:
+    from unity_animation import decode_packed_animation
 
 
 def load_decoder(source: Path):
@@ -285,7 +289,15 @@ class BundleExtractor:
         for reader in self.objects:
             if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController", "CanvasGroup", "SortingGroup"):
                 try:
-                    hierarchy.append({"id": str(reader.path_id), "type": reader.type.name, "data": self.tree(reader)})
+                    data = self.tree(reader)
+                    if reader.type.name == "AnimationClip":
+                        try:
+                            packed = decode_packed_animation(data)
+                            if packed is not None:
+                                data = {**data, "packedCurves": packed}
+                        except (ValueError, KeyError, TypeError, struct.error) as exc:
+                            errors.append({"id": str(reader.path_id), "type": "PackedAnimation", "error": str(exc)})
+                    hierarchy.append({"id": str(reader.path_id), "type": reader.type.name, "data": data})
                 except Exception as exc:
                     errors.append({"id": str(reader.path_id), "type": reader.type.name, "error": str(exc)})
             if reader.type.name != "MonoBehaviour":
