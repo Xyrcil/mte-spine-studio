@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {layoutNativeText} from '../src/engine/native-text.js';
+import {layoutNativeText,nativeGradientVertexColors} from '../src/engine/native-text.js';
 import {createNativeVisuals} from '../src/engine/native-visuals.js';
 import {omittedVisualWarnings} from '../src/engine/export-source.js';
 
 const font={settings:{m_FontSize:16,m_LineSpacing:1,m_FontStyle:0,m_HorizontalOverflow:1,m_VerticalOverflow:1,m_Alignment:3},metrics:{m_FontSize:16,m_Ascent:12,m_Descent:-4,m_LineSpacing:20,m_Tracking:1,m_CharacterSpacing:0,m_ShouldRoundAdvanceValue:true}};
+test('source gradient sets each glyph corner, quantizes Color32 and overrides the graphic tint',()=>{
+  const data={ModifyMode:1,colorTop:{r:1,g:0,b:0,a:1},colorBottom:{r:0,g:0,b:1,a:.5}},colors=nativeGradientVertexColors(data,.25);assert.deepEqual(colors,[[0,0,1,128/255*.25],[0,0,1,128/255*.25],[1,0,0,.25],[1,0,0,.25]]);assert.notEqual(colors[0],colors[1]);
+  data.ModifyMode=2;assert.deepEqual(nativeGradientVertexColors(data).map(color=>color.slice(0,3)),[[1,0,0],[0,0,1],[0,0,1],[1,0,0]]);
+  data.colorTop.r=2.5/255;assert.equal(nativeGradientVertexColors(data)[0][0],2/255);data.ModifyMode=3;assert.throws(()=>nativeGradientVertexColors(data),/Unsupported/);data.ModifyMode=1;data.colorBottom.b=NaN;assert.throws(()=>nativeGradientVertexColors(data),/color/);
+});
 test('native text preserves original rounded advances, authored spacing and middle-left anchors',()=>{
   const flow=layoutNativeText('AB\nC',()=>10.5,font,{x:100,y:40},{x:.5,y:.5},{x:3,y:2});assert.deepEqual(flow.glyphs,[{character:'A',x:-50,y:6,line:0},{character:'B',x:-37,y:6,line:0},{character:'C',x:-50,y:-16,line:1}]);assert.equal(flow.width,20);assert.equal(flow.height,36);
   assert.equal(layoutNativeText('A',()=>11.5,font,{x:0,y:0},{x:0,y:.5}).width,12);
@@ -21,4 +26,7 @@ test('native text color and spacing curves share the animation clock and restore
 });
 test('unsupported native text effects are reported only when their field is in the visible export',()=>{
   const slot={used:true,reason:'Native text vertex-gradient effect is not restored',source:{transform:'text'}},group={visible:true,nativeTextLayer:{slots:[slot]},isActiveTransform:()=>true};assert.deepEqual(omittedVisualWarnings([group],{}),['Some source native text or text effects are not rendered']);slot.used=false;assert.deepEqual(omittedVisualWarnings([group],{}),[]);group.nativeTextLayer.reason='Original native text font is unavailable';assert.equal(omittedVisualWarnings([group],{}).length,1);group.visible=false;assert.deepEqual(omittedVisualWarnings([group],{}),[]);
+});
+test('rendered native glyphs retain the original-client verification notice',()=>{
+  const group={visible:true,nativeTextLayer:{slots:[{used:true,source:{transform:'text'}}]},isActiveTransform:()=>true};assert.deepEqual(omittedVisualWarnings([group],{}),['Native text uses browser glyph rasterization; original-client visual verification is pending']);group.isActiveTransform=()=>false;assert.deepEqual(omittedVisualWarnings([group],{}),[]);
 });

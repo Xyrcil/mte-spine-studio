@@ -148,8 +148,11 @@ Unsupported markup, sizing and layout remain explicit. Text fields stay disabled
 when their complete native clip cannot play; the skill display's role assignment,
 generated English letter rows and event lifecycle remain pending. Browser glyph
 rasterization still needs comparison with the original client. The English
-template's per-glyph vertex-gradient effect is retained but not rendered; its
-field stays unavailable instead of being shown as flat-color text.
+template's vertex-gradient renderer applies the original Color32 colors to
+each glyph independently, including horizontal/vertical direction and the
+source override of the graphic tint. Glyph textures are isolated so overlapping
+letters do not duplicate their neighbours. Browser glyph bounds and sampling
+still require original-client comparison; this does not enable the skill events.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser
