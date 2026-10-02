@@ -123,8 +123,14 @@ and anchored-position curves, inherits CanvasGroup opacity and pauses under
 inactive hierarchy nodes. Native clocks survive scene restore, duplication,
 context recovery and independent export, including backward export seeking.
 Legacy scenes without native checkpoints start at the clip's initial time.
-Native clips with events, text, vector channels or unsupported image layouts
-remain explicitly unavailable; the skill-animation clip is not yet played.
+Legacy vector scale and position curves, planar Euler rotation, CanvasGroup
+opacity and GameObject visibility use the same independent native animation
+clock. CanvasGroup values are scene-local and restore from the captured clip
+time without changing catalogue defaults. Transform-only animations load their
+descendant images. Native clips with unresolved events, text or unsupported
+image layouts remain explicitly unavailable; the skill-animation clip is not
+yet played. Its original Unity Text, text-spacing, layout, item-generation and
+event-receiver references are retained for the dynamic role/skill display.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser

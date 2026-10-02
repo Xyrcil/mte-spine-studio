@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds} from '../src/engine/native-visuals.js';
+import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds,compileNativeVectorCurve} from '../src/engine/native-visuals.js';
 
 test('trimmed sprite content preserves source padding, pivot and rounded canvas dimensions',()=>{
   const sprite={rect:{width:256,height:256},contentRect:{x:4,y:24,width:243,height:205}};
@@ -42,6 +42,27 @@ test('native checkpoints restore independently and reject source mismatches befo
 });
 test('unsupported native events remain explicit and do not expose partially rendered images',()=>{
   const source=fixture();source.visualAnimations[1].data.m_Events=[{time:0,functionName:'PlaySpine'}];const {group,urls}=load(source);assert.match(group.nativeAnimations[0].reason,/events/);assert.deepEqual(urls,[]);assert.equal(group.nativeImages[0].used,false);
+});
+test('native vector, CanvasGroup and active channels restore without mutating catalogue data',()=>{
+  const source=fixture(),child=source.hierarchy.find(row=>row.id==='childT');Object.assign(child.data,{m_LocalScale:{x:1,y:1,z:1},m_LocalPosition:{x:0,y:10,z:0},m_AnchoredPosition:{x:0,y:0},m_Father:{m_PathID:'rootT'}});
+  source.canvasGroups=[{id:'canvas',data:{m_GameObject:{m_PathID:'root'},m_Alpha:1}}];
+  const data=source.visualAnimations[1].data,vector=(from,to)=>({path:'Image',curve:{m_Curve:[{time:0,value:from,inSlope:{x:0,y:0,z:0},outSlope:{x:0,y:0,z:0}},{time:2,value:to,inSlope:{x:0,y:0,z:0},outSlope:{x:0,y:0,z:0}}]}});
+  data.m_ScaleCurves=[vector({x:1,y:1,z:1},{x:3,y:2,z:1})];data.m_PositionCurves=[vector({x:3,y:20,z:0},{x:5,y:24,z:0})];data.m_EulerCurves=[vector({x:0,y:0,z:0},{x:0,y:0,z:90})];
+  data.m_FloatCurves.push({path:'',attribute:'m_Alpha',classID:225,curve:{m_Curve:[{time:0,value:1},{time:2,value:0}]}},{path:'Image',attribute:'m_IsActive',classID:1,curve:{m_Curve:[{time:0,value:1},{time:2,value:0}]}});
+  const original=structuredClone(source),{group}=load(source),model=group.nativeAnimations[0].model;assert.ok(model,group.nativeAnimations[0].reason);model.advance(1);
+  assert.deepEqual(group.nodes.get('childT').data.m_LocalScale,{x:2,y:1.5,z:1});assert.deepEqual(group.nodes.get('childT').data.m_LocalPosition,{x:4,y:22,z:0});assert.deepEqual(group.nodes.get('childT').data.m_AnchoredPosition,{x:4,y:12});assert.equal(group.nativeCanvasGroups[0].data.m_Alpha,.5);assert.ok(Math.abs(group.nodes.get('childT').data.m_LocalRotation.z-Math.sin(Math.PI/8))<1e-9);
+  const saved=model.snapshot(),other=load(source).group;other.nativeAnimations[0].model.restore(saved);assert.deepEqual(other.nodes,group.nodes);assert.deepEqual(other.nativeCanvasGroups,group.nativeCanvasGroups);model.advance(.5);assert.equal(group.nodes.get('child').data.m_IsActive,false);assert.notDeepEqual(other.nativeCanvasGroups,group.nativeCanvasGroups);assert.deepEqual(source,original);
+});
+test('native transform-only animation loads descendant images and rejects non-planar rotations',()=>{
+  const source=fixture(),data=source.visualAnimations[1].data;source.hierarchy.find(row=>row.id==='childT').data.m_Father={m_PathID:'rootT'};
+  source.hierarchy.find(row=>row.id==='rootT').data.m_LocalScale={x:1,y:1,z:1};data.m_FloatCurves=[];const vector={path:'',curve:{m_Curve:[{time:0,value:{x:1,y:1,z:1}},{time:2,value:{x:2,y:1,z:1}}]}};data.m_ScaleCurves=[vector];const loaded=load(source);assert.deepEqual(loaded.urls,['/assets/smoke.png']);assert.ok(loaded.group.nativeAnimations[0].model);
+  data.m_EulerCurves=[vector];assert.match(load(source).group.nativeAnimations[0].reason,/Non-planar/);
+});
+test('real skill vector curves and dynamic UI component references remain available for restoration',t=>{
+  if(!fs.existsSync('public/assets/presentations.json')){t.skip('Local game resources are not installed');return;}
+  const skill=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations.find(row=>row.id==='Spines/ui/fight'),clip=skill.visualAnimations.find(row=>row.type==='AnimationClip');assert.equal(clip.data.m_ScaleCurves.length,5);
+  for(const row of clip.data.m_ScaleCurves){const samples=compileNativeVectorCurve(row.curve);for(const key of row.curve.m_Curve)for(let i=0;i<3;i++)assert.ok(Math.abs(samples[i](key.time)-key.value['xyz'[i]])<1e-6);for(let i=0;i<100;i++)assert.ok(samples.every(sample=>Number.isFinite(sample(i/100*1.22))));}
+  assert.equal(skill.nativeText.length,4);const receiver=skill.nativeBehaviours.find(row=>row.class==='FightSkillUIShow');assert.ok(receiver);assert.ok(skill.instances.some(row=>row.id===String(receiver.data.spine.m_PathID)));assert.ok(skill.nativeText.some(row=>row.id===String(receiver.data.txtName.m_PathID)));assert.deepEqual(clip.data.m_Events.map(row=>row.functionName),['PlaySpine','PlayWord','End']);
 });
 test('real smoke clips bind both image layers while the skill event clip stays unavailable',t=>{
   if(!fs.existsSync('public/assets/presentations.json')){t.skip('Local game resources are not installed');return;}

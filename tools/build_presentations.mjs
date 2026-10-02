@@ -54,9 +54,11 @@ for (const bundle of extraction.bundles) {
   const images=(bundle.images||[]).map(image=>({...image,transform:transforms.get(image.gameObject)?.id}));
   const canvasGroups=nodes.filter(node=>node.type==='CanvasGroup');
   const uiText=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProUGUI').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),transform:transforms.get(idOf(node.data.m_GameObject))?.id,data:node.data}));
+  const nativeText=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='Text').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),transform:transforms.get(idOf(node.data.m_GameObject))?.id,data:node.data}));
+  const nativeBehaviours=nodes.filter(node=>node.type==='MonoBehaviour'&&['FightSkillUIShow','TextSpacing','ItemGen','HorizontalLayoutGroup','GraphicsGradientColor'].includes(className(node))).map(node=>({id:node.id,class:className(node),gameObject:idOf(node.data.m_GameObject),data:node.data}));
   const typewriters=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProTypewriterEffect').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),data:node.data}));
   const fontAssets=fontIndex.filter(font=>uiText.some(row=>String(row.data.m_fontAsset?.m_PathID)===font.assetId));
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, nativeText, nativeBehaviours, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});
