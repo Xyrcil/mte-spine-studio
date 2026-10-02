@@ -20,6 +20,8 @@ def hot_spring_roles(resources, levels):
         bundle = spine if spine.startswith("Spines/") else "Spines/painting/" + spine
         pools = [{"level": int(level["level"]), "voiceIds": [value.strip() for value in level.get("Conversation", "").split(",") if value.strip()]} for level in levels if str(level["id"]) == role_id]
         result.append({"id": role_id, "skinId": str(row["Skin"]), "bundle": bundle, "ambientSound": row.get("SpineSound", ""), "levels": sorted(pools, key=lambda pool: pool["level"])})
+        if row.get("ConversationPos") and row.get("ConversationZoom"):
+            result[-1]["focus"] = {"position": [float(value) for value in row["ConversationPos"].split(",")], "zoom": float(row["ConversationZoom"]) / 100}
     return result
 
 

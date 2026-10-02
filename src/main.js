@@ -48,8 +48,9 @@ renderingRetry.onclick=()=>stage.recoverRendering().catch(error=>message(error.m
 function describe(group){
   const gaps=(group.controllers||[]).flatMap(root=>root.missingAnimations());
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
-  const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${group.presentation.hotspots.length} interaction regions`];
-  if(group.presentation.hotSpringHouse)parts.push('Hot spring focus and dialogue controls are not yet restored');
+  const regions=group.presentation.hotspots.length+(group.controllers||[]).filter(root=>root.source.id==='hot-spring').reduce((count,root)=>count+root.hotspots.filter(hit=>hit.role).length,0);
+  const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
+  if(group.presentation.hotSpringHouse)parts.push(group.controllers.some(root=>root.source.id==='hot-spring')?'Hot spring conversations · original dialogue decorations not yet restored':'Hot spring focus configuration unavailable');
   if(libraryData?.appearances.some(row=>row.bundle===group.presentation.id&&row.hotSpringRoleId)&&!group.controllers.length)parts.push('Hot spring click behavior unavailable in this standalone asset');
   if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
   if(effects)parts.push(`Additional effects unavailable: ${effects}`);
@@ -114,13 +115,14 @@ stage.addEventListener('voice-request',event=>{
   if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
   const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
   const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>queueMicrotask(()=>message(warning))});if(!voice)return;
-  audio.play(voice,language,{group:event.detail.group||''}).catch(error=>message(error.message));
+  audio.play(voice,language,{group:event.detail.group||'',time:event.detail.lateness||0}).catch(error=>message(error.message));
 });
+stage.addEventListener('voice-stop-request',event=>{if(audio?.currentVoice?.group===event.detail.group)audio.stop();});
 try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
-  const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses);
+  const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles);
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);

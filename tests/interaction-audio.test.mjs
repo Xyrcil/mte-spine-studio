@@ -48,3 +48,7 @@ test('unavailable callbacks distinguish missing configured speech from unvoiced 
   assert.deepEqual(warnings,['Voice unavailable (ch): Voice_1234567_Touch_Head']);
   resolveInteractionVoice({skinId:'123456789',event:100},library,audio,'ch',{onUnavailable:warning=>warnings.push(warning)});assert.equal(warnings.length,1);
 });
+test('source conversation IDs resolve their own subtitles and selected-language tracks',()=>{
+  const library={voices:[{id:'11',resourceName:'SourceConversation',text:'Source line'}],storyVoices:[]},audio={resolve:(name,language)=>name==='SourceConversation'&&language==='original'?{}:null},warnings=[];
+  assert.equal(resolveInteractionVoice({voiceId:'11'},library,audio,'original').text,'Source line');assert.equal(resolveInteractionVoice({voiceId:'11'},library,audio,'ch',{onUnavailable:warning=>warnings.push(warning)}),null);assert.deepEqual(warnings,['Voice unavailable (ch): SourceConversation']);
+});

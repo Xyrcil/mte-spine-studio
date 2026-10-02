@@ -34,7 +34,7 @@ export class RenderSession {
 }
 
 export async function collectInteractionEffects(session,plan,provider,onProgress=()=>{},interactionProvider){
-  const clips=[],voices=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>object.visible).map(object=>object.id));let error,eventCount=0;
+  const clips=[],voices=[],stops=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>object.visible).map(object=>object.id));let error,eventCount=0;
   const add=(name,category,position,offset,group)=>{
     if(!provider||session.scene.audio?.muted||(session.scene.audio?.effectVolume??.8)<=0)return;
     if(group&&!visible.has(group))return;
@@ -49,16 +49,17 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
     try{const result=interactionProvider(event.detail),offset=Math.max(0,(session.stage.sequenceTime??session.pendingTime)-(event.detail.lateness||0));
       for(const warning of result?.warnings||[])warnings.add(warning);
       if(result?.effect)add(result.effect.name,result.effect.category,0,offset,event.detail.group);
-      if(result?.voice){const voice=result.voice;voices.push({...voice,scene:true,position:0,offset,sceneRate:1/plan.speed,repeat:false,gain:session.scene.audio?.voiceVolume??1});if(voice.includeSubtitles&&!voice.text)warnings.add('Interaction voice has no subtitle text');}
+      if(result?.voice){const voice=result.voice;voices.push({...voice,sourceGroup:event.detail.group||'',scene:true,position:0,offset,sceneRate:1/plan.speed,repeat:false,gain:session.scene.audio?.voiceVolume??1});if(voice.includeSubtitles&&!voice.text)warnings.add('Interaction voice has no subtitle text');}
     }catch(reason){error=reason;}
   };
   session.stage.addEventListener('sound-request',listener);
   session.stage.addEventListener('voice-request',voiceListener);
+  const stop=event=>{if(!event.detail.group||visible.has(event.detail.group))stops.push({at:session.stage.sequenceTime??session.pendingTime,group:event.detail.group||''});};session.stage.addEventListener('voice-stop-request',stop);
   const end=plan.format==='png'?plan.start:Math.max(plan.end,plan.start+plan.segmentFrames/plan.fps*plan.speed);
   onProgress({phase:'analyzing-audio',frame:0,total:Math.ceil(end*120)});
   try{await session.seek(end,time=>{if(error)throw error;onProgress({phase:'analyzing-audio',frame:Math.ceil(time*120),total:Math.ceil(end*120)});});if(error)throw error;}
-  finally{session.stage.removeEventListener('sound-request',listener);session.stage.removeEventListener('voice-request',voiceListener);}
-  await session.initialize();return {clips,voices:voiceTimeline(voices),warnings:[...warnings]};
+  finally{session.stage.removeEventListener('sound-request',listener);session.stage.removeEventListener('voice-request',voiceListener);session.stage.removeEventListener('voice-stop-request',stop);}
+  await session.initialize();return {clips,voices:voiceTimeline(voices,stops),stops,warnings:[...warnings]};
 }
 
 export async function exportVideoSupport(settings,sceneSpeed=1){
@@ -74,7 +75,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
   let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
   const tracks=[];
-  let interactionClips=[],interactionVoices=[],warnings=[];
+  let interactionClips=[],interactionVoices=[],interactionStops=[],warnings=[];
   let captionDuration=0,captionLayout;
   const sceneCaptions=[];
   let audioDelay=0;
@@ -89,8 +90,8 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(plan.transparent&&effects.some(effect=>effect.maskedProfile))warnings.push('Transparent output cannot retain additive blending on every background; use an opaque background for matching composition');
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
     const video=['mp4','webm'].includes(plan.format);
-    if((video&&effectProvider)||interactionProvider){const result=await collectInteractionEffects(session,plan,video?effectProvider:null,onProgress,interactionProvider);interactionClips=result.clips;interactionVoices=result.voices;warnings.push(...result.warnings);}
-    const replacement=interactionVoices.length?{until:interactionVoices[0].offset}:{};
+    if((video&&effectProvider)||interactionProvider){const result=await collectInteractionEffects(session,plan,video?effectProvider:null,onProgress,interactionProvider);interactionClips=result.clips;interactionVoices=result.voices;interactionStops=result.stops;warnings.push(...result.warnings);}
+    const until=Math.min(interactionVoices[0]?.offset??Infinity,...interactionStops.filter(stop=>!stop.group||stop.group===session.scene.audio?.voiceTrack?.group).map(stop=>stop.at)),replacement=Number.isFinite(until)?{until}:{};
     const voiceAudio=video&&capturedVoice?.includeAudio&&!session.scene.audio?.muted?{...capturedVoice,...replacement,scene:true,sceneRate:1/plan.speed}:null;
     const voiceCaption=capturedVoice?.includeSubtitles&&capturedVoice.text?{...capturedVoice,...replacement,captionOnly:true,sceneCaption:true,sceneRate:1/plan.speed}:null;
     const scheduledAudio=video&&!session.scene.audio?.muted?interactionVoices.filter(voice=>voice.includeAudio):[];

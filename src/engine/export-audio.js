@@ -21,8 +21,8 @@ export function mixExportSample(plan,time,tracks,result=[0,0]){
   return result;
 }
 
-export function voiceTimeline(voices){
-  return voices.map((voice,index)=>({...voice,...(voices[index+1]?{until:voices[index+1].offset}:{})}));
+export function voiceTimeline(voices,stops=[]){
+  return voices.map((voice,index)=>{const ends=stops.filter(stop=>typeof stop==='number'||!stop.group||stop.group===voice.sourceGroup).map(stop=>typeof stop==='number'?stop:stop.at).filter(at=>at>=voice.offset),end=Math.min(voices[index+1]?.offset??Infinity,...ends);return {...voice,...(Number.isFinite(end)?{until:end}:{})};});
 }
 export function sceneCaptionWeight(plan,time,caption){
   return sceneAudioSources(plan,time).reduce((sum,source)=>{

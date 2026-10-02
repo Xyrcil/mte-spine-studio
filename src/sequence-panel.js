@@ -17,6 +17,7 @@ export function createSequencePanel(stage,editor,message){
     field('status').textContent=recorder.active?`Recording · ${recorder.actions.length} clicks`:stage.sequencePlayer?'Replaying':stage.sequence?`${stage.sequence.actions.length} clicks · ${stage.sequence.duration.toFixed(2)} s${stage.sequence.initial.audio?'':' · No recorded sound settings; replay uses current preferences'}`:'No sequence recorded';
     for(const selector of ['.library','#library-toggle','#layers','.scene-controls:not(#sequence-panel)','#sound-panel','#voice-panel','#background','#speed','#fit']){const node=document.querySelector(selector);if(node)node.inert=(selector==='.scene-controls:not(#sequence-panel)'?active||loading:busy)||(['.library','#library-toggle'].includes(selector)&&!document.querySelector('#export-panel').hidden);}
     for(const tab of document.querySelectorAll('[data-view]'))tab.disabled=busy;
+    const spring=document.querySelector('#hot-spring-controls');if(spring){spring.inert=loading||Boolean(stage.sequencePlayer)||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired;for(const select of spring.querySelectorAll('select'))select.disabled=busy||editor.busy;}
   }
   function changeSequence(transform){
     if(loading||recorder.active||stage.sequencePlayer||editor.busy||!stage.sequence)return;

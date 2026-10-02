@@ -1,6 +1,7 @@
 import {validateScene} from './scene.js';
 import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
+import {HotSpringRoot} from './hot-spring.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
 import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareDraws,particleQueue} from './particle-layer.js';
@@ -120,6 +121,7 @@ export class Stage extends EventTarget {
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
+      if(presentation.hotSpringHouse?.roles?.length&&presentation.hotSpringHouse.roles.every(role=>role.focus))group.controllers.push(new HotSpringRoot(this,group));
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
@@ -148,6 +150,7 @@ export class Stage extends EventTarget {
   }
   recordApplied(layer){layer.appliedChanged=layer.state.animationsChanged;layer.appliedTracks=Array.from(layer.state.tracks,track=>track?Object.fromEntries(APPLIED_FIELDS.map(key=>[key,track[key]])):null);}
   transformLayer(group,layer){
+      layer.transform=group.world(layer.instance.transform);
       const sk=layer.skeleton;sk.updateWorldTransform();
       const m = multiply(objectTransform(group), layer.transform);
       for (const bone of sk.bones) {
@@ -214,6 +217,7 @@ export class Stage extends EventTarget {
         if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(track.name!=='<empty>'&&!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);assertCheckpoint(layer,state.animationState,state.pose);}
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
+        for(const root of group.controllers||[])if(root instanceof HotSpringRoot){const saved=row.interactions?.find(state=>state.id===root.source.id);if(saved)root.check(saved.state);}
       });
       scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(row.hotSpringLevel===undefined)delete group.hotSpringLevel;else group.hotSpringLevel=row.hotSpringLevel;if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
       this.suppressEvents=true;
@@ -223,6 +227,7 @@ export class Stage extends EventTarget {
       scene.objects.forEach((row,index)=>{for(const native of created[index].nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(saved=>saved.id===native.source.id)||{...native.model.snapshot(),time:0,playing:Boolean(native.source.data.m_PlayAutomatically)};native.model.restore(saved);}});
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
+      for(const group of created)for(const layer of group.layers)this.transformLayer(group,layer);
       this.draw();
     }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);

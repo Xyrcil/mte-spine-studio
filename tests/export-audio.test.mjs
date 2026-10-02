@@ -35,3 +35,6 @@ test('scene caption weights retain event offsets during speed changes and crossf
   assert.equal(sceneCaptionWeight(p,.2,caption),0);assert.equal(sceneCaptionWeight(p,.3,caption),1);assert.equal(sceneCaptionWeight(p,.5,caption),0);
   const cross=plan({start:0,end:2,loopMode:'crossfade',fade:.3}),weight=sceneCaptionWeight(cross,1.45,{offset:0,position:0,rate:1,duration:.5});assert.ok(weight>0&&weight<1);
 });
+test('closing a conversation cuts its speech without stopping another object',()=>{
+  const voices=voiceTimeline([{sourceGroup:'other',offset:0},{sourceGroup:'house',offset:1}],[{group:'house',at:.5},{group:'house',at:1.25}]);assert.equal(voices[0].until,1);assert.equal(voices[1].until,1.25);
+});

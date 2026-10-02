@@ -7,6 +7,9 @@ from build_library import join_portraits, hot_spring_roles, join_hot_springs, ho
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_hot_spring_focus_retains_source_coordinates_and_zoom(self):
+        role = hot_spring_roles([{"Id": "1", "Skin": "skin", "Spine": "onsen", "ConversationPos": "-56,-163", "ConversationZoom": "162"}], [])[0]
+        self.assertEqual(role["focus"], {"position": [-56, -163], "zoom": 1.62})
     def test_hot_spring_house_uses_source_roles_and_percentage_zoom(self):
         house = hot_spring_houses([{"Id": "house", "Gospels": "1, 2", "BgOffset": "16,197", "BgDefaulltZoom": "50", "BgZoomRange": "50,150", "Bgm": "music"}])[0]
         self.assertEqual(house["roleIds"], ["1", "2"])
