@@ -23,3 +23,22 @@ test('timeline sounds recover event timestamps across scaled tracks and loop bou
   assert.ok(Math.abs(eventLateness(layer,{...track,loop:true,animationStart:0,animationEnd:2,getAnimationTime:()=>.01},{time:1.99})-.04)<1e-12);
   assert.equal(eventLateness(layer,{...track,timeScale:0},{time:.066}),0);
 });
+test('a configured skin line does not fall back when its selected-language track is absent',()=>{
+  const skin='123456789',primary=`Voice_${skin}_Touch_Head`,base='Voice_1234567_Touch_Head';
+  const library={voices:[{targetId:skin,resourceName:primary,text:'Skin line'},{targetId:'1234567',resourceName:base,text:'Base line'}],storyVoices:[]};
+  const calls=[],audio={resolve:(name,language)=>{calls.push(name);return name===base||name===primary&&language==='original'?{}:null;}};
+  assert.equal(resolveInteractionVoice({skinId:skin,event:2},library,audio,'ch'),null);
+  assert.ok(!calls.includes(base));
+  assert.equal(resolveInteractionVoice({skinId:skin,event:2},library,audio,'original').text,'Skin line');
+  assert.equal(resolveInteractionVoice({skinId:skin,event:2},{...library,voices:library.voices.slice(1)},audio,'ch').text,'Base line');
+});
+test('a sound-table entry without an extracted voice row still prevents unrelated fallback',()=>{
+  const library={voices:[{resourceName:'Voice_1234567_Touch_Hand',text:'Base'}],storyVoices:[],soundResources:[{name:'Voice_123456789_Touch_Hand',resource:'SoundRes/a_sound_voiceeff/Missing'}]};
+  const audio={resolve:name=>name==='Voice_1234567_Touch_Hand'?{}:null};
+  assert.equal(resolveInteractionVoice({skinId:'123456789',event:1},library,audio,'original'),null);
+});
+test('configured aliases retain the selected line even when only the base audio is available',()=>{
+  const library={voices:[{resourceName:'ActualSkinHead',alias:'Voice_123456789_Touch_Head',text:'Skin'},{resourceName:'Voice_1234567_Touch_Head',text:'Base'}],storyVoices:[]};
+  const audio={resolve:name=>name==='Voice_1234567_Touch_Head'?{}:null};
+  assert.equal(resolveInteractionVoice({skinId:'123456789',event:2},library,audio,'ch'),null);
+});

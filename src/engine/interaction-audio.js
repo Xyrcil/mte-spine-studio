@@ -38,6 +38,8 @@ export function resolveInteractionVoice(request,library,audio,language){
     rows.sort((a,b)=>Number(b.targetId===skin)-Number(a.targetId===skin));
     for(const row of rows)if(audio.resolve(row.resourceName,language))return {...row,title:row.title||row.resourceName};
     if(audio.resolve(candidate,language))return {resourceName:candidate,title:candidate,text:''};
+    // Source fallback depends on a missing sound-table entry, not a missing language track.
+    if(rows.length||(library.soundResources||[]).some(row=>row.name===candidate||row.name?.split('/').at(-1)===normalized))return null;
   }
   return null;
 }

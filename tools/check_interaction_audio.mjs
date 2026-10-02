@@ -5,6 +5,18 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
+  const routing=await page.evaluate(async()=>{
+    const library=await fetch('/assets/library.json').then(r=>r.json()),{resolveInteractionVoice}=await import('/src/engine/interaction-audio.js');
+    let checked=0;const failures=[];
+    for(const row of library.voices){
+      const match=/^Voice_(\d{9})_Touch_(Head|Hand|Chest)$/.exec(row.resourceName);if(!match)continue;
+      const base=`Voice_${match[1].slice(0,-2)}_Touch_${match[2]}`;if(!library.voices.some(item=>item.resourceName===base))continue;
+      const calls=[],audio={resolve:name=>{calls.push(name);return name===base?{}:null;}};
+      const result=resolveInteractionVoice({skinId:match[1],event:{Head:2,Hand:1,Chest:3}[match[2]]},library,audio,'a_sound_voiceeff_ch');
+      if(result!==null||calls.includes(base))failures.push(row.resourceName);checked++;
+    }
+    return {checked,failures};
+  });assert.ok(routing.checked>0);assert.deepEqual(routing.failures,[]);console.log(`Checked ${routing.checked} real skin/base pairs with unavailable skin audio: no substituted base lines`);
   await selectAsset(page,'Spines/painting/301600901_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301600901_spine');
   const clicked=await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];return root.click(root.hotspots.find(hit=>hit.event===4));});assert.equal(clicked.accepted,true);assert.equal(clicked.animation,'stand_down');
   await page.waitForFunction(()=>[...window.mteAudio.effects].some(effect=>effect.currentTime>.05&&effect.src.includes('301600901_cm_Foot_Down/')));
