@@ -1,15 +1,32 @@
 import struct
+import argparse
 import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import unittest
-from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue
+from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key
 from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_explicit_bundle_names_cannot_escape_resource_roots(self):
+        self.assertEqual(resource_bundle_key("UI/Prefab/Onsen"), "UI/Prefab/Onsen")
+        for key in ("", "/tmp/bundle", "../bundle", "UI/../bundle", "UI//bundle", "UI/./bundle", "UI\\bundle", "C:/bundle"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                resource_bundle_key(key)
+
+    def test_animator_controllers_and_overrides_are_retained_with_clip_references(self):
+        kinds = ("Animator", "AnimatorController", "AnimatorOverrideController", "AnimationClip")
+        rows = [SimpleNamespace(path_id=i, assets_file="bundle", type=SimpleNamespace(name=kind), read_typetree=lambda i=i: {"m_Name": kinds[i], "m_Controller": {"m_FileID": 0, "m_PathID": 9223372036854775807}}) for i, kind in enumerate(kinds)]
+        with tempfile.TemporaryDirectory() as folder:
+            extractor = BundleExtractor(SimpleNamespace(objects=rows), Path(folder))
+            extractor.extract()
+            hierarchy = json.loads((Path(folder) / "hierarchy.json").read_text())
+            self.assertEqual([row["type"] for row in hierarchy], list(kinds))
+            self.assertTrue(all(row["data"]["m_Controller"]["m_PathID"] == "9223372036854775807" for row in hierarchy))
+
     def test_shader_queue_tags_preserve_offsets_and_unknown_defaults(self):
         shader = lambda tag: {"m_ParsedForm": {"m_SubShaders": [{"m_Tags": {"tags": [("QUEUE", tag)]}}]}}
         self.assertEqual(shader_render_queue(shader("Transparent")), 3000)

@@ -72,6 +72,12 @@ def safe_name(value: str):
     return re.sub(r"[^\w.-]+", "_", value)
 
 
+def resource_bundle_key(value: str):
+    if not value or "\\" in value or any(part in ("", ".", "..") for part in value.split("/")) or ":" in value:
+        raise argparse.ArgumentTypeError("Bundle names must be relative resource keys without traversal")
+    return value
+
+
 def shader_render_queue(shader):
     subshaders = shader.get("m_ParsedForm", {}).get("m_SubShaders", [])
     if not subshaders:
@@ -277,7 +283,7 @@ class BundleExtractor:
         hierarchy = []
         errors = []
         for reader in self.objects:
-            if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "CanvasGroup", "SortingGroup"):
+            if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController", "CanvasGroup", "SortingGroup"):
                 try:
                     hierarchy.append({"id": str(reader.path_id), "type": reader.type.name, "data": self.tree(reader)})
                 except Exception as exc:
@@ -341,6 +347,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
     parser.add_argument("--limit", type=int)
     parser.add_argument("--match", default="")
+    parser.add_argument("--bundle", action="append", type=resource_bundle_key, default=[], help="Extract an exact resource bundle instead of scanning Spine bundles; repeat for multiple bundles")
     parser.add_argument("--merge", action="store_true", help="Update matching bundle records without dropping other extracted bundles")
     parser.add_argument("--metadata-only", action="store_true", help="Refresh renderer material queues without rewriting existing media")
     args = parser.parse_args()
@@ -360,10 +367,17 @@ def main():
                 records[record.resource_name] = record
     candidates = {}
     for root in roots:
-        for path in sorted((root / "Spines").rglob("*.dat")):
+        paths = [root / (key + ".dat") for key in args.bundle] if args.bundle else sorted((root / "Spines").rglob("*.dat"))
+        for path in paths:
+            if not path.is_file():
+                continue
             key = path.relative_to(root).with_suffix("").as_posix()
             if args.match in key:
                 candidates[key] = path
+    if args.bundle:
+        missing = set(args.bundle) - set(candidates)
+        if missing:
+            parser.error("Requested bundles are missing: " + ", ".join(sorted(missing)))
     catalog = json.loads((args.output / "extraction.json").read_text())["bundles"] if args.merge and (args.output / "extraction.json").exists() else []
     shader_path = next((root / "Shaders.dat" for root in reversed(roots) if (root / "Shaders.dat").exists()), None)
     shader_bytes = None
@@ -389,7 +403,7 @@ def main():
             destination.mkdir(parents=True, exist_ok=True)
             extractor = BundleExtractor(environment, destination)
             dependency_errors = []
-            if args.metadata_only or any(reader.type.name in ("Animation", "AnimationClip") for reader in extractor.objects):
+            if args.metadata_only or any(reader.type.name in ("Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController") for reader in extractor.objects):
                 pending = list(records[key].dependencies)
                 loaded = {key.lower()}
                 while pending:

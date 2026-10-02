@@ -44,8 +44,16 @@ python3 tools/build_library.py --source /path/to/archive
 ```
 
 Use `--match <bundle-name> --merge` to refresh selected Spine bundles without
-dropping other catalogue entries. Particle extraction retains source modules,
-render settings, material parameters, shared shader/texture dependencies and
+dropping other catalogue entries.
+For interface resources outside the Spine directory, use repeated
+`--bundle UI/Prefab/Onsen` arguments with a separate local output folder.
+Explicit bundle selection does not scan the rest of the library. The extractor
+retains Animator controllers, overrides, clip bindings and packed curve data
+alongside Legacy animations; retaining these records does not imply playback
+support for their channels.
+
+Particle extraction retains source modules, render settings, material
+parameters, shared shader/texture dependencies and
 sprite frames. Native animation components and sorting groups are also kept.
 Material metadata includes active shader keywords, custom render queues,
 disabled passes, tags and instancing settings; shader implementation code is
