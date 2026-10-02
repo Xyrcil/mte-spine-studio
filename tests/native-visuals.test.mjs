@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation} from '../src/engine/native-visuals.js';
+import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix} from '../src/engine/native-visuals.js';
+
+test('source Expand canvas scaling keeps decorations in the captured viewport during crop',()=>{
+  const scaler={m_UiScaleMode:1,m_ScreenMatchMode:1,m_ReferenceResolution:{x:1920,y:1080}};
+  assert.deepEqual(viewportDecorationMatrix({x:3,y:4,width:1920,height:1080},scaler),[1,0,0,1,3,4]);
+  assert.deepEqual(viewportDecorationMatrix({x:3,y:4,width:960,height:1080},scaler),[.5,0,0,.5,3,4]);
+  assert.deepEqual(viewportDecorationMatrix({x:3,y:4,width:3840,height:1080},scaler),[1,0,0,1,3,4]);
+  assert.throws(()=>viewportDecorationMatrix({x:0,y:0,width:0,height:1},scaler),/Unsupported/);
+});
+test('cross-bundle native images use the app asset root rather than the character bundle',()=>{
+  const presentation=fixture();presentation.images[0].assetPath='spines/interfaces/UI/Prefab/Onsen/heart.png';const {group}=load(presentation),urls=[];
+  createNativeVisuals(group,'/project/assets/spines/ui/Onsen/',{loadTexture:url=>urls.push(url)},'/project/assets/');
+  assert.deepEqual(urls,['/project/assets/spines/interfaces/UI/Prefab/Onsen/heart.png']);
+});
 
 function fixture(){
   const image={id:'image',gameObject:'child',transform:'childT',status:'extracted',sprite:{path:'smoke.png'},data:{m_Color:{r:1,g:1,b:1,a:1},m_Type:0,m_Script:{m_PathID:'script'}}};

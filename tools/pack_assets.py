@@ -31,7 +31,10 @@ def indexed_files(root):
             if resource and resource.get("path"):
                 paths.add(presentation["path"] + "/" + resource["path"])
         for image in presentation.get("images", []):
-            local(image.get("sprite"))
+            if image.get("assetPath"):
+                paths.add(image["assetPath"])
+            else:
+                local(image.get("sprite"))
         for effect in presentation.get("effects", []):
             for sprite in effect.get("sprites", []):
                 local(sprite)

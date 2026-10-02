@@ -405,7 +405,7 @@ def main():
     dependency_records = {key.lower(): record for key, record in records.items()}
     dependency_bytes = {}
     for key, path in list(candidates.items())[:args.limit]:
-        destination = args.output / "spines" / key.removeprefix("Spines/")
+        destination = args.output / "spines" / (key.removeprefix("Spines/") if key.startswith("Spines/") else "interfaces/" + key)
         try:
             raw = path.read_bytes()
             if not raw.startswith(b"UnityFS"):

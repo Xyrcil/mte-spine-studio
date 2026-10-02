@@ -36,11 +36,11 @@ export class NativeAnimation {
   restore(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');this.time=value.time;this.playing=value.playing;this.apply();}
 }
 
-export function createNativeVisuals(group,base,manager){
+export function createNativeVisuals(group,base,manager,assetBase=base){
   group.nativeImages=(group.presentation.images||[]).map(source=>{
     const node=group.nodes.get(source.transform),data=node?.data;
     const reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||!data||data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y?'Native image layout or material is not supported yet':undefined;
-    return {source,color:{...source.data.m_Color},texture:base+source.sprite?.path,reason,used:false};
+    return {source,color:{...source.data.m_Color},texture:source.assetPath?assetBase+source.assetPath:base+source.sprite?.path,reason,used:Boolean(source.viewportDecoration)};
   });
   group.nativeAnimations=(group.presentation.visualAnimations||[]).filter(row=>row.type==='Animation').map(source=>{
     const clip=group.presentation.visualAnimations.find(row=>row.type==='AnimationClip'&&row.id===String(source.data.m_Animation?.m_PathID));
@@ -53,10 +53,14 @@ export function preflightNativeAnimations(group,rows){
   const models=(group.nativeAnimations||[]).filter(row=>row.model),seen=new Set();if(rows.length!==models.length)throw new Error('Native animation count does not match asset');
   for(const row of rows){validateNativeAnimation(row);const model=models.find(layer=>layer.source.id===row.id)?.model;if(seen.has(row.id)||!model||model.clip.id!==row.clip)throw new Error('Native animation source does not match checkpoint');seen.add(row.id);}
 }
-export function drawNativeImage(renderer,group,image){
+export function viewportDecorationMatrix(view,scaler){
+  if(scaler?.m_UiScaleMode!==1||scaler.m_ScreenMatchMode!==1||![view.width,view.height,scaler.m_ReferenceResolution?.x,scaler.m_ReferenceResolution?.y].every(value=>Number.isFinite(value)&&value>0))throw new Error('Unsupported viewport decoration scale');
+  const scale=Math.min(view.width/scaler.m_ReferenceResolution.x,view.height/scaler.m_ReferenceResolution.y);return [scale,0,0,scale,view.x,view.y];
+}
+export function drawNativeImage(renderer,group,image,viewport){
   if(!image.used||image.reason||image.source.data.m_Enabled===0||image.source.data.m_Enabled===false||!group.isActiveTransform(image.source.transform))return;
   const texture=group.manager.get(image.texture);if(!texture)return;
-  const node=group.nodes.get(image.source.transform),size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m=multiply(objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
+  const node=group.nodes.get(image.source.transform),size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m=multiply(image.source.viewportDecoration?viewportDecorationMatrix(viewport,group.presentation.hotSpringHouse.decoration.scaler):objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
   while(current){if(seen.has(current.id))throw new Error('Cyclic native image hierarchy');seen.add(current.id);const id=String(current.data.m_GameObject?.m_PathID);for(const canvas of group.presentation.canvasGroups||[])if(String(canvas.data.m_GameObject?.m_PathID)===id&&canvas.data.m_Enabled!==0&&canvas.data.m_Enabled!==false){alpha*=canvas.data.m_Alpha;if(canvas.data.m_IgnoreParentGroups){current=null;break;}}if(current)current=group.nodes.get(String(current.data.m_Father?.m_PathID));}
   const quad=[],vertices=[[-pivot.x*size.x,-pivot.y*size.y,0,1],[(1-pivot.x)*size.x,-pivot.y*size.y,1,1],[(1-pivot.x)*size.x,(1-pivot.y)*size.y,1,0],[-pivot.x*size.x,(1-pivot.y)*size.y,0,0]];
   for(const [x,y,u,v] of vertices){const p=point(m,x,y);quad.push(p.x,p.y,image.color.r,image.color.g,image.color.b,alpha,u,v);if(renderer.twoColorTint)quad.push(0,0,0,0);}

@@ -29,7 +29,7 @@ export function expectedPackPaths(catalogues){
   for(const entry of catalogues['audio-index.json'].entries)if(!entry.errors?.length)for(const clip of entry.clips||[])add(clip.path);
   for(const presentation of catalogues['presentations.json'].presentations){
     const local=resource=>{if(resource?.path)add(packPath(presentation.path)+'/'+packPath(resource.path));};
-    for(const image of presentation.images||[])local(image.sprite);
+    for(const image of presentation.images||[])if(image.assetPath)add(image.assetPath);else local(image.sprite);
     for(const effect of presentation.effects||[]){for(const sprite of effect.sprites||[])local(sprite);for(const material of effect.materials||[])for(const texture of Object.values(material.textures||{}))local(texture);}
   }
   const visit=value=>{if(Array.isArray(value))for(const item of value)visit(item);else if(value&&typeof value==='object')for(const item of Object.values(value))visit(item);else if(typeof value==='string'&&/^(spines|portraits|audio)\//.test(value)&&extensions.test(value))add(value);};

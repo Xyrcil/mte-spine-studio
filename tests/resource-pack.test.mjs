@@ -24,3 +24,7 @@ test('native images and particle sprites and material textures are indexed relat
   const selected=PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogs[name])));await assert.rejects(validatePackCatalogues(resourceFiles(selected).rows),/Indexed files missing/);selected.push(...paths.map(path=>file(path,'pixels')));await validatePackCatalogues(resourceFiles(selected).rows);
   catalogs['presentations.json'].presentations[0].images[0].sprite.path='../outside.png';assert.throws(()=>expectedPackPaths(catalogs),/Invalid resource path/);
 });
+test('composed native images reference their own source bundle without inventing a local copy',()=>{
+  const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)])),assetPath='spines/interfaces/UI/Prefab/Onsen/effects/heart.png';catalogs['presentations.json'].presentations=[{path:'spines/ui/Onsen',images:[{assetPath,sprite:{path:'effects/heart.png'}}]}];
+  assert.deepEqual(expectedPackPaths(catalogs),[assetPath]);
+});

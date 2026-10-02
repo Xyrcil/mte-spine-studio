@@ -60,8 +60,12 @@ object visibility channels, including saved playback positions. Hot spring
 dialogue selects the original level-specific decoration variant and retains
 its name, start time and duration. Early Continue clicks advance the source
 dialogue cursor without interrupting the currently playing voice or decoration
-timer; Close remains immediate. Animator controller transitions and the
-decoration's viewport composition remain pending.
+timer; Close remains immediate. The recovered decoration hierarchy and heart
+sprites render above the scene using the source 1920 × 1080 Expand canvas
+scaling. Export crops preserve that captured viewport. Decoration poses derive
+from the dialogue checkpoint and reset source defaults before sampling.
+The original dialogue panel layout and general Animator transitions remain
+pending; original-client visual comparison is still needed.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

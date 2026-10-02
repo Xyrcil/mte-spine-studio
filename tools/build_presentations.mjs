@@ -47,11 +47,12 @@ for (const bundle of extraction.bundles) {
   const standalone=instances.length===0&&skeletons.size>0;
   if(standalone)instances.push(...standaloneInstances([...skeletons.values()]));
   const effects=(bundle.effects||[]).map(effect=>({...effect,transform:transforms.get(effect.gameObject)?.id}));
-  const visualAnimations=nodes.filter(node=>['Animation','AnimationClip'].includes(node.type));
+  const visualAnimations=nodes.filter(node=>['Animation','AnimationClip','Animator','AnimatorController','AnimatorOverrideController'].includes(node.type));
+  const canvasScalers=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='CanvasScaler').map(node=>node.data);
   const sortingGroups=nodes.filter(node=>node.type==='SortingGroup');
   const images=(bundle.images||[]).map(image=>({...image,transform:transforms.get(image.gameObject)?.id}));
   const canvasGroups=nodes.filter(node=>node.type==='CanvasGroup');
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});

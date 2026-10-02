@@ -86,7 +86,7 @@ export class Stage extends EventTarget {
       }
       group.effects=createParticleLayers(group,base,manager);
       if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
-      createNativeVisuals(group,base,manager);
+      createNativeVisuals(group,base,manager,`${import.meta.env.BASE_URL}assets/`);
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
         if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
@@ -310,10 +310,12 @@ export class Stage extends EventTarget {
         const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
         renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
       }else{
-        const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
+        const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used&&!image.source.viewportDecoration).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
         for(const draw of draws)if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots);else renderer.drawSkeleton(draw.layer.skeleton,false);}
       }
     }
+    const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};
+    for(const group of this.groups)if(group.visible)for(const image of group.nativeImages||[])if(image.source.viewportDecoration)drawNativeImage(renderer,group,image,viewport);
     renderer.end();
     gl.disable(gl.SCISSOR_TEST);
   }
