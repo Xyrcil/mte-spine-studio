@@ -140,7 +140,16 @@ The local library also retains the legacy skill names, explicit role/skin skill
 references and combined main/management stand transforms used by that receiver.
 These records remain version-specific rather than taking names from newer
 tables. Missing portraits and stand configuration remain explicit; this data
-binding does not yet enable the skill display's events or dynamic text rendering.
+binding does not yet enable the complete skill display.
+Unity Text now has a scene-local browser renderer using its resolved original
+font, authored face metrics, rounded glyph advances and alignment. Legacy color
+and text-spacing curves can drive those fields and restore their clip times.
+Unsupported markup, sizing and layout remain explicit. Text fields stay disabled
+when their complete native clip cannot play; the skill display's role assignment,
+generated English letter rows and event lifecycle remain pending. Browser glyph
+rasterization still needs comparison with the original client. The English
+template's per-glyph vertex-gradient effect is retained but not rendered; its
+field stays unavailable instead of being shown as flat-color text.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser
