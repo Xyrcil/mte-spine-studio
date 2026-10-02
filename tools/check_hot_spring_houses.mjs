@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {chromium,webkit,firefox} from '@playwright/test';
 import {selectAsset} from './select_asset.mjs';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',type={chromium,webkit,firefox}[engine];assert.ok(type,'Choose chromium, webkit or firefox');
+const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const houses=await page.evaluate(async()=>{const library=await fetch('/assets/library.json').then(r=>r.json());return library.hotSpringHouses;});assert.equal(houses.length,3);
@@ -43,6 +44,7 @@ try{
         try{await render.initialize();for(const at of [0,1.1]){await render.seek(at);const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const ctx=canvas.getContext('2d');ctx.drawImage(render.canvas,0,0);expectedFrames.push(ctx.getImageData(0,0,160,120).data);}}finally{render.dispose();}
         try{for(const format of ['mp4','webm']){
           const media=await exportMedia({scene:{...snapshot,sequence},catalog:presentations,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{format,useSequence:true,width:160,height:120,fps:10,start:0,end:3.2,speed:1,loops:1,loopMode:'repeat',background:'#191b20',fit:'contain',crop:{x:0,y:0,width:1,height:1}},interactionProvider:provider});
+          if(!media.warnings.includes('Original hot spring dialogue decorations are not rendered'))throw new Error('Missing conversation decoration notice');
           const input=new Input({source:new BlobSource(media.blob),formats:ALL_FORMATS});
           try{
             const video=await input.getPrimaryVideoTrack(),track=await input.getPrimaryAudioTrack();if(!video||!track)throw new Error(`${format}: media tracks missing`);
@@ -61,5 +63,5 @@ try{
     const position=await page.evaluate(async()=>{const stage=window.mteStudio,group=stage.groups[0],root=group.controllers.find(root=>root.source.id==='hot-spring'),hit=root.hotspots.find(hit=>hit.role),{point,multiply,objectTransform}=await import('/src/engine/geometry.js'),data=group.nodes.get(hit.transform).data,world=point(multiply(objectTransform(group),group.world(hit.transform)),data.m_SizeDelta.x*(.5-data.m_Pivot.x),data.m_SizeDelta.y*(.5-data.m_Pivot.y)),rect=stage.canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;stage.paused=false;return {x:rect.left+((world.x-stage.camera.x)/width+.5)*rect.width,y:rect.top+(.5-(world.y-stage.camera.y)/height)*rect.height,hit:root.hitAt(world.x,world.y)?.id,target:hit.id};});assert.equal(position.hit,position.target);await page.locator('#sequence-record').click();await page.mouse.click(position.x,position.y);
     await page.waitForFunction(()=>window.mteStudio.groups[0].controllers.at(-1).value.phase==='dialogue'&&window.mteAudio.currentVoice&&window.mteAudio.element.currentTime>.03);assert.ok(await page.locator('#subtitle').textContent());await page.locator('#hot-spring-close').click();await page.waitForFunction(()=>window.mteStudio.groups[0].controllers.at(-1).value.phase==='idle');assert.equal(await page.evaluate(()=>window.mteAudio.currentVoice),null);await page.locator('#sequence-stop').click();assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence.actions.map(action=>action.hit)),[position.target,'close']);
   }
-  assert.deepEqual(errors,[]);console.log('Three real hot spring houses loaded, restored and rendered independently');
+  assert.deepEqual(errors,[]);console.log(`${engine}: three real hot spring houses loaded, restored and rendered independently`);
 }finally{await browser.close();}

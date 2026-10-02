@@ -5,7 +5,7 @@ import {exportPlan,frameSources,exportCamera} from './export-plan.js';
 import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay} from './audio-delay.js';
-import {exportScene} from './export-source.js';
+import {exportScene,omittedVisualWarnings} from './export-source.js';
 import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
 
@@ -83,6 +83,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   try{
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
     await session.initialize();if(head)await head.initialize();
+    warnings.push(...omittedVisualWarnings(session.stage.groups,session.scene,Boolean(plan.useSequence)));
     const effects=session.stage.groups.filter(group=>group.visible).flatMap(group=>group.effects||[]),pendingEffects=effects.filter(effect=>effect.verification);
     if(pendingEffects.length)warnings.push('Masked particle geometry and draw order still need visual verification');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason))))warnings.push('Some source material queues are mixed or unresolved; their separate draw ordering is not yet restored');
