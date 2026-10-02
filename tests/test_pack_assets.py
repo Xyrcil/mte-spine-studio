@@ -10,6 +10,28 @@ from pack_assets import pack, CATALOGUES, indexed_files
 
 
 class ResourceArchiveTests(unittest.TestCase):
+    def test_native_and_particle_media_are_packed_with_presentation_relative_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "assets"
+            self.setup_assets(root)
+            presentation = {"path": "spines/ui/Onsen", "images": [{"sprite": {"path": "effects/sprites/heart.png"}}], "effects": [{"sprites": [{"path": "effects/sprites/smoke.png"}], "materials": [{"textures": {"_MainTex": {"path": "effects/textures/main.png"}, "_MaskTex": {"path": "effects/textures/mask.png"}}}]}]}
+            (root / "presentations.json").write_text(json.dumps({"schema": 1, "presentations": [presentation]}))
+            with self.assertRaisesRegex(ValueError, "Indexed resource missing"):
+                indexed_files(root)
+            paths = ["effects/sprites/heart.png", "effects/sprites/smoke.png", "effects/textures/main.png", "effects/textures/mask.png"]
+            for path in paths:
+                destination = root / presentation["path"] / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"pixels")
+            output = Path(directory) / "resources.zip"
+            pack(root, output)
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(set(archive.namelist()), set(CATALOGUES + [presentation["path"] + "/" + path for path in paths]))
+            presentation["images"][0]["sprite"]["path"] = "../outside.png"
+            (root / "presentations.json").write_text(json.dumps({"schema": 1, "presentations": [presentation]}))
+            with self.assertRaisesRegex(ValueError, "Invalid indexed"):
+                indexed_files(root)
+
     def setup_assets(self, root):
         root.mkdir()
         for name in CATALOGUES:

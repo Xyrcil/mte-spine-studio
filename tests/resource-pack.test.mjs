@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resourceFiles,validatePackCatalogues,packPath,packUrl,resourceType,PACK_CATALOGS} from '../src/engine/resource-pack.js';
+import {resourceFiles,validatePackCatalogues,packPath,packUrl,resourceType,PACK_CATALOGS,expectedPackPaths} from '../src/engine/resource-pack.js';
 const catalogue=name=>name==='library.json'?{schema:1,characters:[],appearances:[],voices:[],storyVoices:[],soundResources:[]}:name==='presentations.json'?{schema:1,presentations:[]}:{schema:1,entries:[]};
 function file(path,content=''){const result=new File([content],path.split('/').at(-1));Object.defineProperty(result,'webkitRelativePath',{value:'assets/'+path});return result;}
 const files=()=>PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogue(name))));
@@ -16,4 +16,11 @@ test('invalid catalogues and missing indexed files fail before storing any repla
   const bad=files();bad[0]=file('presentations.json','not json');await assert.rejects(validatePackCatalogues(resourceFiles(bad).rows),/Invalid JSON/);
   const indexed=files();indexed[1]=file('runtime-index.json',JSON.stringify({schema:1,entries:[{status:'parsed',path:'spines/example',id:'1',skeleton:'1/skeleton.skel',atlases:[{atlas:'atlas-0/texture.atlas',pages:['page.png']}]}]}));
   await assert.rejects(validatePackCatalogues(resourceFiles(indexed).rows),/Indexed files missing/);indexed.push(file('spines/example/1/skeleton.skel'),file('spines/example/1/atlas-0/texture.atlas'),file('spines/example/1/atlas-0/page.png'));await validatePackCatalogues(resourceFiles(indexed).rows);
+});
+
+test('native images and particle sprites and material textures are indexed relative to their presentation',async()=>{
+  const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)]));catalogs['presentations.json'].presentations=[{path:'spines/ui/Onsen',images:[{sprite:{path:'effects/sprites/heart.png'}}],effects:[{sprites:[{path:'effects/sprites/smoke.png'}],materials:[{textures:{_MainTex:{path:'effects/textures/main.png'},_MaskTex:{path:'effects/textures/mask.png'}}}]}]}];
+  const paths=expectedPackPaths(catalogs);assert.deepEqual(paths.sort(),['heart','smoke'].map(name=>`spines/ui/Onsen/effects/sprites/${name}.png`).concat(['main','mask'].map(name=>`spines/ui/Onsen/effects/textures/${name}.png`)).sort());
+  const selected=PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogs[name])));await assert.rejects(validatePackCatalogues(resourceFiles(selected).rows),/Indexed files missing/);selected.push(...paths.map(path=>file(path,'pixels')));await validatePackCatalogues(resourceFiles(selected).rows);
+  catalogs['presentations.json'].presentations[0].images[0].sprite.path='../outside.png';assert.throws(()=>expectedPackPaths(catalogs),/Invalid resource path/);
 });

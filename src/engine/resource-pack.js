@@ -27,6 +27,11 @@ export function expectedPackPaths(catalogues){
     add(entry.path+'/'+entry.skeleton);for(const atlas of entry.atlases){const path=`${entry.path}/${entry.id}/${atlas.atlas}`;add(path);const directory=path.slice(0,path.lastIndexOf('/')+1);for(const page of atlas.pages)add(directory+page);}
   }
   for(const entry of catalogues['audio-index.json'].entries)if(!entry.errors?.length)for(const clip of entry.clips||[])add(clip.path);
+  for(const presentation of catalogues['presentations.json'].presentations){
+    const local=resource=>{if(resource?.path)add(packPath(presentation.path)+'/'+packPath(resource.path));};
+    for(const image of presentation.images||[])local(image.sprite);
+    for(const effect of presentation.effects||[]){for(const sprite of effect.sprites||[])local(sprite);for(const material of effect.materials||[])for(const texture of Object.values(material.textures||{}))local(texture);}
+  }
   const visit=value=>{if(Array.isArray(value))for(const item of value)visit(item);else if(value&&typeof value==='object')for(const item of Object.values(value))visit(item);else if(typeof value==='string'&&/^(spines|portraits|audio)\//.test(value)&&extensions.test(value))add(value);};
   for(const name of ['presentations.json','portrait-index.json','library.json'])visit(catalogues[name]);return [...result];
 }

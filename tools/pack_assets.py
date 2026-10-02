@@ -11,6 +11,7 @@ CATALOGUES = ["presentations.json", "runtime-index.json", "library.json", "audio
 
 
 def indexed_files(root):
+    root = root.resolve()
     data = {name: json.loads((root / name).read_text(encoding="utf-8")) for name in CATALOGUES}
     paths = set(CATALOGUES)
     for entry in data["runtime-index.json"]["entries"]:
@@ -24,6 +25,19 @@ def indexed_files(root):
     for entry in data["audio-index.json"]["entries"]:
         if not entry.get("errors"):
             paths.update(clip["path"] for clip in entry.get("clips", []))
+
+    for presentation in data["presentations.json"]["presentations"]:
+        def local(resource):
+            if resource and resource.get("path"):
+                paths.add(presentation["path"] + "/" + resource["path"])
+        for image in presentation.get("images", []):
+            local(image.get("sprite"))
+        for effect in presentation.get("effects", []):
+            for sprite in effect.get("sprites", []):
+                local(sprite)
+            for material in effect.get("materials", []):
+                for texture in material.get("textures", {}).values():
+                    local(texture)
 
     def visit(value):
         if isinstance(value, dict):

@@ -24,7 +24,9 @@ without uploading files. For large libraries, create a local archive with
 `python3 tools/pack_assets.py --assets /path/to/assets --output /path/to/resources.zip`,
 then choose **Import resource ZIP** under **Local resource pack** and reload.
 The archive contains the five catalogues and their indexed resources, not the
-game client. Do not publish game-resource archives without appropriate permission.
+game client. Native UI sprites and particle textures are resolved relative to
+their presentation and included in the archive. Older incomplete archives must
+be rebuilt before import. Do not publish game-resource archives without appropriate permission.
 Imported files use separate browser storage; ordinary cache clearing does not
 remove them. Cancellation, invalid catalogues, missing indexed
 files and storage failures retain the previous pack. Replacement pauses open
