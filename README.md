@@ -80,6 +80,10 @@ binds their exact names to the recovered TMP assets. Font paths, face metrics,
 character coverage and fallback references are retained in presentations.
 These files are local resources, not part of the public code build. OTF and
 TTF files are included in resource packs and scene cache preparation.
+Hot spring checkpoints retain the displayed voice ID and text start separately
+from the conversation cursor. Early Continue clicks do not clear the current
+line; restoration resolves its original text and role name from the catalogue.
+Text drawing and source typewriter scheduling are still pending.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

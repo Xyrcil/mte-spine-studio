@@ -11,7 +11,7 @@ try{
     const id=`${house.bundle}/${house.id}`;await selectAsset(page,id);await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id,id);
     const result=await page.evaluate(async()=>{
       const stage=window.mteStudio,group=stage.groups[0];stage.paused=true;
-      const library=await fetch('/assets/library.json').then(r=>r.json()),catalog=await fetch('/assets/presentations.json').then(r=>r.json()),entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,{expandHotSpringPresentations}=await import('/src/engine/hot-spring.js'),presentations=expandHotSpringPresentations(catalog.presentations,library.hotSpringHouses,library.hotSpringRoles);
+      const library=await fetch('/assets/library.json').then(r=>r.json()),catalog=await fetch('/assets/presentations.json').then(r=>r.json()),entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,{expandHotSpringPresentations}=await import('/src/engine/hot-spring.js'),presentations=expandHotSpringPresentations(catalog.presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);
       const snapshot=stage.snapshot();await stage.restore(snapshot,presentations,entries);const restored=stage.snapshot(),root=group.controllers.find(root=>root.source.id==='hot-spring'),conversations=[];let lastSequence;
       if(!root)throw new Error('Hot spring controller unavailable');
       const {InteractionRecorder,InteractionPlayer}=await import('/src/engine/interaction-sequence.js');
@@ -21,6 +21,7 @@ try{
         const hit=root.hotspots.find(hit=>hit.id===role.id),result=stage.triggerInteraction(group.id,root.source.id,hit.id);if(!result.accepted)throw new Error(result.reason);
         for(let i=0;i<60;i++)stage.evaluate(1/120);const middle=stage.snapshot();for(let i=0;i<60;i++)stage.evaluate(1/120);const focused=root.snapshot();
         if(focused.phase!=='dialogue'||!role.levels.find(pool=>pool.level===level).voiceIds.includes(focused.voiceId))throw new Error('Wrong conversation pool');
+        const display=root.dialogueDisplay();if(display.voiceId!==focused.voiceId||!display.text||!display.name||display.charactersPerSecond!==50)throw new Error('Source dialogue text or name was not associated');
         if(group.presentation.hotSpringHouse.dialogueAnimations?.length&&(!focused.dialogueAnimation||!new RegExp(`^ani_love_${level}(?:_[1-3])?$`).test(focused.dialogueAnimation.name)))throw new Error('Wrong source dialogue decoration');
         for(let i=0;i<36;i++)stage.evaluate(1/120);const ended=stage.triggerInteraction(group.id,root.source.id,'close');if(!ended.accepted)throw new Error(ended.reason);for(let i=0;i<120;i++)stage.evaluate(1/120);const final=root.snapshot(),sequence=recorder.stop();recorder.dispose();lastSequence=sequence;
         await stage.restore(middle,presentations,entries);for(let i=0;i<60;i++)stage.evaluate(1/120);if(JSON.stringify(root.snapshot())!==JSON.stringify(focused))throw new Error('Mid-focus restore diverged');

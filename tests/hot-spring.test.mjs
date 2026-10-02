@@ -29,6 +29,24 @@ test('source decoration variants and early Continue behavior replay without inte
   root.advance(1.1);assert.equal(root.click(continueHit).animation,'next-conversation');assert.equal(events.filter(event=>event.type==='voice-request').length,2);assert.equal(root.value.phase,'dialogue');const final=root.snapshot();root.restore(saved);root.click(continueHit);root.advance(1.1);root.click(continueHit);assert.deepEqual(root.snapshot(),final);
   root.click(root.hotspots.find(hit=>hit.id==='close'));assert.equal(root.value.phase,'returning');assert.equal(root.value.dialogueAnimation,null);assert.throws(()=>root.restore({...saved,dialogueAnimation:{...saved.dialogueAnimation,duration:99}}),/animation/);
 });
+test('displayed dialogue survives early Continue and restores its source ID and elapsed time independently',()=>{
+  const {root,group}=focusFixture();root.roles[0].name='Source role';root.house.dialogueLines=[{id:'11',text:'First source line'},{id:'12',text:'Second source line'}];root.house.dialoguePanel={rootTransform:'panel-transform',typewriters:[{data:{charactersPerSecond:50}}]};group.nodes.set('panel-transform',{data:{m_GameObject:{m_PathID:'panel-go'}}});group.nodes.set('panel-go',{data:{m_IsActive:false}});
+  root.house.dialogueAnimations=[{name:'ani_love_1',clip:'clip',duration:1}];
+  root.click(root.hotspots[0]);root.advance(1.2);
+  const shown=root.dialogueDisplay(),saved=root.snapshot();assert.ok(shown.text);assert.equal(shown.name,'Source role');assert.equal(shown.charactersPerSecond,50);assert.ok(Math.abs(shown.elapsed-.2)<1e-9);
+  root.click(root.hotspots.find(hit=>hit.id==='continue'));assert.equal(root.value.voiceId,'');assert.equal(root.value.dialogueText.voiceId,shown.voiceId);assert.deepEqual(root.dialogueDisplay(),shown);
+  root.advance(.4);root.restore(saved);assert.deepEqual(root.dialogueDisplay(),shown);
+  assert.equal(JSON.stringify(root.snapshot()),JSON.stringify(saved));
+  const bad={...saved,dialogueText:{voiceId:'foreign',start:1}};assert.throws(()=>root.check(bad),/displayed dialogue/);assert.throws(()=>root.restore(bad),/displayed dialogue/);assert.deepEqual(root.snapshot(),saved);
+  root.click(root.hotspots.find(hit=>hit.id==='close'));assert.equal(root.value.dialogueText,null);
+});
+
+test('every original hot spring line and default role name joins its own configured house',t=>{
+  if(!fs.existsSync('public/assets/library.json')){t.skip('Local resources are not installed');return;}
+  const library=JSON.parse(fs.readFileSync('public/assets/library.json')),presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations,houses=expandHotSpringPresentations(presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters).filter(row=>row.hotSpringHouse),all=new Set();
+  for(const house of houses){const ids=new Set(house.hotSpringHouse.roles.flatMap(role=>role.levels.flatMap(pool=>pool.voiceIds)));assert.equal(house.hotSpringHouse.dialogueLines.length,ids.size);assert.ok(house.hotSpringHouse.roles.every(role=>role.name));for(const line of house.hotSpringHouse.dialogueLines){assert.ok(ids.has(line.id));assert.ok(line.text);all.add(line.id);}}
+  assert.equal(all.size,52);
+});
 
 test('fractional focus ticks cannot create an animation checkpoint in the future',()=>{
   const {root}=focusFixture();root.house.dialogueAnimations=[{name:'ani_love_1',clip:'clip',duration:1}];root.click(root.hotspots[0]);for(let i=0;i<120;i++)root.advance(1/120);const saved=root.snapshot();assert.equal(saved.phase,'dialogue');assert.ok(saved.dialogueAnimation.start<=saved.clock);assert.deepEqual(root.check(saved),saved);root.restore(saved);

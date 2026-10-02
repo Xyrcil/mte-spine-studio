@@ -18,7 +18,7 @@ export function hotSpringAnimatorStates(presentation,source){
   });
 }
 
-export function expandHotSpringPresentations(presentations,houses=[],roles=[]){
+export function expandHotSpringPresentations(presentations,houses=[],roles=[],voices=[],characters=[]){
   const result=[...presentations];
   const dialogueSource=presentations.find(row=>row.id==='UI/Prefab/Onsen');
   let dialogueAnimations=(dialogueSource?.visualAnimations||[]).filter(row=>row.type==='AnimationClip'&&/^ani_love_[1-5](?:_[1-3])?$/.test(row.data.m_Name)&&row.data.packedCurves).map(row=>({name:row.data.m_Name,clip:row.id,duration:row.data.packedCurves.stop-row.data.packedCurves.start}));
@@ -50,8 +50,10 @@ export function expandHotSpringPresentations(presentations,houses=[],roles=[]){
     for(const overlaySource of [decoration,dialoguePanel].filter(Boolean)){const overlay=structuredClone(overlaySource.hierarchy);if(overlay.some(node=>hierarchy.some(existing=>existing.id===node.id)))throw new Error('Hot spring overlay hierarchy collision');overlay.find(node=>node.id===overlaySource.rootTransform).data.m_Father={m_FileID:0,m_PathID:'0'};hierarchy.push(...overlay);}
     for(const node of hierarchy)if(node.type==='GameObject'&&house.roleIds.includes(node.data.m_Name))node.data.m_IsActive=true;
     const animations=(source.visualAnimations||[]).filter(node=>node.type==='Animation'&&gameObjects.has(String(node.data.m_GameObject?.m_PathID))),clips=new Set();
+    const houseRoles=house.roleIds.map(id=>roles.find(role=>role.id===id)).filter(Boolean).map(role=>({...structuredClone(role),name:characters.find(character=>character.id===role.id)?.name||role.name||''}));
+    const voiceIds=new Set(houseRoles.flatMap(role=>role.levels.flatMap(pool=>pool.voiceIds))),dialogueLines=voices.filter(row=>voiceIds.has(row.id)).map(row=>({id:row.id,text:row.text}));
     for(const node of animations)for(const pointer of [node.data.m_Animation,...(node.data.m_Animations||[])])if(pointer)clips.add(String(pointer.m_PathID));
-    result.push({...source,id:`${source.id}/${house.id}`,resourceBundle:source.id,hotSpringHouse:{...structuredClone(house),rootTransform:rootTransform.id,dialogueAnimations:structuredClone(dialogueAnimations),...(decoration?{decoration:structuredClone(decoration)}:{}),...(dialoguePanel?{dialoguePanel:structuredClone(dialoguePanel)}:{}),...(decorationError?{decorationError}:{}),roles:structuredClone(house.roleIds.map(id=>roles.find(role=>role.id===id)).filter(Boolean))},standalone:false,hierarchy,
+    result.push({...source,id:`${source.id}/${house.id}`,resourceBundle:source.id,hotSpringHouse:{...structuredClone(house),rootTransform:rootTransform.id,dialogueAnimations:structuredClone(dialogueAnimations),dialogueLines,...(decoration?{decoration:structuredClone(decoration)}:{}),...(dialoguePanel?{dialoguePanel:structuredClone(dialoguePanel)}:{}),...(decorationError?{decorationError}:{}),roles:houseRoles},standalone:false,hierarchy,
       instances:source.instances.filter(row=>selected.has(row.transform)),hotspots:source.hotspots.filter(row=>selected.has(row.transform)),controllers:source.controllers.filter(row=>gameObjects.has(row.gameObject)),
       effects:(source.effects||[]).filter(row=>selected.has(row.transform)),images:[...(source.images||[]).filter(row=>selected.has(row.transform)),...(decoration?.images||[]),...(dialoguePanel?.images||[])],canvasGroups:(source.canvasGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID))),
       visualAnimations:[...animations,...(source.visualAnimations||[]).filter(node=>node.type==='AnimationClip'&&clips.has(node.id))],sortingGroups:(source.sortingGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID)))});
@@ -73,6 +75,7 @@ export function validateHotSpringState(value){
     if(animation!==null&&(!/^ani_love_[1-5](?:_[1-3])?$/.test(animation?.name)||typeof animation.start!=='number'||!Number.isFinite(animation.start)||animation.start<0||animation.start>value.clock||typeof animation.duration!=='number'||!Number.isFinite(animation.duration)||animation.duration<0))throw new Error('Invalid hot spring dialogue animation');
     result.dialogueAnimation=animation===null?null:{name:animation.name,start:animation.start,duration:animation.duration};
   }
+  if(value.dialogueText!==undefined){const text=value.dialogueText;if(text!==null&&(typeof text.voiceId!=='string'||text.voiceId.length>64||!text.voiceId||typeof text.start!=='number'||!Number.isFinite(text.start)||text.start<0||text.start>value.clock))throw new Error('Invalid hot spring displayed dialogue');result.dialogueText=text===null?null:{voiceId:text.voiceId,start:text.start};}
   return result;
 }
 
@@ -89,10 +92,15 @@ export class HotSpringRoot {
   missingAnimations(){return [];}
   onEvent(){}
   defaults(){return {x:this.house.backgroundOffset[0],y:this.house.backgroundOffset[1],scale:this.house.defaultZoom};}
-  reset(){const pose=this.defaults();this.value={schema:1,kind:'hot-spring',phase:'idle',clock:0,start:0,roleId:'',voiceId:'',random:0x12345678,from:{...pose},target:{...pose},levels:Object.fromEntries(this.roles.map(role=>[role.id,1]))};this.apply();}
-  snapshot(){return structuredClone(this.value);}
-  check(value){const state=validateHotSpringState(value),role=this.roles.find(role=>role.id===state.roleId);if(state.roleId&&!role||['focusing','dialogue','returning'].includes(state.phase)&&!role||Object.keys(state.levels).some(id=>!this.roles.some(role=>role.id===id)))throw new Error('Hot spring role is unavailable');if(state.voiceId&&!role?.levels.some(pool=>pool.voiceIds.includes(state.voiceId)))throw new Error('Hot spring voice is unavailable');if(state.dialogueAnimation){const source=this.house.dialogueAnimations?.find(row=>row.name===state.dialogueAnimation.name);if(state.phase!=='dialogue'||!source||source.duration!==state.dialogueAnimation.duration)throw new Error('Hot spring dialogue animation is unavailable');}return state;}
+  reset(){const pose=this.defaults();this.value={schema:1,kind:'hot-spring',phase:'idle',clock:0,start:0,roleId:'',voiceId:'',random:0x12345678,from:{...pose},target:{...pose},levels:Object.fromEntries(this.roles.map(role=>[role.id,1])),dialogueText:null};this.apply();}
+  snapshot(){return validateHotSpringState(this.value);}
+  check(value){const state=validateHotSpringState(value),role=this.roles.find(role=>role.id===state.roleId);if(state.roleId&&!role||['focusing','dialogue','returning'].includes(state.phase)&&!role||Object.keys(state.levels).some(id=>!this.roles.some(role=>role.id===id)))throw new Error('Hot spring role is unavailable');if(state.voiceId&&!role?.levels.some(pool=>pool.voiceIds.includes(state.voiceId)))throw new Error('Hot spring voice is unavailable');if(state.dialogueAnimation){const source=this.house.dialogueAnimations?.find(row=>row.name===state.dialogueAnimation.name);if(state.phase!=='dialogue'||!source||source.duration!==state.dialogueAnimation.duration)throw new Error('Hot spring dialogue animation is unavailable');}if(state.dialogueText&&(state.phase!=='dialogue'||!role?.levels.some(pool=>pool.voiceIds.includes(state.dialogueText.voiceId))))throw new Error('Hot spring displayed dialogue is unavailable');return state;}
   restore(value){this.value=this.check(value);this.apply();}
+  dialogueDisplay(){
+    const v=this.value,display=v.dialogueText;if(v.phase!=='dialogue'||!display)return {name:'',text:'',elapsed:0,charactersPerSecond:0};
+    const role=this.roles.find(role=>role.id===v.roleId),line=this.house.dialogueLines?.find(line=>line.id===display.voiceId),writer=this.house.dialoguePanel?.typewriters?.[0]?.data;
+    return {voiceId:display.voiceId,name:role?.name||'',text:typeof line?.text==='string'?line.text:'',elapsed:Math.max(0,v.clock-display.start),charactersPerSecond:writer?.charactersPerSecond||0};
+  }
   pose(){const v=this.value,t=['focusing','returning'].includes(v.phase)?Math.min(1,Math.max(0,v.clock-v.start)):1,ease=1-(1-t)**2;return Object.fromEntries(['x','y','scale'].map(key=>[key,v.from[key]+(v.target[key]-v.from[key])*ease]));}
   apply(){const pose=this.pose(),data=this.transform.data;data.m_LocalPosition={...data.m_LocalPosition,x:pose.x,y:pose.y};data.m_AnchoredPosition={x:pose.x,y:pose.y};data.m_LocalScale={...data.m_LocalScale,x:pose.scale,y:pose.scale};
     if(this.house.dialoguePanel){const root=this.group.nodes.get(this.house.dialoguePanel.rootTransform),go=this.group.nodes.get(String(root.data.m_GameObject.m_PathID));go.data.m_IsActive=this.value.phase==='dialogue';}
@@ -106,6 +114,7 @@ export class HotSpringRoot {
     const v=this.value,level=v.levels[v.roleId]||1,count=level===3?2:level>=4?3:1;
     const name=`ani_love_${level}${count>1?'_'+(this.randomIndex(count)+1):''}`,animation=this.house.dialogueAnimations?.find(row=>row.name===name);
     v.dialogueAnimation=animation?{name,start:at,duration:animation.duration}:null;
+    v.dialogueText=v.voiceId?{voiceId:v.voiceId,start:at}:null;
     if(animation)this.emit('hot-spring-decoration-request',{name,clip:animation.clip,lateness:Math.max(0,v.clock-at)});
     if(v.voiceId)this.emit('voice-request',{voiceId:v.voiceId,lateness:Math.max(0,v.clock-at)});
     this.apply();
@@ -117,7 +126,7 @@ export class HotSpringRoot {
       if(v.dialogueAnimation&&v.clock-v.dialogueAnimation.start<v.dialogueAnimation.duration-1e-9)return {accepted:true,animation:'advance-dialogue-pending'};
       if(v.voiceId){this.showDialogue(v.clock);this.emit('interaction-change',{phase:v.phase,roleId:v.roleId});return {accepted:true,animation:'next-conversation'};}
     }
-    v.from=this.pose();v.target=this.defaults();v.start=v.clock;v.phase='returning';v.voiceId='';v.dialogueAnimation=null;this.apply();this.emit('voice-stop-request');return {accepted:true,animation:'close-conversation'};
+    v.from=this.pose();v.target=this.defaults();v.start=v.clock;v.phase='returning';v.voiceId='';v.dialogueAnimation=null;v.dialogueText=null;this.apply();this.emit('voice-stop-request');return {accepted:true,animation:'close-conversation'};
   }
     if(v.phase!=='idle')return {accepted:false,reason:'Finish the current conversation first'};
     if(!hit.role?.focus)return {accepted:false,reason:'Source focus configuration is unavailable'};
