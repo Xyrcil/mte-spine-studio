@@ -1,5 +1,6 @@
 import {compileAnimationCurve} from './particle-values.js';
 import {multiply,objectTransform,point} from './geometry.js';
+import {PackedAnimation} from './packed-animation.js';
 
 export function validateNativeAnimation(value){
   if(value?.schema!==1||typeof value.id!=='string'||value.id.length>512||typeof value.clip!=='string'||value.clip.length>512||typeof value.time!=='number'||!Number.isFinite(value.time)||value.time<0||typeof value.playing!=='boolean')throw new Error('Invalid native animation checkpoint');
@@ -43,7 +44,7 @@ export function createNativeVisuals(group,base,manager){
   });
   group.nativeAnimations=(group.presentation.visualAnimations||[]).filter(row=>row.type==='Animation').map(source=>{
     const clip=group.presentation.visualAnimations.find(row=>row.type==='AnimationClip'&&row.id===String(source.data.m_Animation?.m_PathID));
-    try{const model=new NativeAnimation(group,source,clip);for(const channel of model.channels)if(channel.kind==='color')channel.target.used=true;model.apply();return {source,model};}catch(error){return {source,reason:error.message};}
+    try{const model=clip?.data.packedCurves?.channels?.length&&!clip.data.m_Legacy?new PackedAnimation(group,source,clip):new NativeAnimation(group,source,clip);if(model instanceof PackedAnimation)model.playing=Boolean(source.data.m_PlayAutomatically);for(const channel of model.channels)if(channel.kind==='color')channel.target.used=true;model.apply();return {source,model};}catch(error){return {source,reason:error.message};}
   });
   const urls=new Set(group.nativeImages.filter(image=>image.used&&!image.reason).map(image=>image.texture));for(const url of urls)manager.loadTexture(url);
 }

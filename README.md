@@ -52,7 +52,10 @@ retains Animator controllers, overrides, clip bindings and packed curve data
 alongside Legacy animations. Packed clips also retain decoded polynomial,
 dense and constant channels with their original binding order and component
 indices. Object-reference channels remain unsupported. Extracted channels are
-not yet played by the browser Animator renderer.
+sampled without resampling their polynomial segments. The native scene renderer
+supports packed image color, anchored position, scale, planar rotation and
+object visibility channels, including saved playback positions. Animator
+controller transitions and hot spring dialogue decoration routing remain pending.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and
