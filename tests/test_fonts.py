@@ -1,5 +1,8 @@
 import unittest
-from tools.extract_fonts import font_format, font_asset_entries
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from tools.extract_fonts import font_format, font_asset_entries, line_breaking_rules
 
 
 class OriginalFontTests(unittest.TestCase):
@@ -19,3 +22,19 @@ class OriginalFontTests(unittest.TestCase):
         self.assertEqual(rows[0]["characters"], [33])
         self.assertEqual(rows[0]["fallbacks"], ["-123"])
         self.assertEqual(rows[0]["face"]["m_PointSize"], 80)
+
+    def test_line_rules_are_read_from_named_original_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "apk-data-full/assets/bin/Data"
+            data.mkdir(parents=True)
+            readers = []
+            for name, text in [("LineBreaking Leading Characters", "（「\\"), ("LineBreaking Following Characters", "，。）」")]:
+                asset = SimpleNamespace(m_Name=name, m_Script=text)
+                readers.append(SimpleNamespace(type=SimpleNamespace(name="TextAsset"), peek_name=lambda asset=asset: asset.m_Name, read=lambda asset=asset: asset))
+            (data / "original-bundle").touch()
+            unity = SimpleNamespace(load=lambda path: SimpleNamespace(objects=readers))
+            self.assertEqual(line_breaking_rules(root, unity), {"leading": "（「\\", "following": "，。）」"})
+            readers.pop()
+            with self.assertRaisesRegex(ValueError, "unavailable"):
+                line_breaking_rules(root, unity)

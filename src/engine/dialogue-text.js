@@ -8,17 +8,34 @@ export function advanceDialogueTypewriter(state,clock,rate,count){
   state.typed=Math.min(count,Math.max(state.typed,Math.ceil(Math.max(0,clock-state.start)*rate-1e-9)));state.nextUpdate=clock+1/rate;
 }
 
-export function layoutDialogueGlyphs(text,measure,width,wrap){
+export function layoutDialogueGlyphs(text,measure,width,wrap,rules=null){
   if(typeof text!=='string'||text.length>10000||!Number.isFinite(width)||width<0)throw new Error('Invalid dialogue text layout');
-  const glyphs=[];let x=0,line=0,index=0;
+  if(rules&&(typeof rules.leading!=='string'||typeof rules.following!=='string'))throw new Error('Invalid dialogue line-breaking rules');
+  const leading=new Set(rules?.leading||''),following=new Set(rules?.following||''),rows=[];let index=0;
   for(const character of text){
     if(character==='\r')continue;
-    if(character==='\n'){line++;x=0;index++;continue;}
-    const advance=measure(character);if(!Number.isFinite(advance)||advance<0)throw new Error('Invalid dialogue glyph advance');
-    if(wrap&&width>0&&x>0&&x+advance>width){line++;x=0;}
-    glyphs.push({character,index:index++,x,line});x+=advance;
+    const advance=character==='\n'?0:measure(character);if(!Number.isFinite(advance)||advance<0)throw new Error('Invalid dialogue glyph advance');
+    rows.push({character,index:index++,advance});
   }
-  return {glyphs,characters:index,lines:line+1,width:Math.max(0,...glyphs.map(glyph=>glyph.x+measure(glyph.character)))};
+  const glyphs=[];let line=0,start=0,maxWidth=0;
+  while(start<rows.length){
+    let x=0,end=start,breakAt=-1,firstWord=true;
+    while(end<rows.length){
+      const row=rows[end],c=row.character,code=c.codePointAt(0),space=/\s/u.test(c);
+      if(c==='\n')break;
+      if(wrap&&width>0&&end>start&&!space&&x+row.advance>width){if(breakAt>start)end=breakAt;break;}
+      x+=row.advance;end++;
+      const whitespaceBreak=(space||code===8203||code===45||code===173)&&![160,8199,8209,8239,8288].includes(code);
+      const cjk=(code>11904&&code<40959)||(code>63744&&code<64255)||(code>65072&&code<65103)||(code>65280&&code<65519);
+      if(whitespaceBreak||(cjk&&!leading.has(c)&&!following.has(rows[end]?.character))){breakAt=end;firstWord=false;}
+      else if(firstWord&&!leading.has(c))breakAt=end;
+    }
+    x=0;for(let i=start;i<end;i++){const row=rows[i];glyphs.push({character:row.character,index:row.index,x,line});x+=row.advance;}
+    maxWidth=Math.max(maxWidth,x);
+    if(rows[end]?.character==='\n'){start=end+1;line++;}
+    else{start=end;if(start<rows.length)line++;}
+  }
+  return {glyphs,characters:index,lines:line+1,width:maxWidth};
 }
 
 export class DialogueTextLayer {
@@ -27,6 +44,7 @@ export class DialogueTextLayer {
     const panel=this.group.presentation.hotSpringHouse?.dialoguePanel;if(!panel)return;
     try{
       for(const source of panel.fonts||[]){
+        if(!source.lineBreaking)throw new Error('Original dialogue line-breaking rules are unavailable; refresh the resource pack');
         const response=await fetch(base+source.path,{signal});if(!response.ok)throw new Error('Original dialogue font is unavailable');
         const bytes=await response.arrayBuffer();if(bytes.byteLength!==source.bytes)throw new Error('Original dialogue font is incomplete');
         const family='mte-dialogue-'+crypto.randomUUID(),face=new FontFace(family,bytes);await face.load();
@@ -49,7 +67,7 @@ export class DialogueTextLayer {
       const node=group.nodes.get(source.transform),fontSize=data.m_fontSize,fontScale=fontSize/slot.font.source.face.m_PointSize*slot.font.source.face.m_Scale;
       slot.context.font=`${fontSize}px "${slot.font.family}"`;
       if(slot.name==='tv_name')node.data.m_SizeDelta.x=slot.context.measureText(text).width;
-      const layout=viewportRectLayout(group.nodes,node.id,panel.rootTransform,canvasSize),margin=data.m_margin||{x:0,y:0,z:0,w:0},width=Math.max(0,layout.size.x-margin.x-margin.z),flow=layoutDialogueGlyphs(text,character=>slot.context.measureText(character).width,width,Boolean(data.m_enableWordWrapping));
+      const layout=viewportRectLayout(group.nodes,node.id,panel.rootTransform,canvasSize),margin=data.m_margin||{x:0,y:0,z:0,w:0},width=Math.max(0,layout.size.x-margin.x-margin.z),flow=layoutDialogueGlyphs(text,character=>slot.context.measureText(character).width,width,Boolean(data.m_enableWordWrapping),slot.font.source.lineBreaking);
       const face=slot.font.source.face,ascent=face.m_AscentLine*fontScale,descent=face.m_DescentLine*fontScale,pitch=face.m_LineHeight*fontScale+(data.m_lineSpacing||0)*fontSize*.01,height=ascent-descent+(flow.lines-1)*pitch;
       const left=-layout.pivot.x*layout.size.x+margin.x,top=data.m_VerticalAlignment===256?(1-layout.pivot.y)*layout.size.y-margin.y:(.5-layout.pivot.y)*layout.size.y+height/2;
       const visible=slot.name==='tv_name'?flow.characters:display.visibleCharacters??0,key=JSON.stringify([text,visible,width,fontSize,height]);

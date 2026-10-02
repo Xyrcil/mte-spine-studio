@@ -75,8 +75,10 @@ anchors, parent pivots and nested positions. The account nickname-edit icon is
 not rendered. Text settings and the 50-character-per-second typewriter remain
 in the local catalogue. Dialogue text uses the recovered original font files,
 face metrics, nested anchors and source line-spacing settings. Glyph rasterization
-uses browser text rather than the game's SDF shader, and source wrapping still
-needs original-client comparison. General Animator transitions remain pending.
+uses browser text rather than the game's SDF shader. Wrapping reads the original
+leading/following-character rule assets and retains word-break positions instead
+of wrapping every glyph independently. Original-client layout comparison remains
+pending. General Animator transitions remain pending.
 The font extractor reads the original SOURCE and NOTO_light font files and
 binds their exact names to the recovered TMP assets. Font paths, face metrics,
 character coverage and fallback references are retained in presentations.

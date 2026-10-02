@@ -28,6 +28,25 @@ def font_asset_entries(assets, files):
     return entries
 
 
+def line_breaking_rules(source, unity):
+    names = {"LineBreaking Leading Characters": "leading", "LineBreaking Following Characters": "following"}
+    rules = {}
+    for path in sorted((source / "apk-data-full/assets/bin/Data").iterdir()):
+        if not path.is_file() or path.suffix or path.stat().st_size > 8 * 1024 * 1024:
+            continue
+        for reader in unity.load(str(path)).objects:
+            if reader.type.name != "TextAsset" or reader.peek_name() not in names:
+                continue
+            asset = reader.read()
+            key, text = names[asset.m_Name], asset.m_Script
+            if not isinstance(text, str) or not text or (key in rules and rules[key] != text):
+                raise ValueError("Original line-breaking rules are invalid or ambiguous")
+            rules[key] = text
+    if set(rules) != {"leading", "following"}:
+        raise ValueError("Original line-breaking rules are unavailable")
+    return rules
+
+
 def extract(source, output, names):
     source, output = source.resolve(), output.resolve()
     if output.is_relative_to(source):
@@ -78,6 +97,9 @@ def extract(source, output, names):
     entries = font_asset_entries(assets, files)
     if set(names) != {row["name"] for row in entries}:
         raise ValueError("Original font files could not be bound to their TMP assets")
+    rules = line_breaking_rules(source, UnityPy)
+    for entry in entries:
+        entry["lineBreaking"] = rules
     write_json(output / "font-index.json", {"schema": 1, "entries": entries})
     print({"fonts": len(entries), "bytes": sum(file["bytes"] for file in files.values())})
 
