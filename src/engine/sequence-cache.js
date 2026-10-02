@@ -20,7 +20,7 @@ export async function sequenceCacheResources(value,{catalog,entries,imageAssets,
     if(!audio||!library)return;
     const effect=explicitInteractionEffect(event.detail,audio);if(effect)addSound(effect.name,effect.category);
     const languages=sequence.initial.audio?.language?[sequence.initial.audio.language]:[...new Set([audio.language,'a_sound_voiceeff'])];
-    for(const language of languages){const row=resolveInteractionVoice(event.detail,library,audio,language),clip=row&&audio.resolve(row.resourceName,language);if(clip)urls.add(new URL('assets/'+clip.path,base).href);}
+    for(const language of languages){const row=resolveInteractionVoice(event.detail,library,audio,language,{onUnavailable:warning=>warnings.add(warning)}),clip=row&&audio.resolve(row.resourceName,language);if(clip)urls.add(new URL('assets/'+clip.path,base).href);}
   }catch(error){callbackError=error;}};
   session.stage.addEventListener('sound-request',sound);session.stage.addEventListener('voice-request',voice);
   try{

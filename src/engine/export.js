@@ -47,6 +47,7 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
     if(!interactionProvider||event.detail.group&&!visible.has(event.detail.group))return;
     if(++eventCount>10000){error=new Error('Too many interaction audio events; export a shorter interval');return;}
     try{const result=interactionProvider(event.detail),offset=Math.max(0,(session.stage.sequenceTime??session.pendingTime)-(event.detail.lateness||0));
+      for(const warning of result?.warnings||[])warnings.add(warning);
       if(result?.effect)add(result.effect.name,result.effect.category,0,offset,event.detail.group);
       if(result?.voice){const voice=result.voice;voices.push({...voice,scene:true,position:0,offset,sceneRate:1/plan.speed,repeat:false,gain:session.scene.audio?.voiceVolume??1});if(voice.includeSubtitles&&!voice.text)warnings.add('Interaction voice has no subtitle text');}
     }catch(reason){error=reason;}

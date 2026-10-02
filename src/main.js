@@ -112,7 +112,7 @@ stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
   if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
   const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
-  const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language);if(!voice)return;
+  const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>queueMicrotask(()=>message(warning))});if(!voice)return;
   audio.play(voice,language,{group:event.detail.group||''}).catch(error=>message(error.message));
 });
 try {

@@ -17,3 +17,9 @@ test('unknown voice routes stay absent and disabling speech does not create plac
   assert.equal(interactionExportProvider(library,audio,{})({skinId:'0',event:100}).voice,null);
   assert.equal(interactionExportProvider(library,audio,{}, {includeAudio:false,includeSubtitles:false})({skinId:'123456701',event:2}).voice,null);
 });
+test('missing recorded-language tracks are reported without substituting another line',()=>{
+  const missing={...audio,resolve:()=>null},provider=interactionExportProvider(library,missing,{audio:{language:'a_sound_voiceeff_ch'}}),result=provider({skinId:'123456701',event:2});
+  assert.equal(result.voice,null);assert.deepEqual(result.warnings,['Voice unavailable (a_sound_voiceeff_ch): Voice_123456701_Touch_Head']);
+  assert.deepEqual(interactionExportProvider(library,missing,{}, {includeAudio:false,includeSubtitles:false})({skinId:'123456701',event:2}).warnings,[]);
+  assert.deepEqual(provider({skinId:'0',event:100}).warnings,[]);
+});

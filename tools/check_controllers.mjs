@@ -6,6 +6,7 @@ assert.ok(Number.isSafeInteger(stateLimit)&&stateLimit>0&&stateLimit<=100000,'In
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  page.on('console',message=>{if(message.text().startsWith('[controller-check]'))console.log(message.text());});
   await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const bundles=await page.evaluate(async()=>{const catalog=await fetch('/assets/presentations.json').then(response=>response.json());return catalog.presentations.filter(presentation=>presentation.controllers.length).map(presentation=>presentation.id);});
   const selected=process.argv[2]?bundles.filter(bundle=>bundle.includes(process.argv[2])):bundles;assert.ok(selected.length);
@@ -20,9 +21,10 @@ try{
       if(invalidPose().length)return {bundle,failures:[{reason:'Non-finite initial pose',bones:invalidPose()}]};
       for(let i=0;i<3600&&root.primary?.state.getCurrent(0)?.animation.name==='start';i++)stage.evaluate(1/120);
       const key=()=>JSON.stringify({names:root.value.names,variants:Object.keys(root.value.variants).filter(name=>root.value.variants[name]).sort(),state:root.value.state,isBig:root.value.isBig,stockingDown:root.value.stockingDown,cardStage:root.value.cardStage,selectedCard:root.value.selectedCard,wins:root.value.wins,rounds:root.value.rounds,tracks:root.layers.map(layer=>layer.state.tracks.map(track=>track?{name:track.animation.name,loop:track.loop}:null))});
-      const queue=[stage.snapshot()],seen=new Set([key()]),covered=new Set(),gaps=new Map(),failures=[],inactive=new Set(),blocked=new Set();let transitions=0,limited=false;
+      const queue=[stage.snapshot()],seen=new Set([key()]),covered=new Set(),gaps=new Map(),failures=[],inactive=new Set(),blocked=new Set();let transitions=0,limited=false,explored=0;
       const settle=()=>{for(let i=0;i<3600&&(root.value.playing||root.value.tasks.length);i++){stage.evaluate(1/120);if(invalidPose().length)return false;}return !root.value.playing&&!root.value.tasks.length;};
       while(queue.length){
+        if(explored++%16===0){console.log(`[controller-check] ${bundle}: ${explored-1} expanded, ${seen.size} discovered, ${queue.length} pending`);await new Promise(resolve=>setTimeout(resolve,0));}
         const initial=queue.shift();
         for(const hit of root.hotspots){
           await stage.restore(initial,catalog,entries);

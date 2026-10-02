@@ -42,3 +42,9 @@ test('configured aliases retain the selected line even when only the base audio 
   const audio={resolve:name=>name==='Voice_1234567_Touch_Head'?{}:null};
   assert.equal(resolveInteractionVoice({skinId:'123456789',event:2},library,audio,'ch'),null);
 });
+test('unavailable callbacks distinguish missing configured speech from unvoiced interactions',()=>{
+  const library={voices:[{resourceName:'Voice_1234567_Touch_Head',text:'Base'}],storyVoices:[]},audio={resolve:()=>null},warnings=[];
+  resolveInteractionVoice({skinId:'123456789',event:2},library,audio,'ch',{onUnavailable:warning=>warnings.push(warning)});
+  assert.deepEqual(warnings,['Voice unavailable (ch): Voice_1234567_Touch_Head']);
+  resolveInteractionVoice({skinId:'123456789',event:100},library,audio,'ch',{onUnavailable:warning=>warnings.push(warning)});assert.equal(warnings.length,1);
+});

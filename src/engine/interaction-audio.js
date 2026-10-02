@@ -24,7 +24,7 @@ export function interactionEffects(event,skin,state){
   return name?[name]:[];
 }
 
-export function resolveInteractionVoice(request,library,audio,language){
+export function resolveInteractionVoice(request,library,audio,language,{onUnavailable=()=>{}}={}){
   const skin=String(request.skinId||'');
   const explicitName=request.explicit?.split('/').at(-1),explicitVoice=request.explicit&&([...library.voices,...library.storyVoices].some(row=>[row.resourceName,row.alias,row.resourcePath].some(value=>value&&value.split('/').at(-1)===explicitName))||audio.resolve(request.explicit,'a_sound_voiceeff')||audio.resolve(request.explicit,'a_sound_voiceeff_ch'));
   const explicit=explicitVoice?request.explicit:'';
@@ -39,7 +39,7 @@ export function resolveInteractionVoice(request,library,audio,language){
     for(const row of rows)if(audio.resolve(row.resourceName,language))return {...row,title:row.title||row.resourceName};
     if(audio.resolve(candidate,language))return {resourceName:candidate,title:candidate,text:''};
     // Source fallback depends on a missing sound-table entry, not a missing language track.
-    if(rows.length||(library.soundResources||[]).some(row=>row.name===candidate||row.name?.split('/').at(-1)===normalized))return null;
+    if(rows.length||(library.soundResources||[]).some(row=>row.name===candidate||row.name?.split('/').at(-1)===normalized)){onUnavailable(`Voice unavailable (${language}): ${candidate}`);return null;}
   }
   return null;
 }

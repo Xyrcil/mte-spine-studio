@@ -26,5 +26,15 @@ try{
   await selectAsset(page,'Spines/painting/301619101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619101_spine');
   const head=await page.evaluate(async()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];window.headSounds=[];stage.addEventListener('sound-request',event=>window.headSounds.push(event.detail.name));root.value.isBig=true;const result=root.click(root.hotspots.find(hit=>hit.event===13)),library=await fetch('/assets/library.json').then(r=>r.json()),voice=library.voices.find(row=>row.resourceName==='Voice_3016191_Touch_Head');return {result,text:voice.text};});assert.equal(head.result.accepted,true);
   await page.waitForFunction(()=>window.mteAudio.element.currentTime>.05);assert.equal(await page.locator('#subtitle').textContent(),head.text);assert.equal(await page.evaluate(()=>window.headSounds.filter(name=>name==='301619101_cm_click_03_head').length),1);assert.match(await page.locator('#status').textContent(),/Sound unavailable: 301619101_cm_click_03_head/);assert.deepEqual(errors,[]);
-  console.log('Interaction audio checks passed: real foot sound, head voice despite missing effect, deduplication, metadata gain, path alias, language and source subtitle');
+  await selectAsset(page,'Spines/painting/301301101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301301101_spine');
+  const position=await page.evaluate(()=>{
+    const stage=window.mteStudio,group=stage.groups[0],root=group.controllers[0],audio=window.mteAudio,resolve=audio.resolve.bind(audio);audio.stop();audio.stopEffects();
+    audio.resolve=(name,language)=>name.split('/').at(-1)==='Voice_301301101_Touch_Head'&&language==='a_sound_voiceeff_ch'?null:resolve(name,language);
+    document.querySelector('#voice-language').value='a_sound_voiceeff_ch';root.reset();root.play('animation',0,true);stage.evaluate(0);stage.fit();stage.paused=false;
+    const hit=root.hotspots.find(hit=>hit.event===1),m=root.matrix(hit),offset=hit.colliders[0].data.m_Offset,world={x:m[0]*offset.x+m[2]*offset.y+m[4],y:m[1]*offset.x+m[3]*offset.y+m[5]},rect=stage.canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;
+    return {x:rect.left+((world.x-stage.camera.x)/width+.5)*rect.width,y:rect.top+(.5-(world.y-stage.camera.y)/height)*rect.height,actual:root.hitAt(world.x,world.y)?.id,target:hit.id};
+  });assert.equal(position.actual,position.target);await page.mouse.click(position.x,position.y);
+  await page.waitForFunction(()=>document.querySelector('#status').textContent==='Voice unavailable (a_sound_voiceeff_ch): Voice_301301101_Touch_Head');
+  assert.equal(await page.evaluate(()=>window.mteAudio.currentVoice),null);assert.deepEqual(errors,[]);
+  console.log('Interaction audio checks passed: real sounds/subtitles and a visible missing-track warning after an actual Gallery click');
 }finally{await browser.close();}
