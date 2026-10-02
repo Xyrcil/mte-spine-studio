@@ -5,6 +5,7 @@ const engine=process.argv[2]||'chromium',type={chromium,webkit,firefox}[engine];
 const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
+  page.on('console',message=>{if(message.text().startsWith('[hot-spring-check]'))console.log(message.text());});
   const houses=await page.evaluate(async()=>{const library=await fetch('/assets/library.json').then(r=>r.json());return library.hotSpringHouses;});assert.equal(houses.length,3);
   for(const house of houses){
     const id=`${house.bundle}/${house.id}`;await selectAsset(page,id);await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id,id);
@@ -15,6 +16,7 @@ try{
       if(!root)throw new Error('Hot spring controller unavailable');
       const {InteractionRecorder,InteractionPlayer}=await import('/src/engine/interaction-sequence.js');
       for(const role of root.roles)for(const level of [1,2,3,4,5]){
+        console.log(`[hot-spring-check] ${group.presentation.id}: ${role.id}, level ${level}`);
         await stage.restore(snapshot,presentations,entries);root.value.levels[role.id]=level;const recorder=new InteractionRecorder(stage);recorder.start();
         const hit=root.hotspots.find(hit=>hit.id===role.id),result=stage.triggerInteraction(group.id,root.source.id,hit.id);if(!result.accepted)throw new Error(result.reason);
         for(let i=0;i<60;i++)stage.evaluate(1/120);const middle=stage.snapshot();for(let i=0;i<60;i++)stage.evaluate(1/120);const focused=root.snapshot();
@@ -35,6 +37,7 @@ try{
         exported=session.stage.groups[0].presentation.id;if(session.stage.gl.getError()!==session.stage.gl.NO_ERROR)throw new Error('Export graphics error');
       }finally{session.dispose();}
       const mediaChecks=[];
+      console.log(`[hot-spring-check] ${group.presentation.id}: preparing media reference`);
       {
         const {exportMedia}=await import('/src/engine/export.js'),{Input,BlobSource,ALL_FORMATS,AudioSampleSink,VideoSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs'),sequence=structuredClone(lastSequence);
         sequence.actions.at(-1).at=2.2;sequence.duration=3.2;
@@ -43,11 +46,14 @@ try{
         const render=new RenderSession({...snapshot,sequence},presentations,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...plan,end:3.2}),expectedFrames=[];
         try{await render.initialize();for(const at of [0,1.1]){await render.seek(at);const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const ctx=canvas.getContext('2d');ctx.drawImage(render.canvas,0,0);expectedFrames.push(ctx.getImageData(0,0,160,120).data);}}finally{render.dispose();}
         try{for(const format of ['mp4','webm']){
+          console.log(`[hot-spring-check] ${group.presentation.id}: encoding ${format}`);
           const media=await exportMedia({scene:{...snapshot,sequence},catalog:presentations,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{format,useSequence:true,width:160,height:120,fps:10,start:0,end:3.2,speed:1,loops:1,loopMode:'repeat',background:'#191b20',fit:'contain',crop:{x:0,y:0,width:1,height:1}},interactionProvider:provider});
           if(!media.warnings.includes('Original hot spring dialogue decorations are not rendered'))throw new Error('Missing conversation decoration notice');
           const input=new Input({source:new BlobSource(media.blob),formats:ALL_FORMATS});
+          console.log(`[hot-spring-check] ${group.presentation.id}: decoding ${format}`);
           try{
             const video=await input.getPrimaryVideoTrack(),track=await input.getPrimaryAudioTrack();if(!video||!track)throw new Error(`${format}: media tracks missing`);
+            const packets=await video.computePacketStats();if(packets.packetCount!==media.plan.frames)throw new Error(`${format}: encoded frame count mismatch`);
             const pcm=new Float32Array(4*48000);for await(const sample of new AudioSampleSink(track).samples()){try{const data=sample.toAudioBuffer().getChannelData(0),start=Math.round(sample.timestamp*48000),skip=Math.max(0,-start),target=Math.max(0,start);if(target<pcm.length)pcm.set(data.subarray(skip,skip+pcm.length-target),target);}finally{sample.close();}}
             const rms=(a,b)=>{const data=pcm.subarray(Math.round(a*48000),Math.round(b*48000));return Math.sqrt(data.reduce((sum,value)=>sum+value*value,0)/data.length);};
             const source=reference.getChannelData(0);let energy=0,error=0;for(let index=Math.round(1.2*48000);index<Math.round(2.05*48000);index++){const at=(index/48000-1)*reference.sampleRate,base=Math.floor(at),fraction=at-base,value=((source[base]||0)*(1-fraction)+(source[base+1]||0)*fraction)*sequence.initial.audio.voiceVolume;energy+=value*value;error+=(value-pcm[index])**2;}

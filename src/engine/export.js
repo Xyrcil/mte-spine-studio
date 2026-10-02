@@ -64,7 +64,7 @@ export async function collectInteractionEffects(session,plan,provider,onProgress
 
 export async function exportVideoSupport(settings,sceneSpeed=1){
   const plan=exportPlan(settings,sceneSpeed);
-  return chooseVideoCodec(plan.format,{width:plan.width,height:plan.height,frameRate:plan.fps,quality:new Quality({bitrate:plan.bitrate})},canEncodeVideo);
+  return chooseVideoCodec(plan.format,{width:plan.width,height:plan.height,frameRate:plan.fps,latencyMode:'realtime',quality:new Quality({bitrate:plan.bitrate})},canEncodeVideo);
 }
 
 export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice,interactionProvider}){
@@ -78,7 +78,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   let interactionClips=[],interactionVoices=[],interactionStops=[],warnings=[];
   let captionDuration=0,captionLayout;
   const sceneCaptions=[];
-  let audioDelay=0;
+  let audioDelay=0,encodedFrames=0;
   const audioCodec=plan.format==='mp4'?'aac':'opus';
   try{
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
@@ -118,7 +118,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       const stream=fileWriter&&new WritableStream({write:chunk=>fileWriter.write(chunk),close:()=>{}});
       output=new Output({format:plan.format==='mp4'?new Mp4OutputFormat({fastStart:writable?'fragmented':false}):new WebMOutputFormat(),target:stream?new StreamTarget(stream,{chunked:true,chunkSize:4*1024*1024}):new BufferTarget()});
       let payloadBytes=0;
-      source=new CanvasSource(canvas,{codec,quality,keyFrameInterval:2,onEncodedPacket:packet=>{payloadBytes+=packet.data.byteLength;if(!writable&&payloadBytes>384*1024*1024)zipError=new Error('Encoded file exceeds the memory budget; use direct file saving');}});output.addVideoTrack(source,{frameRate:plan.fps});
+      source=new CanvasSource(canvas,{codec,quality,latencyMode:'realtime',keyFrameInterval:2,onEncodedPacket:packet=>{encodedFrames++;payloadBytes+=packet.data.byteLength;if(!writable&&payloadBytes>384*1024*1024)zipError=new Error('Encoded file exceeds the memory budget; use direct file saving');}});output.addVideoTrack(source,{frameRate:plan.fps});
       if(tracks.length){audioSource=new AudioBufferSource({codec:audioCodec,quality:new Quality({bitrate:128000})},{startTimestamp:-audioDelay});output.addAudioTrack(audioSource);}
       await output.start();
       abortOutput=()=>{output.cancel().catch(()=>{});};signal?.addEventListener('abort',abortOutput,{once:true});checkpoint(signal);
@@ -147,7 +147,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       onProgress({frame:i+1,total:plan.frames,phase:'rendering'});if(i%8===0)await yieldBrowser();
     }
     checkpoint(signal);if(zipError)throw zipError;onProgress({frame:plan.frames,total:plan.frames,phase:'finalizing'});
-    if(output){source.close();audioSource?.close();await output.finalize();checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob([output.target.buffer],{type:plan.format==='mp4'?'video/mp4':'video/webm'}),plan,warnings,interactionSounds:interactionClips.length,interactionVoices:interactionVoices.length};}
+    if(output){source.close();audioSource?.close();await output.finalize();checkpoint(signal);if(encodedFrames!==plan.frames)throw new Error('Video encoder did not preserve every frame. Try a lower frame rate or resolution.');if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob([output.target.buffer],{type:plan.format==='mp4'?'video/mp4':'video/webm'}),plan,warnings,interactionSounds:interactionClips.length,interactionVoices:interactionVoices.length};}
     zip.end();await writeQueue;if(zipError)throw zipError;checkpoint(signal);if(fileWriter)await fileWriter.close();return {blob:writable?null:new Blob(chunks,{type:'application/zip'}),plan,warnings,interactionVoices:interactionVoices.length};
   }catch(error){if(output&&output.state!=='finalized')await output.cancel().catch(()=>{});zip?.terminate();if(fileWriter)await fileWriter.abort(error).catch(()=>{});if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');throw error;}
   finally{if(abortOutput)signal?.removeEventListener('abort',abortOutput);if(abortWrite)signal?.removeEventListener('abort',abortWrite);fileWriter?.releaseLock();session.dispose();head?.dispose();if(decoder)await decoder.close();}
