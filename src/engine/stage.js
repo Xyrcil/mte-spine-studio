@@ -152,7 +152,7 @@ export class Stage extends EventTarget {
   transformLayer(group,layer){
       layer.transform=group.world(layer.instance.transform);
       const sk=layer.skeleton;sk.updateWorldTransform();
-      const m = multiply(objectTransform(group), layer.transform);
+      const meshScale=layer.instance.canvasPixelsPerUnit??1,m = multiply(multiply(objectTransform(group), layer.transform),[meshScale,0,0,meshScale,0,0]);
       for (const bone of sk.bones) {
         const a=bone.a,b=bone.b,c=bone.c,d=bone.d,x=bone.worldX,y=bone.worldY;
         bone.a=m[0]*a+m[2]*c; bone.b=m[0]*b+m[2]*d;

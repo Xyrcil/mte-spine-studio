@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standaloneInstances,materialOrdering} from '../tools/presentation_helpers.mjs';
+import {standaloneInstances,materialOrdering,skeletonDisplaySettings} from '../tools/presentation_helpers.mjs';
+test('UI skeletons preserve Canvas pixel units and their own starting animation settings',()=>{
+  assert.deepEqual(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'source-start',startingLoop:false,loop:true}),{renderType:'SkeletonGraphic',canvasPixelsPerUnit:100,animation:'source-start',loop:false});
+  assert.equal(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'animation'},80).canvasPixelsPerUnit,80);
+  assert.deepEqual(skeletonDisplaySettings('SkeletonAnimation',{_animationName:'idle',loop:true}),{renderType:'SkeletonAnimation',animation:'idle',loop:true});
+  assert.throws(()=>skeletonDisplaySettings('SkeletonGraphic',{},0),/Canvas/);
+});
 test('standalone asset bundles expose every skeleton without layering variants together',()=>{
   const entries=[{id:'1',name:'Body',skins:['default'],animations:[{name:'Idle'}],status:'parsed'},{id:'2',name:'Alternative',skins:['skin'],animations:[{name:'Expression'}],status:'parsed'}];
   const instances=standaloneInstances(entries);assert.equal(instances.length,2);assert.equal(instances[0].animation,'Idle');assert.equal(instances[1].skin,'skin');assert.equal(instances.filter(instance=>instance.active).length,1);assert.equal(instances[0].transform,null);

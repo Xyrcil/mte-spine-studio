@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {standaloneInstances,materialOrdering} from './presentation_helpers.mjs';
+import {standaloneInstances,materialOrdering,skeletonDisplaySettings} from './presentation_helpers.mjs';
 
 const root = path.resolve(process.argv[2] || 'public/assets');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, 'runtime-index.json')));
@@ -18,6 +18,11 @@ for (const bundle of extraction.bundles) {
     if (owner) components.set(owner, [...(components.get(owner) || []), node]);
   }
   const className = node => byId.get(idOf(node.data.m_Script))?.data.m_ClassName || null;
+  const canvasPixelsPerUnit=owner=>{
+    const seen=new Set();while(owner&&owner!=='0'&&!seen.has(owner)){seen.add(owner);const scaler=components.get(owner)?.find(node=>className(node)==='CanvasScaler');if(scaler&&'m_ReferencePixelsPerUnit' in scaler.data)return scaler.data.m_ReferencePixelsPerUnit;
+      const parent=byId.get(idOf(transforms.get(owner)?.data.m_Father));owner=idOf(parent?.data.m_GameObject);
+    }return 100;
+  };
   const skeletons = new Map(runtime.entries.filter(entry => entry.bundle === bundle.id).map(entry => [entry.id, entry]));
   const instances = [];
   const hotspots = [];
@@ -30,7 +35,7 @@ for (const bundle of extraction.bundles) {
       const skeleton = skeletons.get(idOf(node.data.skeletonDataAsset));
       const renderer = components.get(owner)?.find(item => item.type === 'MeshRenderer');
       const ordering=materialOrdering(bundle.renderers?.find(row=>row.id===renderer?.id));
-      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null, animation: node.data._animationName, skin: node.data.initialSkinName, loop: Boolean(node.data.loop), timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
+      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null,...skeletonDisplaySettings(className(node),node.data,canvasPixelsPerUnit(owner)), skin: node.data.initialSkinName,timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
     }
     if ('cur_clickEvent' in node.data) {
       hotspots.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, class: className(node), event: node.data.cur_clickEvent, track: node.data.trackIndex, animation: node.data.ani_name, audio: node.data.audio_name, controller: idOf(node.data.ani_root), colliders: (components.get(owner) || []).filter(item => item.type.endsWith('Collider2D')).map(item => ({id: item.id, type: item.type, data: item.data})), transform: transforms.get(owner)?.id});

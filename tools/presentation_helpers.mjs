@@ -8,3 +8,8 @@ export function materialOrdering(renderer){
   const status=renderer.errors.length?'missing-material':!materials.length||queues.some(queue=>!Number.isInteger(queue))?'unresolved':queues.length>1?'mixed-queues':undefined;
   return {...(status?{renderOrderStatus:status}:{renderQueue:queues[0]}),...(materials.length?{renderMaterials:materials}:{})};
 }
+
+export function skeletonDisplaySettings(renderType,data,canvasPixelsPerUnit=100){
+  if(renderType==='SkeletonGraphic'&&(!Number.isFinite(canvasPixelsPerUnit)||canvasPixelsPerUnit<=0))throw new Error('Invalid Canvas reference pixels per unit');
+  return {renderType,...(renderType==='SkeletonGraphic'?{canvasPixelsPerUnit}:{}),animation:data.startingAnimation??data._animationName,loop:Boolean(data.startingLoop??data.loop)};
+}
