@@ -3,10 +3,16 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_hot_spring_house_uses_source_roles_and_percentage_zoom(self):
+        house = hot_spring_houses([{"Id": "house", "Gospels": "1, 2", "BgOffset": "16,197", "BgDefaulltZoom": "50", "BgZoomRange": "50,150", "Bgm": "music"}])[0]
+        self.assertEqual(house["roleIds"], ["1", "2"])
+        self.assertEqual(house["defaultZoom"], .5)
+        self.assertEqual(house["zoomRange"], [.5, 1.5])
+        self.assertEqual(house["backgroundOffset"], [16, 197])
     def test_hot_spring_pools_preserve_order_missing_references_and_source_levels(self):
         roles = hot_spring_roles([{"Id": "1", "Skin": "skin", "Spine": "onsen_spine", "SpineSound": "water"}], [{"id": "1", "level": "2", "Conversation": "12, 11,missing"}, {"id": "1", "level": "1", "Conversation": "11"}, {"id": "other", "level": "1", "Conversation": "99"}])
         self.assertEqual([pool["level"] for pool in roles[0]["levels"]], [1, 2])

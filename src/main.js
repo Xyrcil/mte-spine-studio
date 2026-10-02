@@ -49,6 +49,7 @@ function describe(group){
   const gaps=(group.controllers||[]).flatMap(root=>root.missingAnimations());
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${group.presentation.hotspots.length} interaction regions`];
+  if(group.presentation.hotSpringHouse)parts.push('Hot spring focus and dialogue controls are not yet restored');
   if(libraryData?.appearances.some(row=>row.bundle===group.presentation.id&&row.hotSpringRoleId)&&!group.controllers.length)parts.push('Hot spring click behavior unavailable in this standalone asset');
   if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
   if(effects)parts.push(`Additional effects unavailable: ${effects}`);
@@ -73,7 +74,7 @@ async function select(presentation) {
   message(`Loading ${presentation.id}…`);
   try {
     const old=[...stage.groups];editor.before();
-    const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===presentation.id),request.signal);
+    const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),request.signal);
     if(view==='gallery')for(const previous of old)stage.remove(previous.id);
     stage.fit();
     editor.choose(group);editor.changed();
@@ -119,6 +120,7 @@ try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
+  const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses);
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);

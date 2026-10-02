@@ -4,7 +4,7 @@ export function buildAssetLibrary(catalog,library){
   for(const row of library.appearances)if(row.kind==='painting'&&String(row.id)===String(row.characterId)&&row.characterName)names.set(String(row.characterId),row.characterName);
   const rows=library.appearances.map(appearance=>{
     const presentation=presentations.get(appearance.bundle),characterId=appearance.characterId?String(appearance.characterId):'',characterName=names.get(characterId)||appearance.characterName||'';
-    return {key:`appearance:${appearance.id}`,appearance,presentation,characterId,characterName,name:appearance.name||appearance.bundle||appearance.id,category:appearance.kind,portrait:appearance.portrait,voiceIndexed:voices.has(String(appearance.id))||voices.has(characterId)};
+    return {key:`appearance:${appearance.id}`,appearance,presentation,characterId,characterName,name:appearance.name||appearance.bundle||appearance.id,category:appearance.kind,portrait:appearance.portrait,voiceIndexed:voices.has(String(appearance.id))||voices.has(characterId)||(appearance.hotSpringRoleIds||[]).some(id=>voices.has(id))};
   });
   const linked=new Set(rows.map(r=>r.presentation?.id));
   for(const presentation of presentations.values())if(!linked.has(presentation.id))rows.push({key:`bundle:${presentation.id}`,presentation,characterId:'',characterName:'',name:presentation.label||presentation.id.split('/').at(-1),category:presentation.category,voiceIndexed:false});

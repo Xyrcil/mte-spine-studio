@@ -23,6 +23,10 @@ def hot_spring_roles(resources, levels):
     return result
 
 
+def hot_spring_houses(rows):
+    return [{"id": str(row["Id"]), "bundle": "Spines/ui/Onsen", "roleIds": [value.strip() for value in row["Gospels"].split(",") if value.strip()], "backgroundOffset": [float(value) for value in row["BgOffset"].split(",")], "defaultZoom": float(row["BgDefaulltZoom"]) / 100, "zoomRange": [float(value) / 100 for value in row["BgZoomRange"].split(",")], "music": row.get("Bgm", "")} for row in rows]
+
+
 def join_hot_springs(appearances, roles, names):
     for appearance in appearances:
         role = next((row for row in roles if appearance.get("bundle") in (row["bundle"], row["bundle"] + "_hx")), None)
@@ -118,6 +122,10 @@ def build(source, output):
         join_portraits(appearances, portrait_entries, source_spines, names)
     hot_springs = hot_spring_roles(records(raw_tables / "HotSpringRoleRes.json"), records(raw_tables / "HotSpringRoleLevel.json"))
     join_hot_springs(appearances, hot_springs, names)
+    houses = hot_spring_houses(records(raw_tables / "HotSpringHouse.json"))
+    for house in houses:
+        if any(node["type"] == "GameObject" and node["data"].get("m_Name") == house["id"] for node in by_bundle.get(house["bundle"], {}).get("hierarchy", [])):
+            appearances.append({"id": "onsen-house-" + house["id"], "bundle": house["bundle"] + "/" + house["id"], "name": "Hot spring house " + house["id"], "kind": "ui", "status": "available", "displayKind": "spine", "spineStatus": "available", "hotSpringRoleIds": house["roleIds"], "ambientSound": "UI_Onsen_amb"})
     voice_rows = [{"id": key, "targetId": str(row["target_id"]), "title": row["voice_title"], "text": row["voice_text"], "resourceName": row["file_name"], "type": row["type"], "groupId": row.get("group_id"), "targetType": row.get("target_type")} for key, row in voices.items()]
     story_rows = [{"id": key, "text": row["voice_text"], "resourceName": row["file_name"]} for key, row in stories.items()]
     raw_voice_rows = records(raw_tables / "VoiceRole.json")
@@ -134,7 +142,7 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

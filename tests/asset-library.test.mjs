@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {buildAssetLibrary,queryAssetLibrary} from '../src/asset-library.js';
+import {expandHotSpringPresentations} from '../src/engine/hot-spring.js';
 
 const catalog={presentations:[{id:'base',category:'painting',instances:[{}]},{id:'skin',category:'painting',instances:[{},{}]},{id:'story',category:'story',instances:[{}]},{id:'other',category:'storyCG',instances:[{}]},{id:'empty',instances:[]}]};
 const library={characters:[{id:'1',name:'Alice (Summer)'}],voices:[{targetId:'1'}],appearances:[{id:'1',characterId:'1',characterName:'Alice',name:'Original',kind:'painting',bundle:'base',portrait:{}},{id:'2',characterId:'1',characterName:'Alice (Summer)',name:'Summer',kind:'skin',bundle:'skin',portrait:{}},{id:'3',characterId:'1',name:'Story',kind:'story',bundle:'story'},{id:'4',name:'Absent',kind:'painting',spineStatus:'missing-source'},{id:'5',name:'Preview',kind:'painting',spineStatus:'missing-source',portrait:{}}]};
@@ -14,6 +15,7 @@ test('character, category, source searches, favorites and recent order compose',
 });
 test('real local catalogue retains every display entry and every renderable bundle',t=>{
   let c,l;try{c=JSON.parse(readFileSync(new URL('../public/assets/presentations.json',import.meta.url)));l=JSON.parse(readFileSync(new URL('../public/assets/library.json',import.meta.url)));}catch{t.skip('Local game assets are not distributed');return;}
-  const rows=buildAssetLibrary(c,l);assert.equal(new Set(rows.map(r=>r.key)).size,rows.length);for(const appearance of l.appearances)assert.ok(rows.some(r=>r.appearance===appearance));for(const presentation of c.presentations.filter(p=>p.instances.length))assert.ok(rows.some(r=>r.presentation===presentation));
+  c.presentations=expandHotSpringPresentations(c.presentations,l.hotSpringHouses);const rows=buildAssetLibrary(c,l);assert.equal(new Set(rows.map(r=>r.key)).size,rows.length);for(const appearance of l.appearances)assert.ok(rows.some(r=>r.appearance===appearance));for(const presentation of c.presentations.filter(p=>p.instances.length))assert.ok(rows.some(r=>r.presentation===presentation));
+  for(const row of rows.filter(row=>row.appearance?.hotSpringRoleIds)){assert.equal(row.status,'animated');assert.equal(row.voiceIndexed,true);}
   assert.equal(queryAssetLibrary(rows,{category:'story'}).length,244);assert.equal(queryAssetLibrary(rows,{category:'skin'}).length,65);assert.equal(rows.find(r=>r.appearance?.id==='301402501').characterName,'安普莎');
 });

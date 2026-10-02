@@ -201,7 +201,7 @@ export class Stage extends EventTarget {
         if(row.kind==='image')created.push(row.asset?await this.addPortrait(row.asset,row.name,row.appearanceId,signal,true):await this.addImage(row.src,row.name,true));
         else {
           const presentation=presentations.find(item=>item.id===row.bundle);if(!presentation)throw new Error(`Scene asset unavailable: ${row.bundle}`);
-          created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===row.bundle),signal,true));
+          created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===(presentation.resourceBundle||row.bundle)),signal,true));
         }
       }
       if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');

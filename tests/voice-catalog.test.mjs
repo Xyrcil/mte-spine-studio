@@ -11,3 +11,7 @@ test('hot spring scopes follow explicit level pools rather than target or filena
   assert.equal(hotSpringRole(data,{presentation:{id:'Spines/skin'}}).id,'actor');assert.deepEqual(voiceCatalog(data,[{id:'Spines/skin'}],'hot-spring').map(row=>row.id),['2','missing']);
   assert.deepEqual(voiceCatalog(data,[{id:'Spines/skin',hotSpringLevel:2}],'hot-spring').map(row=>row.id),['2','1','missing']);assert.equal(voiceCatalog(data,[{id:'Spines/skin'}],'hot-spring','missing')[0].resourceName,'');assert.equal(voiceCatalog(data,[{id:'unknown'}],'hot-spring').length,0);assert.equal(voiceCatalog(data,[{id:'Spines/skin',hotSpringLevel:5}],'hot-spring').length,0);
 });
+test('a hot spring house exposes both declared roles without unrelated conversation pools',()=>{
+  const data={...library,appearances:[{id:'house',bundle:'onsen/house',hotSpringRoleIds:['a','b']}],hotSpringRoles:[{id:'a',skinId:'skin-a',levels:[{level:1,voiceIds:['1']}]},{id:'b',skinId:'skin-b',levels:[{level:1,voiceIds:['2']}]},{id:'c',skinId:'skin-c',levels:[{level:1,voiceIds:['3']}]}]};
+  assert.deepEqual(voiceCatalog(data,[{id:'onsen/house'}],'scene').map(row=>row.id),['1','2']);
+});
