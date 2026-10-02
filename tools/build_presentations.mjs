@@ -52,7 +52,9 @@ for (const bundle of extraction.bundles) {
   const sortingGroups=nodes.filter(node=>node.type==='SortingGroup');
   const images=(bundle.images||[]).map(image=>({...image,transform:transforms.get(image.gameObject)?.id}));
   const canvasGroups=nodes.filter(node=>node.type==='CanvasGroup');
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  const uiText=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProUGUI').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),transform:transforms.get(idOf(node.data.m_GameObject))?.id,data:node.data}));
+  const typewriters=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProTypewriterEffect').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),data:node.data}));
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, typewriters, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});

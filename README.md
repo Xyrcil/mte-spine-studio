@@ -68,8 +68,11 @@ Decoration state names resolve through the original Animator controller's clip
 references, speed and loop settings. These ten selected states have no outgoing
 transitions; their source default-value resets are retained. Unsupported blend
 trees, parameter-driven playback or transitions remain marked unavailable.
-The original dialogue panel layout and general Animator transitions remain
-pending; original-client visual comparison is still needed.
+The original dialogue body and name-plate graphics use their authored bottom
+anchors, parent pivots and nested positions. The account nickname-edit icon is
+not rendered. Text settings and the 50-character-per-second typewriter remain
+in the local catalogue; original font-atlas text rendering and general Animator
+transitions are pending. Original-client visual comparison is still needed.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

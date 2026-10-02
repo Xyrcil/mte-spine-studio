@@ -1,6 +1,7 @@
 import {compileAnimationCurve} from './particle-values.js';
 import {multiply,objectTransform,point} from './geometry.js';
 import {PackedAnimation} from './packed-animation.js';
+import {viewportRectLayout} from './ui-layout.js';
 
 export function validateNativeAnimation(value){
   if(value?.schema!==1||typeof value.id!=='string'||value.id.length>512||typeof value.clip!=='string'||value.clip.length>512||typeof value.time!=='number'||!Number.isFinite(value.time)||value.time<0||typeof value.playing!=='boolean')throw new Error('Invalid native animation checkpoint');
@@ -71,7 +72,9 @@ export function nativeImageBounds(size,pivot,sprite){
 export function drawNativeImage(renderer,group,image,viewport){
   if(!image.used||image.reason||image.source.data.m_Enabled===0||image.source.data.m_Enabled===false||!group.isActiveTransform(image.source.transform))return;
   const texture=group.manager.get(image.texture);if(!texture)return;
-  const node=group.nodes.get(image.source.transform),size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m=multiply(image.source.viewportDecoration?viewportDecorationMatrix(viewport,group.presentation.hotSpringHouse.decoration.scaler):objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
+  const node=group.nodes.get(image.source.transform);let size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m;
+  if(image.source.viewportRoot){const source=image.source.viewportPanel?group.presentation.hotSpringHouse.dialoguePanel:group.presentation.hotSpringHouse.decoration,viewportMatrix=viewportDecorationMatrix(viewport,source.scaler),layout=viewportRectLayout(group.nodes,node.id,image.source.viewportRoot,{x:viewport.width/viewportMatrix[0],y:viewport.height/viewportMatrix[0]});size=layout.size;pivot=layout.pivot;m=multiply(viewportMatrix,layout.matrix);}
+  else m=multiply(image.source.viewportDecoration?viewportDecorationMatrix(viewport,group.presentation.hotSpringHouse.decoration.scaler):objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
   while(current){if(seen.has(current.id))throw new Error('Cyclic native image hierarchy');seen.add(current.id);const id=String(current.data.m_GameObject?.m_PathID);for(const canvas of group.presentation.canvasGroups||[])if(String(canvas.data.m_GameObject?.m_PathID)===id&&canvas.data.m_Enabled!==0&&canvas.data.m_Enabled!==false){alpha*=canvas.data.m_Alpha;if(canvas.data.m_IgnoreParentGroups){current=null;break;}}if(current)current=group.nodes.get(String(current.data.m_Father?.m_PathID));}
   const bounds=nativeImageBounds(size,pivot,image.source.sprite),quad=[],vertices=[[bounds.left,bounds.bottom,0,1],[bounds.right,bounds.bottom,1,1],[bounds.right,bounds.top,1,0],[bounds.left,bounds.top,0,0]];
   for(const [x,y,u,v] of vertices){const p=point(m,x,y);quad.push(p.x,p.y,image.color.r,image.color.g,image.color.b,alpha,u,v);if(renderer.twoColorTint)quad.push(0,0,0,0);}
