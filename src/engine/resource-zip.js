@@ -7,7 +7,7 @@ export async function stageResourceZip(file,cache,base,{signal,onProgress=()=>{}
   const unzip=new Unzip(entry=>{
     try{
       if(entry.name.endsWith('/')){packPath(entry.name.slice(0,-1));return;}const path=packPath(entry.name);
-      if(!/\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav)$/i.test(path)){excluded++;return;}
+      if(!/\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav|otf|ttf)$/i.test(path)){excluded++;return;}
       if(seen.has(path)||seen.size>=100000)throw new Error('Duplicate or excessive archive resources');seen.add(path);
       const chunks=[];let size=0;active.add(entry);
       entry.ondata=(failure,data,final)=>{

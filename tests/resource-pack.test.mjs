@@ -28,3 +28,7 @@ test('composed native images reference their own source bundle without inventing
   const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)])),assetPath='spines/interfaces/UI/Prefab/Onsen/effects/heart.png';catalogs['presentations.json'].presentations=[{path:'spines/ui/Onsen',images:[{assetPath,sprite:{path:'effects/heart.png'}}]}];
   assert.deepEqual(expectedPackPaths(catalogs),[assetPath]);
 });
+test('original fonts are required indexed resources and retain font MIME types',async()=>{
+  const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)])),path='spines/interfaces/fonts/SOURCE.otf';catalogs['presentations.json'].presentations=[{fontAssets:[{path}]}];assert.deepEqual(expectedPackPaths(catalogs),[path]);
+  const selected=PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogs[name])));await assert.rejects(validatePackCatalogues(resourceFiles(selected).rows),/Indexed files missing/);selected.push(file(path,'original font'));const pack=resourceFiles(selected);assert.equal(pack.excluded,0);await validatePackCatalogues(pack.rows);assert.equal(resourceType(path),'font/otf');assert.equal(resourceType('font.ttf'),'font/ttf');
+});

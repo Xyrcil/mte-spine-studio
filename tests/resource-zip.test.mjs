@@ -12,3 +12,6 @@ test('ZIP traversal, storage overflow and cancellation fail without committing a
   await assert.rejects(stageResourceZip(archive({'large.json':strToU8('{}')}),cache(),base,{budget:1}),/Not enough browser storage/);
   const controller=new AbortController();controller.abort();await assert.rejects(stageResourceZip(archive({'valid.json':strToU8('{}')}),cache(),base,{signal:controller.signal}),error=>error.name==='AbortError');
 });
+test('font files remain in streamed resource ZIPs with their own MIME types',async()=>{
+  const target=cache(),path='spines/interfaces/fonts/SOURCE.otf',file=new File([zipSync({[path]:new Uint8Array([79,84,84,79])})],'fonts.zip'),result=await stageResourceZip(file,target,base);assert.equal(result.excluded,0);assert.equal(result.rows.length,1);assert.equal(target.entries.get(base+'assets/'+path).headers.get('content-type'),'font/otf');
+});

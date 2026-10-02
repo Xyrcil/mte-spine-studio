@@ -42,6 +42,8 @@ npm run assets:index
 python3 tools/extract_audio.py --source /path/to/archive
 python3 tools/build_library.py --source /path/to/archive
 python3 tools/extract_portraits.py --source /path/to/archive
+python3 tools/extract_fonts.py --source /path/to/archive
+npm run assets:index
 python3 tools/build_library.py --source /path/to/archive
 ```
 
@@ -73,6 +75,11 @@ anchors, parent pivots and nested positions. The account nickname-edit icon is
 not rendered. Text settings and the 50-character-per-second typewriter remain
 in the local catalogue; original font-atlas text rendering and general Animator
 transitions are pending. Original-client visual comparison is still needed.
+The font extractor reads the original SOURCE and NOTO_light font files and
+binds their exact names to the recovered TMP assets. Font paths, face metrics,
+character coverage and fallback references are retained in presentations.
+These files are local resources, not part of the public code build. OTF and
+TTF files are included in resource packs and scene cache preparation.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

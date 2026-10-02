@@ -5,6 +5,7 @@ import {standaloneInstances,materialOrdering,skeletonDisplaySettings} from './pr
 const root = path.resolve(process.argv[2] || 'public/assets');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, 'runtime-index.json')));
 const extraction = JSON.parse(fs.readFileSync(path.join(root, 'extraction.json')));
+const fontIndex=fs.existsSync(path.join(root,'font-index.json'))?JSON.parse(fs.readFileSync(path.join(root,'font-index.json'))).entries:[];
 const idOf = pointer => pointer?.m_FileID === 0 ? String(pointer.m_PathID) : null;
 const result = [];
 for (const bundle of extraction.bundles) {
@@ -54,7 +55,8 @@ for (const bundle of extraction.bundles) {
   const canvasGroups=nodes.filter(node=>node.type==='CanvasGroup');
   const uiText=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProUGUI').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),transform:transforms.get(idOf(node.data.m_GameObject))?.id,data:node.data}));
   const typewriters=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProTypewriterEffect').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),data:node.data}));
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, typewriters, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  const fontAssets=fontIndex.filter(font=>uiText.some(row=>String(row.data.m_fontAsset?.m_PathID)===font.assetId));
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});

@@ -49,7 +49,7 @@ def indexed_files(root):
         elif isinstance(value, list):
             for item in value:
                 visit(item)
-        elif isinstance(value, str) and re.match(r"^(spines|portraits|audio)/", value) and re.search(r"\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav)$", value, re.I):
+        elif isinstance(value, str) and re.match(r"^(spines|portraits|audio)/", value) and re.search(r"\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav|otf|ttf)$", value, re.I):
             paths.add(value)
 
     for name in ["presentations.json", "library.json", "portrait-index.json"]:

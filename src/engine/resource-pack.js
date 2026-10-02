@@ -1,6 +1,6 @@
 import {validCatalogue} from './cache-policy.js';
 export const PACK_CATALOGS=['presentations.json','runtime-index.json','library.json','audio-index.json','portrait-index.json'];
-const extensions=/\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav)$/i;
+const extensions=/\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav|otf|ttf)$/i;
 export function packPath(value){
   if(typeof value!=='string'||value.length>2048||value.startsWith('/')||/[\\\u0000-\u001f?#%]/.test(value))throw new Error('Invalid resource path');
   const parts=value.split('/');if(parts.some(part=>!part||part==='.'||part==='..'||part.includes(':')))throw new Error('Invalid resource path');return parts.join('/');
@@ -35,4 +35,4 @@ export function expectedPackPaths(catalogues){
   const visit=value=>{if(Array.isArray(value))for(const item of value)visit(item);else if(value&&typeof value==='object')for(const item of Object.values(value))visit(item);else if(typeof value==='string'&&/^(spines|portraits|audio)\//.test(value)&&extensions.test(value))add(value);};
   for(const name of ['presentations.json','portrait-index.json','library.json'])visit(catalogues[name]);return [...result];
 }
-export function resourceType(path){const extension=path.split('.').at(-1).toLowerCase();return {json:'application/json',atlas:'text/plain',png:'image/png',webp:'image/webp',jpg:'image/jpeg',jpeg:'image/jpeg',m4a:'audio/mp4',ogg:'audio/ogg',mp3:'audio/mpeg',wav:'audio/wav'}[extension]||'application/octet-stream';}
+export function resourceType(path){const extension=path.split('.').at(-1).toLowerCase();return {json:'application/json',atlas:'text/plain',png:'image/png',webp:'image/webp',jpg:'image/jpeg',jpeg:'image/jpeg',m4a:'audio/mp4',ogg:'audio/ogg',mp3:'audio/mpeg',wav:'audio/wav',otf:'font/otf',ttf:'font/ttf'}[extension]||'application/octet-stream';}
