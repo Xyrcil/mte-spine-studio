@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix} from '../src/engine/native-visuals.js';
+import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds} from '../src/engine/native-visuals.js';
+
+test('trimmed sprite content preserves source padding, pivot and rounded canvas dimensions',()=>{
+  const sprite={rect:{width:256,height:256},contentRect:{x:4,y:24,width:243,height:205}};
+  assert.deepEqual(nativeImageBounds({x:256,y:256},{x:.5,y:.5},sprite),{left:-124,bottom:-104,right:119,top:101});
+  assert.deepEqual(nativeImageBounds({x:512,y:128},{x:.25,y:.75},sprite),{left:-120,bottom:-84,right:366,top:18.5});
+  assert.deepEqual(nativeImageBounds({x:10,y:20},{x:0,y:1},{}),{left:-0,bottom:-20,right:10,top:0});
+  assert.throws(()=>nativeImageBounds({x:1,y:1},{x:.5,y:.5},{...sprite,contentRect:{...sprite.contentRect,width:999}}),/Invalid/);
+});
 
 test('source Expand canvas scaling keeps decorations in the captured viewport during crop',()=>{
   const scaler={m_UiScaleMode:1,m_ScreenMatchMode:1,m_ReferenceResolution:{x:1920,y:1080}};

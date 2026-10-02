@@ -6,11 +6,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import unittest
-from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key
+from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key, sprite_content_rect
 from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_sprite_bounds_use_atlas_offsets_and_unrotate_packed_dimensions(self):
+        render = {"textureRect": {"width": 205, "height": 243}, "textureRectOffset": {"x": 4, "y": 24}, "settingsRaw": 17}
+        atlas = SimpleNamespace(m_RenderDataMap=[("key", render)])
+        sprite = SimpleNamespace(m_RD={}, m_RenderDataKey="key", m_SpriteAtlas=SimpleNamespace(deref_parse_as_object=lambda: atlas))
+        self.assertEqual(sprite_content_rect(sprite, {}), {"x": 4, "y": 24, "width": 243, "height": 205})
+        sprite.m_SpriteAtlas = None
+        sprite.m_AtlasTags = ["Onsen"]
+        sprite.assets_file = SimpleNamespace(objects={1: SimpleNamespace(type=SimpleNamespace(name="SpriteAtlas"), peek_name=lambda: "Onsen", read=lambda: atlas)})
+        self.assertEqual(sprite_content_rect(sprite, {}), {"x": 4, "y": 24, "width": 243, "height": 205})
+        sprite.assets_file.objects = {}
+        with self.assertRaisesRegex(ValueError, "atlas bounds"):
+            sprite_content_rect(sprite, {})
+        self.assertIsNone(sprite_content_rect(SimpleNamespace(), {}))
+
     def test_explicit_bundle_names_cannot_escape_resource_roots(self):
         self.assertEqual(resource_bundle_key("UI/Prefab/Onsen"), "UI/Prefab/Onsen")
         for key in ("", "/tmp/bundle", "../bundle", "UI/../bundle", "UI//bundle", "UI/./bundle", "UI\\bundle", "C:/bundle"):

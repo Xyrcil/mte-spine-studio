@@ -84,7 +84,12 @@ each frame. Slot filtering traverses the original clipping attachments even
 when they sit outside the selected segment. Unresolved mappings remain marked;
 resolved segments still carry an original-client visual-verification notice.
 Native animation bundles load their declared shared dependencies before image
-extraction. UI image components retain their original color, sprite and material
+extraction. UI sprites retain their original canvas rectangle and trimmed
+content bounds, including atlas offsets and unpacked rotation. The native image
+renderer preserves those transparent margins rather than stretching trimmed
+images to fill their original rectangles. Older resources without content
+bounds retain their previous drawing behavior and need extraction refresh.
+UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.
 The recovered smoke images and skill-animation graphics are local resources,
 not generated replacements. The smoke clip plays its original looping color

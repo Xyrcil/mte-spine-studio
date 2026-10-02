@@ -82,6 +82,31 @@ def resource_bundle_key(value: str):
     return value
 
 
+def sprite_content_rect(sprite, tree):
+    render = getattr(sprite, "m_RD", None)
+    atlas_pointer = getattr(sprite, "m_SpriteAtlas", None)
+    if atlas_pointer:
+        atlas = atlas_pointer.deref_parse_as_object()
+        render = next(value for key, value in atlas.m_RenderDataMap if key == sprite.m_RenderDataKey)
+    elif getattr(sprite, "m_AtlasTags", None) and getattr(sprite, "assets_file", None):
+        atlas_reader = next((reader for reader in sprite.assets_file.objects.values() if reader.type.name == "SpriteAtlas" and reader.peek_name() == sprite.m_AtlasTags[0]), None)
+        if atlas_reader is None:
+            raise ValueError("Sprite atlas bounds are unavailable")
+        atlas = atlas_reader.read()
+        render = next(value for key, value in atlas.m_RenderDataMap if key == sprite.m_RenderDataKey)
+    if render is None:
+        render = tree.get("m_RD")
+    if render is None:
+        return None
+    read = lambda value, key: value[key] if isinstance(value, dict) else getattr(value, key)
+    rect, offset = read(render, "textureRect"), read(render, "textureRectOffset")
+    width, height = read(rect, "width"), read(rect, "height")
+    settings = read(render, "settingsRaw")
+    if settings & 1 and ((settings >> 2) & 15) == 4:
+        width, height = height, width
+    return {"x": read(offset, "x"), "y": read(offset, "y"), "width": width, "height": height}
+
+
 def shader_render_queue(shader):
     subshaders = shader.get("m_ParsedForm", {}).get("m_SubShaders", [])
     if not subshaders:
@@ -167,6 +192,9 @@ class BundleExtractor:
         image.save(destination)
         tree = self.tree(reader)
         result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": image.width, "height": image.height, "rect": tree.get("m_Rect"), "pivot": tree.get("m_Pivot"), "pixelsPerUnit": tree.get("m_PixelsToUnits")}
+        content = sprite_content_rect(sprite, tree)
+        if content is not None:
+            result["contentRect"] = content
         self.effect_sprites[key] = result
         return result
 

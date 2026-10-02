@@ -39,7 +39,8 @@ export class NativeAnimation {
 export function createNativeVisuals(group,base,manager,assetBase=base){
   group.nativeImages=(group.presentation.images||[]).map(source=>{
     const node=group.nodes.get(source.transform),data=node?.data;
-    const reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||!data||data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y?'Native image layout or material is not supported yet':undefined;
+    let reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||source.data.m_UseSpriteMesh||!data||data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y?'Native image layout or material is not supported yet':undefined;
+    if(!reason&&source.sprite.contentRect)try{nativeImageBounds({x:1,y:1},{x:.5,y:.5},source.sprite);}catch(error){reason=error.message;}
     return {source,color:{...source.data.m_Color},texture:source.assetPath?assetBase+source.assetPath:base+source.sprite?.path,reason,used:Boolean(source.viewportDecoration)};
   });
   group.nativeAnimations=(group.presentation.visualAnimations||[]).filter(row=>row.type==='Animation').map(source=>{
@@ -57,12 +58,22 @@ export function viewportDecorationMatrix(view,scaler){
   if(scaler?.m_UiScaleMode!==1||scaler.m_ScreenMatchMode!==1||![view.width,view.height,scaler.m_ReferenceResolution?.x,scaler.m_ReferenceResolution?.y].every(value=>Number.isFinite(value)&&value>0))throw new Error('Unsupported viewport decoration scale');
   const scale=Math.min(view.width/scaler.m_ReferenceResolution.x,view.height/scaler.m_ReferenceResolution.y);return [scale,0,0,scale,view.x,view.y];
 }
+export function nativeImageBounds(size,pivot,sprite){
+  const rect=sprite?.rect,content=sprite?.contentRect;
+  const bounds={left:-pivot.x*size.x,bottom:-pivot.y*size.y,right:(1-pivot.x)*size.x,top:(1-pivot.y)*size.y};
+  if(!content)return bounds;
+  if(!rect||![rect.width,rect.height,content.x,content.y,content.width,content.height].every(Number.isFinite)||rect.width<=0||rect.height<=0||content.width<=0||content.height<=0||content.x<0||content.y<0||content.x+content.width>rect.width+1e-3||content.y+content.height>rect.height+1e-3)throw new Error('Invalid native sprite content bounds');
+  const round=value=>value%1===.5?Math.round(value/2)*2:Math.round(value),width=round(rect.width),height=round(rect.height);
+  if(width<=0||height<=0)throw new Error('Invalid native sprite size');
+  bounds.left+=size.x*content.x/width;bounds.bottom+=size.y*content.y/height;
+  bounds.right-=size.x*(rect.width-content.x-content.width)/width;bounds.top-=size.y*(rect.height-content.y-content.height)/height;return bounds;
+}
 export function drawNativeImage(renderer,group,image,viewport){
   if(!image.used||image.reason||image.source.data.m_Enabled===0||image.source.data.m_Enabled===false||!group.isActiveTransform(image.source.transform))return;
   const texture=group.manager.get(image.texture);if(!texture)return;
   const node=group.nodes.get(image.source.transform),size=node.data.m_SizeDelta,pivot=node.data.m_Pivot,m=multiply(image.source.viewportDecoration?viewportDecorationMatrix(viewport,group.presentation.hotSpringHouse.decoration.scaler):objectTransform(group),group.world(node.id));let alpha=group.opacity*image.color.a,current=node,seen=new Set();
   while(current){if(seen.has(current.id))throw new Error('Cyclic native image hierarchy');seen.add(current.id);const id=String(current.data.m_GameObject?.m_PathID);for(const canvas of group.presentation.canvasGroups||[])if(String(canvas.data.m_GameObject?.m_PathID)===id&&canvas.data.m_Enabled!==0&&canvas.data.m_Enabled!==false){alpha*=canvas.data.m_Alpha;if(canvas.data.m_IgnoreParentGroups){current=null;break;}}if(current)current=group.nodes.get(String(current.data.m_Father?.m_PathID));}
-  const quad=[],vertices=[[-pivot.x*size.x,-pivot.y*size.y,0,1],[(1-pivot.x)*size.x,-pivot.y*size.y,1,1],[(1-pivot.x)*size.x,(1-pivot.y)*size.y,1,0],[-pivot.x*size.x,(1-pivot.y)*size.y,0,0]];
+  const bounds=nativeImageBounds(size,pivot,image.source.sprite),quad=[],vertices=[[bounds.left,bounds.bottom,0,1],[bounds.right,bounds.bottom,1,1],[bounds.right,bounds.top,1,0],[bounds.left,bounds.top,0,0]];
   for(const [x,y,u,v] of vertices){const p=point(m,x,y);quad.push(p.x,p.y,image.color.r,image.color.g,image.color.b,alpha,u,v);if(renderer.twoColorTint)quad.push(0,0,0,0);}
   renderer.enableRenderer(renderer.batcher);const gl=renderer.context.gl;renderer.batcher.setBlendMode(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);renderer.batcher.draw(texture,quad,[0,1,2,2,3,0]);
 }
