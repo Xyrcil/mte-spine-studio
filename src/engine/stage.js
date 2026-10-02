@@ -7,6 +7,7 @@ import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareDraws,particleQueue} from './particle-layer.js';
 import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
 import {MaskedParticleRenderer} from './masked-particles.js';
+import {DialogueTextLayer} from './dialogue-text.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots} from './material-order.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
@@ -122,9 +123,11 @@ export class Stage extends EventTarget {
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
       if(presentation.hotSpringHouse?.roles?.length&&presentation.hotSpringHouse.roles.every(role=>role.focus))group.controllers.push(new HotSpringRoot(this,group));
+      if(presentation.hotSpringHouse?.dialoguePanel){group.dialogueTypography=new DialogueTextLayer(this,group);await group.dialogueTypography.initialize(`${import.meta.env.BASE_URL}assets/`,signal);if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');}
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
+      group.dialogueTypography?.dispose();
       group.maskedRenderer?.dispose();
       manager.dispose();
       throw error;
@@ -248,7 +251,7 @@ export class Stage extends EventTarget {
     })().catch(error=>{if(!this.contextLost&&!this.disposed)this.dispatchEvent(new CustomEvent('rendering-recovery-error',{detail:error.message}));throw error;}).finally(()=>this.recoveryPromise=null);
     return this.recoveryPromise;
   }
-  release(group){group.maskedRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
+  release(group){group.dialogueTypography?.dispose();group.maskedRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
   interact(clientX,clientY){
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
@@ -316,6 +319,7 @@ export class Stage extends EventTarget {
     }
     const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};
     for(const group of this.groups)if(group.visible)for(const image of group.nativeImages||[])if(image.source.viewportDecoration)drawNativeImage(renderer,group,image,viewport);
+    for(const group of this.groups)if(group.visible)group.dialogueTypography?.draw(renderer,viewport);
     renderer.end();
     gl.disable(gl.SCISSOR_TEST);
   }

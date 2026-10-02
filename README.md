@@ -73,8 +73,10 @@ trees, parameter-driven playback or transitions remain marked unavailable.
 The original dialogue body and name-plate graphics use their authored bottom
 anchors, parent pivots and nested positions. The account nickname-edit icon is
 not rendered. Text settings and the 50-character-per-second typewriter remain
-in the local catalogue; original font-atlas text rendering and general Animator
-transitions are pending. Original-client visual comparison is still needed.
+in the local catalogue. Dialogue text uses the recovered original font files,
+face metrics, nested anchors and source line-spacing settings. Glyph rasterization
+uses browser text rather than the game's SDF shader, and source wrapping still
+needs original-client comparison. General Animator transitions remain pending.
 The font extractor reads the original SOURCE and NOTO_light font files and
 binds their exact names to the recovered TMP assets. Font paths, face metrics,
 character coverage and fallback references are retained in presentations.
@@ -83,7 +85,11 @@ TTF files are included in resource packs and scene cache preparation.
 Hot spring checkpoints retain the displayed voice ID and text start separately
 from the conversation cursor. Early Continue clicks do not clear the current
 line; restoration resolves its original text and role name from the catalogue.
-Text drawing and source typewriter scheduling are still pending.
+The typewriter retains its visible-character count and next update time. It
+advances toward elapsed-time character goals with the configured inter-update
+delay; paused redraws and hidden objects do not advance it. Font faces and
+generated text textures are released with their scene objects. Unsupported
+markup and text layouts remain explicit rather than falling back to a system font.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

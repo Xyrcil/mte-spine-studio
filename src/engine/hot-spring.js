@@ -1,5 +1,6 @@
 import {multiply,objectTransform,inversePoint} from './geometry.js';
 import {PackedAnimation} from './packed-animation.js';
+import {advanceDialogueTypewriter} from './dialogue-text.js';
 
 export function hotSpringAnimatorStates(presentation,source){
   const pointer=source.data.m_Controller,controller=presentation.visualAnimations.find(row=>row.type==='AnimatorController'&&pointer?.m_FileID===0&&row.id===String(pointer.m_PathID));
@@ -75,7 +76,7 @@ export function validateHotSpringState(value){
     if(animation!==null&&(!/^ani_love_[1-5](?:_[1-3])?$/.test(animation?.name)||typeof animation.start!=='number'||!Number.isFinite(animation.start)||animation.start<0||animation.start>value.clock||typeof animation.duration!=='number'||!Number.isFinite(animation.duration)||animation.duration<0))throw new Error('Invalid hot spring dialogue animation');
     result.dialogueAnimation=animation===null?null:{name:animation.name,start:animation.start,duration:animation.duration};
   }
-  if(value.dialogueText!==undefined){const text=value.dialogueText;if(text!==null&&(typeof text.voiceId!=='string'||text.voiceId.length>64||!text.voiceId||typeof text.start!=='number'||!Number.isFinite(text.start)||text.start<0||text.start>value.clock))throw new Error('Invalid hot spring displayed dialogue');result.dialogueText=text===null?null:{voiceId:text.voiceId,start:text.start};}
+  if(value.dialogueText!==undefined){const text=value.dialogueText;if(text!==null&&(typeof text.voiceId!=='string'||text.voiceId.length>64||!text.voiceId||typeof text.start!=='number'||!Number.isFinite(text.start)||text.start<0||text.start>value.clock))throw new Error('Invalid hot spring displayed dialogue');result.dialogueText=text===null?null:{voiceId:text.voiceId,start:text.start};if(text!==null&&text.typed!==undefined){if(!Number.isInteger(text.typed)||text.typed<0||text.typed>10000||typeof text.nextUpdate!=='number'||!Number.isFinite(text.nextUpdate)||text.nextUpdate<text.start)throw new Error('Invalid hot spring typewriter checkpoint');Object.assign(result.dialogueText,{typed:text.typed,nextUpdate:text.nextUpdate});}}
   return result;
 }
 
@@ -99,7 +100,7 @@ export class HotSpringRoot {
   dialogueDisplay(){
     const v=this.value,display=v.dialogueText;if(v.phase!=='dialogue'||!display)return {name:'',text:'',elapsed:0,charactersPerSecond:0};
     const role=this.roles.find(role=>role.id===v.roleId),line=this.house.dialogueLines?.find(line=>line.id===display.voiceId),writer=this.house.dialoguePanel?.typewriters?.[0]?.data;
-    return {voiceId:display.voiceId,name:role?.name||'',text:typeof line?.text==='string'?line.text:'',elapsed:Math.max(0,v.clock-display.start),charactersPerSecond:writer?.charactersPerSecond||0};
+    return {voiceId:display.voiceId,name:role?.name||'',text:typeof line?.text==='string'?line.text:'',elapsed:Math.max(0,v.clock-display.start),charactersPerSecond:writer?.charactersPerSecond||0,visibleCharacters:display.typed||0};
   }
   pose(){const v=this.value,t=['focusing','returning'].includes(v.phase)?Math.min(1,Math.max(0,v.clock-v.start)):1,ease=1-(1-t)**2;return Object.fromEntries(['x','y','scale'].map(key=>[key,v.from[key]+(v.target[key]-v.from[key])*ease]));}
   apply(){const pose=this.pose(),data=this.transform.data;data.m_LocalPosition={...data.m_LocalPosition,x:pose.x,y:pose.y};data.m_AnchoredPosition={x:pose.x,y:pose.y};data.m_LocalScale={...data.m_LocalScale,x:pose.scale,y:pose.scale};
@@ -114,7 +115,7 @@ export class HotSpringRoot {
     const v=this.value,level=v.levels[v.roleId]||1,count=level===3?2:level>=4?3:1;
     const name=`ani_love_${level}${count>1?'_'+(this.randomIndex(count)+1):''}`,animation=this.house.dialogueAnimations?.find(row=>row.name===name);
     v.dialogueAnimation=animation?{name,start:at,duration:animation.duration}:null;
-    v.dialogueText=v.voiceId?{voiceId:v.voiceId,start:at}:null;
+    v.dialogueText=v.voiceId?{voiceId:v.voiceId,start:at,typed:0,nextUpdate:at}:null;
     if(animation)this.emit('hot-spring-decoration-request',{name,clip:animation.clip,lateness:Math.max(0,v.clock-at)});
     if(v.voiceId)this.emit('voice-request',{voiceId:v.voiceId,lateness:Math.max(0,v.clock-at)});
     this.apply();
@@ -132,7 +133,7 @@ export class HotSpringRoot {
     if(!hit.role?.focus)return {accepted:false,reason:'Source focus configuration is unavailable'};
     v.from=this.pose();v.target={x:hit.role.focus.position[0],y:hit.role.focus.position[1],scale:hit.role.focus.zoom};v.start=v.clock;v.phase='focusing';v.roleId=hit.id;this.emit('sound-request',{name:'UI_Onsen_role',category:'a_sound_ui',lateness:0});return {accepted:true,animation:`focus-${hit.id}`};
   }
-  advance(delta){if(delta<=0)return;const v=this.value;v.clock+=delta;this.apply();if(!['focusing','returning'].includes(v.phase)||v.clock-v.start<1-1e-9)return;
+  advance(delta){if(delta<=0||this.group.visible===false)return;const v=this.value;v.clock+=delta;if(v.phase==='dialogue'&&v.dialogueText?.typed!==undefined){const display=this.dialogueDisplay();if(display.charactersPerSecond>0)advanceDialogueTypewriter(v.dialogueText,v.clock,display.charactersPerSecond,[...display.text].length);}this.apply();if(!['focusing','returning'].includes(v.phase)||v.clock-v.start<1-1e-9)return;
     if(v.phase==='returning'){v.phase='idle';v.roleId='';}else{v.phase='dialogue';v.voiceId=this.selectVoice();this.showDialogue(Math.min(v.clock,v.start+1));}
     this.emit('interaction-change',{phase:v.phase,roleId:v.roleId});
   }

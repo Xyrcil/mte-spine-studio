@@ -40,6 +40,9 @@ test('displayed dialogue survives early Continue and restores its source ID and 
   const bad={...saved,dialogueText:{voiceId:'foreign',start:1}};assert.throws(()=>root.check(bad),/displayed dialogue/);assert.throws(()=>root.restore(bad),/displayed dialogue/);assert.deepEqual(root.snapshot(),saved);
   root.click(root.hotspots.find(hit=>hit.id==='close'));assert.equal(root.value.dialogueText,null);
 });
+test('hidden hot spring objects retain their dialogue clock and visible-character checkpoint',()=>{
+  const {root,group}=focusFixture();root.click(root.hotspots[0]);root.advance(1);const saved=root.snapshot();group.visible=false;root.advance(2);assert.deepEqual(root.snapshot(),saved);group.visible=true;root.advance(.1);assert.ok(root.value.clock>saved.clock);
+});
 
 test('every original hot spring line and default role name joins its own configured house',t=>{
   if(!fs.existsSync('public/assets/library.json')){t.skip('Local resources are not installed');return;}

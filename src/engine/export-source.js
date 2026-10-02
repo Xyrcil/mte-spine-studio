@@ -15,7 +15,7 @@ export function omittedVisualWarnings(groups,scene,useSequence=false){
     if(group.nativeAnimations?.some(native=>native.reason&&native.source.data.m_PlayAutomatically&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject?.m_PathID))?.id)))warnings.add('Some source native animation clips are not rendered');
     if(group.presentation?.hotSpringHouse){
       const conversation=group.controllers?.some(root=>root.value?.kind==='hot-spring'&&['focusing','dialogue'].includes(root.value.phase)),recorded=useSequence&&scene.sequence?.actions.some(action=>action.group===group.id&&action.controller==='hot-spring'&&!['close','continue'].includes(action.hit));
-      if(conversation||recorded){const root=group.controllers?.find(root=>root.value?.kind==='hot-spring');warnings.add(root?.decorationModels?.size&&!root.decorationReason?root.dialoguePanelAvailable?'Original hot spring dialogue typography is not restored':'Original hot spring dialogue panel layout is not restored':'Original hot spring dialogue decorations are not rendered');}
+      if(conversation||recorded){const root=group.controllers?.find(root=>root.value?.kind==='hot-spring');warnings.add(root?.decorationModels?.size&&!root.decorationReason?root.dialoguePanelAvailable?group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Dialogue uses original fonts with browser rasterization; original-client visual verification is pending':'Original hot spring dialogue typography is not restored':'Original hot spring dialogue panel layout is not restored':'Original hot spring dialogue decorations are not rendered');}
     }
   }
   return [...warnings];

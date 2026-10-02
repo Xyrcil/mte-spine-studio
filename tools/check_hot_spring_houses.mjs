@@ -22,6 +22,7 @@ try{
         for(let i=0;i<60;i++)stage.evaluate(1/120);const middle=stage.snapshot();for(let i=0;i<60;i++)stage.evaluate(1/120);const focused=root.snapshot();
         if(focused.phase!=='dialogue'||!role.levels.find(pool=>pool.level===level).voiceIds.includes(focused.voiceId))throw new Error('Wrong conversation pool');
         const display=root.dialogueDisplay();if(display.voiceId!==focused.voiceId||!display.text||!display.name||display.charactersPerSecond!==50)throw new Error('Source dialogue text or name was not associated');
+        if(group.dialogueTypography?.reason||group.dialogueTypography?.slots.length!==2)throw new Error('Original dialogue fonts were not loaded');
         if(group.presentation.hotSpringHouse.dialogueAnimations?.length&&(!focused.dialogueAnimation||!new RegExp(`^ani_love_${level}(?:_[1-3])?$`).test(focused.dialogueAnimation.name)))throw new Error('Wrong source dialogue decoration');
         for(let i=0;i<36;i++)stage.evaluate(1/120);const ended=stage.triggerInteraction(group.id,root.source.id,'close');if(!ended.accepted)throw new Error(ended.reason);for(let i=0;i<120;i++)stage.evaluate(1/120);const final=root.snapshot(),sequence=recorder.stop();recorder.dispose();lastSequence=sequence;
         await stage.restore(middle,presentations,entries);for(let i=0;i<60;i++)stage.evaluate(1/120);if(JSON.stringify(root.snapshot())!==JSON.stringify(focused))throw new Error('Mid-focus restore diverged');
@@ -52,7 +53,7 @@ try{
         try{for(const format of ['mp4','webm']){
           console.log(`[hot-spring-check] ${group.presentation.id}: encoding ${format}`);
           const media=await exportMedia({scene:{...snapshot,sequence},catalog:presentations,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{format,useSequence:true,width:160,height:120,fps:10,start:0,end:3.2,speed:1,loops:1,loopMode:'repeat',background:'#191b20',fit:'contain',crop:{x:0,y:0,width:1,height:1}},interactionProvider:provider});
-          if(!media.warnings.includes(root.dialoguePanelAvailable?'Original hot spring dialogue typography is not restored':group.presentation.hotSpringHouse.decoration?'Original hot spring dialogue panel layout is not restored':'Original hot spring dialogue decorations are not rendered'))throw new Error('Missing conversation layout notice');
+          if(!media.warnings.includes(group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Dialogue uses original fonts with browser rasterization; original-client visual verification is pending':root.dialoguePanelAvailable?'Original hot spring dialogue typography is not restored':group.presentation.hotSpringHouse.decoration?'Original hot spring dialogue panel layout is not restored':'Original hot spring dialogue decorations are not rendered'))throw new Error('Missing conversation layout notice');
           const input=new Input({source:new BlobSource(media.blob),formats:ALL_FORMATS});
           console.log(`[hot-spring-check] ${group.presentation.id}: decoding ${format}`);
           try{
