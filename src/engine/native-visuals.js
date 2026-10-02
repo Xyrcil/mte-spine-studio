@@ -2,10 +2,11 @@ import {compileAnimationCurve} from './particle-values.js';
 import {multiply,objectTransform,point} from './geometry.js';
 import {PackedAnimation} from './packed-animation.js';
 import {viewportRectLayout} from './ui-layout.js';
+import {NativeEventTimeline} from './native-events.js';
 
 export function validateNativeAnimation(value){
   if(value?.schema!==1||typeof value.id!=='string'||value.id.length>512||typeof value.clip!=='string'||value.clip.length>512||typeof value.time!=='number'||!Number.isFinite(value.time)||value.time<0||typeof value.playing!=='boolean')throw new Error('Invalid native animation checkpoint');
-  return {schema:1,id:value.id,clip:value.clip,time:value.time,playing:value.playing};
+  const result={schema:1,id:value.id,clip:value.clip,time:value.time,playing:value.playing};if(value.eventCursor!==undefined){if(!Number.isSafeInteger(value.eventCursor)||value.eventCursor<0)throw new Error('Invalid native event checkpoint');result.eventCursor=value.eventCursor;}return result;
 }
 function resolvePath(group,root,path){
   let node=group.transforms.get(root);
@@ -23,7 +24,8 @@ export function compileNativeVectorCurve(curve){
 export class NativeAnimation {
   constructor(group,source,clip){
     this.source=source;this.clip=clip;this.time=0;this.playing=Boolean(source.data.m_PlayAutomatically);this.group=group;
-    const data=clip?.data;if(!data?.m_Legacy||data.m_Compressed||(data.m_Events||[]).length||['m_RotationCurves','m_CompressedRotationCurves','m_PPtrCurves'].some(key=>data[key]?.length))throw new Error('Native animation channels or events are not supported yet');
+    const data=clip?.data;if(!data?.m_Legacy||data.m_Compressed||['m_RotationCurves','m_CompressedRotationCurves','m_PPtrCurves'].some(key=>data[key]?.length))throw new Error('Native animation channels or events are not supported yet');
+    if(data.m_Events?.length&&!group.nativeEventHandlers?.has(String(source.data.m_GameObject.m_PathID)))throw new Error('Native animation events are not supported yet');
     this.wrap=data.m_WrapMode||source.data.m_WrapMode;if(this.wrap!==2)throw new Error('Native animation wrap mode is not supported yet');
     this.duration=0;
     this.channels=(data.m_FloatCurves||[]).map(row=>{
@@ -43,8 +45,9 @@ export class NativeAnimation {
       for(let component=0;component<3;component++)if(kind!=='rotation'||component===2){const key='xyz'[component],data=target.data;if(!Number.isFinite((kind==='scale'?data.m_LocalScale:data.m_LocalPosition)?.[key]))throw new Error('Native animated transform is unavailable');const offset=kind==='localPosition'&&component<2&&data.m_AnchoredPosition?data.m_LocalPosition[key]-data.m_AnchoredPosition[key]:null;if(offset!==null&&!Number.isFinite(offset))throw new Error('Native anchored position offset is unavailable');this.channels.push({target,key,transform:target.id,kind,sample:samples[component],offset});}
     }
     if(!this.channels.length||!Number.isFinite(this.duration)||this.duration<=0)throw new Error('Invalid native animation duration');
+    if(data.m_Events?.length)this.events=new NativeEventTimeline(data.m_Events,this.duration,true,group.nativeEventHandlers.get(String(source.data.m_GameObject.m_PathID)));
   }
-  advance(delta){if(typeof delta!=='number'||!Number.isFinite(delta)||delta<0||!Number.isFinite(this.time+delta))throw new Error('Invalid native animation delta');if(this.playing)this.time=Math.round((this.time+delta)*1e12)/1e12;this.apply();}
+  advance(delta){if(typeof delta!=='number'||!Number.isFinite(delta)||delta<0||!Number.isFinite(this.time+delta))throw new Error('Invalid native animation delta');const playing=this.playing,time=playing?Math.round((this.time+delta)*1e12)/1e12:this.time;if(playing&&delta>0)this.events?.range(time);this.time=time;this.apply();if(playing&&delta>0)this.events?.advance(this.time,()=>this.playing&&(!this.group.isActiveTransform||this.group.isActiveTransform(this.group.transforms.get(String(this.source.data.m_GameObject.m_PathID))?.id)));}
   apply(){const time=this.time%this.duration,values=this.channels.map(channel=>channel.sample(time));if(values.some(value=>!Number.isFinite(value)))throw new Error('Native animation produced a nonfinite value');for(let i=0;i<this.channels.length;i++){const channel=this.channels[i],value=values[i],data=channel.target.data;
     if(channel.kind==='color')channel.target.color[channel.key]=value;
     else if(channel.kind==='textSpacing')channel.target.spacing[channel.key]=value;
@@ -55,8 +58,9 @@ export class NativeAnimation {
     else if(channel.kind==='active')data.m_IsActive=value>=.5;
     else if(channel.kind==='canvasAlpha')data.m_Alpha=value;
   }}
-  snapshot(){return {schema:1,id:this.source.id,clip:this.clip.id,time:this.time,playing:this.playing};}
-  restore(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');this.time=value.time;this.playing=value.playing;this.apply();}
+  snapshot(){return {schema:1,id:this.source.id,clip:this.clip.id,time:this.time,playing:this.playing,...(this.events?{eventCursor:this.events.cursor}:{})};}
+  check(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');if(this.events)this.events.check(value.eventCursor??(value.time===0?0:NaN),value.time);else if(value.eventCursor!==undefined)throw new Error('Native event checkpoint does not match asset');return value;}
+  restore(value){value=this.check(value);const previous=this.snapshot();this.time=value.time;this.playing=value.playing;try{this.apply();}catch(error){this.time=previous.time;this.playing=previous.playing;throw error;}if(this.events)this.events.restore(value.eventCursor??0,value.time);}
 }
 
 export function createNativeVisuals(group,base,manager,assetBase=base){
@@ -76,7 +80,7 @@ export function createNativeVisuals(group,base,manager,assetBase=base){
 export function preflightNativeAnimations(group,rows){
   if(rows===undefined)return;
   const models=(group.nativeAnimations||[]).filter(row=>row.model),seen=new Set();if(rows.length!==models.length)throw new Error('Native animation count does not match asset');
-  for(const row of rows){validateNativeAnimation(row);const model=models.find(layer=>layer.source.id===row.id)?.model;if(seen.has(row.id)||!model||model.clip.id!==row.clip)throw new Error('Native animation source does not match checkpoint');seen.add(row.id);}
+  for(const row of rows){validateNativeAnimation(row);const model=models.find(layer=>layer.source.id===row.id)?.model;if(seen.has(row.id)||!model||model.clip.id!==row.clip)throw new Error('Native animation source does not match checkpoint');if(model.check)model.check(row);else if(row.eventCursor!==undefined)throw new Error('Native event checkpoint does not match asset');seen.add(row.id);}
 }
 export function viewportDecorationMatrix(view,scaler){
   if(scaler?.m_UiScaleMode!==1||scaler.m_ScreenMatchMode!==1||![view.width,view.height,scaler.m_ReferenceResolution?.x,scaler.m_ReferenceResolution?.y].every(value=>Number.isFinite(value)&&value>0))throw new Error('Unsupported viewport decoration scale');

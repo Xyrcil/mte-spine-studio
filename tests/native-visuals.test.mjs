@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds,compileNativeVectorCurve} from '../src/engine/native-visuals.js';
+import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds,compileNativeVectorCurve,NativeAnimation} from '../src/engine/native-visuals.js';
 
 test('trimmed sprite content preserves source padding, pivot and rounded canvas dimensions',()=>{
   const sprite={rect:{width:256,height:256},contentRect:{x:4,y:24,width:243,height:205}};
@@ -42,6 +42,9 @@ test('native checkpoints restore independently and reject source mismatches befo
 });
 test('unsupported native events remain explicit and do not expose partially rendered images',()=>{
   const source=fixture();source.visualAnimations[1].data.m_Events=[{time:0,functionName:'PlaySpine'}];const {group,urls}=load(source);assert.match(group.nativeAnimations[0].reason,/events/);assert.deepEqual(urls,[]);assert.equal(group.nativeImages[0].used,false);
+});
+test('native receiver events preserve their cursor across restore and never fire on paused redraws',()=>{
+  const source=fixture(),{group}=load(source),animation=source.visualAnimations[0],clip=structuredClone(source.visualAnimations[1]),calls=[];clip.data.m_Events=[{time:0,functionName:'Start',data:'',intParameter:0,floatParameter:0,objectReferenceParameter:{m_FileID:0,m_PathID:'0'}},{time:1,functionName:'Word',data:'original',intParameter:7,floatParameter:.5,objectReferenceParameter:{m_FileID:0,m_PathID:'0'}}];group.nativeEventHandlers=new Map([['root',new Map([['Start',event=>calls.push(event)],['Word',event=>calls.push(event)]])]]);const model=new NativeAnimation(group,animation,clip);model.advance(0);assert.equal(calls.length,0);model.advance(.5);assert.equal(calls.length,1);model.advance(.6);assert.equal(calls.length,2);assert.equal(calls[1].data,'original');assert.equal(calls[1].intParameter,7);assert.equal(calls[1].floatParameter,.5);const saved=model.snapshot();assert.equal(saved.eventCursor,2);model.restore(saved);model.advance(0);assert.equal(calls.length,2);model.advance(1);assert.equal(calls.length,3);assert.equal(calls[2].occurrence,2);const before=model.snapshot();assert.throws(()=>model.restore({...saved,eventCursor:99}),/checkpoint/);assert.deepEqual(model.snapshot(),before);assert.throws(()=>model.restore({...saved,eventCursor:undefined}),/checkpoint/);assert.throws(()=>model.advance(30000),/range/);assert.deepEqual(model.snapshot(),before);
 });
 test('native vector, CanvasGroup and active channels restore without mutating catalogue data',()=>{
   const source=fixture(),child=source.hierarchy.find(row=>row.id==='childT');Object.assign(child.data,{m_LocalScale:{x:1,y:1,z:1},m_LocalPosition:{x:0,y:10,z:0},m_AnchoredPosition:{x:0,y:0},m_Father:{m_PathID:'rootT'}});

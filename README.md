@@ -162,6 +162,12 @@ than catching up multiple letters. Checkpoints retain count, progress and the ne
 wait; scene restore and independent export rebuild their derived letters without
 copying game text into scene files. The complete skill display remains unavailable
 until its event receiver and dynamic artwork are connected.
+Native Legacy event timelines now dispatch only through explicit, scene-local
+receiver maps. They retain source parameters, same-time ordering and loop-boundary
+events. Checkpoints keep the next event cursor; restoring a pose or drawing a
+paused frame does not replay consumed callbacks. Unresolved functions and external
+object parameters keep the clip unavailable. This infrastructure does not yet
+enable the complete skill receiver or its non-looping lifecycle.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser
