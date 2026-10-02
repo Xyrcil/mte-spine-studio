@@ -145,14 +145,23 @@ Unity Text now has a scene-local browser renderer using its resolved original
 font, authored face metrics, rounded glyph advances and alignment. Legacy color
 and text-spacing curves can drive those fields and restore their clip times.
 Unsupported markup, sizing and layout remain explicit. Text fields stay disabled
-when their complete native clip cannot play; the skill display's role assignment,
-generated English letter rows and event lifecycle remain pending. Browser glyph
+when their complete native clip cannot play; the skill display's role assignment
+and event lifecycle remain pending. Browser glyph
 rasterization still needs comparison with the original client. The English
 template's vertex-gradient renderer applies the original Color32 colors to
 each glyph independently, including horizontal/vertical direction and the
 source override of the graphic tint. Glyph textures are isolated so overlapping
 letters do not duplicate their neighbours. Browser glyph bounds and sampling
 still require original-client comparison; this does not enable the skill events.
+Paired English letter rows now resolve the original ItemGen templates, horizontal
+layout, preferred-width fitter and ignored foreground row. They reuse the first
+template, create scene-local copies, and keep the gradient row above the dark row.
+The word coroutine preserves UTF-16 character positions, half/full-opacity steps
+and the source 0.33-second divided wait, advancing once per eligible frame rather
+than catching up multiple letters. Checkpoints retain count, progress and the next
+wait; scene restore and independent export rebuild their derived letters without
+copying game text into scene files. The complete skill display remains unavailable
+until its event receiver and dynamic artwork are connected.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser

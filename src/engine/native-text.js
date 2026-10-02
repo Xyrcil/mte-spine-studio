@@ -22,6 +22,9 @@ export function layoutNativeText(text,measure,font,size,pivot,spacing={x:0,y:0})
 
 export class NativeTextLayer {
   constructor(stage,group){this.stage=stage;this.group=group;this.fonts=new Map();this.slots=[];this.disposed=false;}
+  createSlot(source,font,node,modifier,gradient){
+    const canvas=document.createElement('canvas'),context=canvas.getContext('2d'),slot={source,font,canvas,context,node,text:source.data.m_Text,color:{...source.data.m_Color},spacing:{x:modifier?.data.spacing_x||0,y:modifier?.data.spacing_y||0},modifier,gradient,used:false,texture:null,glyphTextures:new Map(),key:''};if(gradient)nativeGradientVertexColors(gradient.data);context.font=`${source.data.m_FontData.m_FontSize}px "${font.family}"`;layoutNativeText(slot.text,c=>context.measureText(c).width,{settings:source.data.m_FontData,metrics:font.source.metrics},node.data.m_SizeDelta,node.data.m_Pivot,slot.spacing);return slot;
+  }
   async initialize(base,signal){
     try{
       for(const source of this.group.presentation.nativeFontAssets||[]){
@@ -30,9 +33,9 @@ export class NativeTextLayer {
       }
       for(const source of this.group.presentation.nativeText||[]){
         const font=this.fonts.get(source.fontReference?.serializedFile+'/'+source.fontReference?.assetId);if(!font)throw new Error('Original native text font reference is unavailable; refresh the resource pack');
-        const canvas=document.createElement('canvas'),context=canvas.getContext('2d'),modifier=this.group.presentation.nativeBehaviours?.find(row=>row.class==='TextSpacing'&&row.gameObject===source.gameObject),node=this.group.nodes.get(source.transform);
+        const modifier=this.group.presentation.nativeBehaviours?.find(row=>row.class==='TextSpacing'&&row.gameObject===source.gameObject),node=this.group.nodes.get(source.transform);
         if(!node||source.data.m_Material?.m_PathID!=='0'&&source.data.m_Material?.m_PathID!==0)throw new Error('Native text material or transform is unsupported');
-        const gradient=this.group.presentation.nativeBehaviours?.find(row=>row.class==='GraphicsGradientColor'&&row.gameObject===source.gameObject&&row.data.m_Enabled!==0&&row.data.m_Enabled!==false),slot={source,font,canvas,context,node,text:source.data.m_Text,color:{...source.data.m_Color},spacing:{x:modifier?.data.spacing_x||0,y:modifier?.data.spacing_y||0},modifier,gradient,used:false,texture:null,glyphTextures:new Map(),key:''};if(gradient)nativeGradientVertexColors(gradient.data);context.font=`${source.data.m_FontData.m_FontSize}px "${font.family}"`;layoutNativeText(slot.text,c=>context.measureText(c).width,{settings:source.data.m_FontData,metrics:font.source.metrics},node.data.m_SizeDelta,node.data.m_Pivot,slot.spacing);this.slots.push(slot);
+        const gradient=this.group.presentation.nativeBehaviours?.find(row=>row.class==='GraphicsGradientColor'&&row.gameObject===source.gameObject&&row.data.m_Enabled!==0&&row.data.m_Enabled!==false);this.slots.push(this.createSlot(source,font,node,modifier,gradient));
       }
     }catch(error){this.reason=error.message;this.dispose();this.slots=[];if(error.name==='AbortError')throw error;}
   }
