@@ -56,8 +56,12 @@ dense and constant channels with their original binding order and component
 indices. Object-reference channels remain unsupported. Extracted channels are
 sampled without resampling their polynomial segments. The native scene renderer
 supports packed image color, anchored position, scale, planar rotation and
-object visibility channels, including saved playback positions. Animator
-controller transitions and hot spring dialogue decoration routing remain pending.
+object visibility channels, including saved playback positions. Hot spring
+dialogue selects the original level-specific decoration variant and retains
+its name, start time and duration. Early Continue clicks advance the source
+dialogue cursor without interrupting the currently playing voice or decoration
+timer; Close remains immediate. Animator controller transitions and the
+decoration's viewport composition remain pending.
 
 Particle extraction retains source modules, render settings, material
 parameters, shared shader/texture dependencies and

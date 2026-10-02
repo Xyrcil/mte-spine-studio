@@ -21,6 +21,22 @@ test('hot spring state validation rejects foreign roles, voices and invalid leve
   const {root}=focusFixture(),saved=root.snapshot();assert.deepEqual(validateHotSpringState(saved),saved);
   assert.throws(()=>root.restore({...saved,phase:'focusing'}),/role/);assert.throws(()=>root.restore({...saved,roleId:'other'}),/role/);assert.throws(()=>root.restore({...saved,roleId:'role',voiceId:'other'}),/voice/);assert.throws(()=>validateHotSpringState({...saved,levels:{role:0}}),/level/);assert.throws(()=>validateHotSpringState({...saved,random:0}),/random/);
 });
+
+test('source decoration variants and early Continue behavior replay without interrupting speech',()=>{
+  const {root,events}=focusFixture();root.house.dialogueAnimations=[{name:'ani_love_1',clip:'clip',duration:1.0833333730697632}];root.click(root.hotspots[0]);root.advance(1);
+  assert.deepEqual(root.value.dialogueAnimation,{name:'ani_love_1',start:1,duration:1.0833333730697632});const saved=root.snapshot(),continueHit=root.hotspots.find(hit=>hit.id==='continue');
+  assert.equal(root.click(continueHit).animation,'advance-dialogue-pending');assert.equal(root.value.phase,'dialogue');assert.equal(root.value.voiceId,'');assert.equal(events.filter(event=>event.type==='voice-stop-request').length,0);
+  root.advance(1.1);assert.equal(root.click(continueHit).animation,'next-conversation');assert.equal(events.filter(event=>event.type==='voice-request').length,2);assert.equal(root.value.phase,'dialogue');const final=root.snapshot();root.restore(saved);root.click(continueHit);root.advance(1.1);root.click(continueHit);assert.deepEqual(root.snapshot(),final);
+  root.click(root.hotspots.find(hit=>hit.id==='close'));assert.equal(root.value.phase,'returning');assert.equal(root.value.dialogueAnimation,null);assert.throws(()=>root.restore({...saved,dialogueAnimation:{...saved.dialogueAnimation,duration:99}}),/animation/);
+});
+
+test('fractional focus ticks cannot create an animation checkpoint in the future',()=>{
+  const {root}=focusFixture();root.house.dialogueAnimations=[{name:'ani_love_1',clip:'clip',duration:1}];root.click(root.hotspots[0]);for(let i=0;i<120;i++)root.advance(1/120);const saved=root.snapshot();assert.equal(saved.phase,'dialogue');assert.ok(saved.dialogueAnimation.start<=saved.clock);assert.deepEqual(root.check(saved),saved);root.restore(saved);
+});
+
+test('every source decoration variant can be selected and late focus samples retain the true start',()=>{
+  for(const level of [1,2,3,4,5]){const {root}=focusFixture(),count=level===3?2:level>=4?3:1;root.roles[0].levels=[{level,voiceIds:['11']}];root.value.levels.role=level;root.house.dialogueAnimations=Array.from({length:count},(_,i)=>({name:`ani_love_${level}${count>1?'_'+(i+1):''}`,clip:String(i),duration:1}));const seen=new Set();for(let seed=1;seed<=1000;seed++){root.reset();root.value.levels.role=level;root.value.random=seed;root.click(root.hotspots[0]);root.advance(1.3);assert.equal(root.value.dialogueAnimation.start,1);seen.add(root.value.dialogueAnimation.name);}assert.equal(seen.size,count);}
+});
 test('hot spring houses select their own hierarchy without mutating the source bundle',()=>{
   const go=(id,name,active=true)=>({id,type:'GameObject',data:{m_Name:name,m_IsActive:active}}),tf=(id,go,children=[])=>({id,type:'RectTransform',data:{m_GameObject:{m_PathID:go},m_Children:children.map(m_PathID=>({m_PathID}))}});
   const source={id:'onsen',path:'assets',hierarchy:[go('a','1'),tf('ta','a',['tr']),go('r','role',false),tf('tr','r'),go('b','2'),tf('tb','b')],instances:[{id:'role',transform:'tr'},{id:'other',transform:'tb'}],hotspots:[],controllers:[],images:[{transform:'ta'},{transform:'tb'}]},before=structuredClone(source);
