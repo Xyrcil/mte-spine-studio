@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {expandHotSpringPresentations,HotSpringRoot,validateHotSpringState} from '../src/engine/hot-spring.js';
+import {expandHotSpringPresentations,HotSpringRoot,validateHotSpringState,hotSpringAnimatorStates} from '../src/engine/hot-spring.js';
 import {unityTransform,multiply,objectTransform,point} from '../src/engine/geometry.js';
 function focusFixture(){
   const events=[],transform={id:'root',data:{m_LocalPosition:{x:0,y:0},m_LocalScale:{x:1,y:1}}},roleTransform={id:'role-transform',data:{m_LocalPosition:{x:100,y:200},m_LocalScale:{x:1,y:1},m_SizeDelta:{x:60,y:80},m_Pivot:{x:.25,y:.75}}},role={id:'role',focus:{position:[-56,-163],zoom:1.62},levels:[{level:1,voiceIds:['11','12']}]};
@@ -36,6 +36,22 @@ test('fractional focus ticks cannot create an animation checkpoint in the future
 
 test('every source decoration variant can be selected and late focus samples retain the true start',()=>{
   for(const level of [1,2,3,4,5]){const {root}=focusFixture(),count=level===3?2:level>=4?3:1;root.roles[0].levels=[{level,voiceIds:['11']}];root.value.levels.role=level;root.house.dialogueAnimations=Array.from({length:count},(_,i)=>({name:`ani_love_${level}${count>1?'_'+(i+1):''}`,clip:String(i),duration:1}));const seen=new Set();for(let seed=1;seed<=1000;seed++){root.reset();root.value.levels.role=level;root.value.random=seed;root.click(root.hotspots[0]);root.advance(1.3);assert.equal(root.value.dialogueAnimation.start,1);seen.add(root.value.dialogueAnimation.name);}assert.equal(seen.size,count);}
+});
+
+test('source Animator state names bind referenced clips rather than similarly named files',()=>{
+  const state={m_NameID:1,m_BlendTreeConstantIndexArray:[0],m_BlendTreeConstantArray:[{data:{m_NodeArray:[{data:{m_ClipID:0,m_ChildIndices:[]}}]}}],m_TransitionConstantArray:[],m_WriteDefaultValues:true,m_Speed:2,m_Loop:false};
+  const machine={m_AnyStateTransitionConstantArray:[],m_StateConstantArray:[{data:state}]};
+  const controller={id:'controller',type:'AnimatorController',data:{m_TOS:[[1,'ani_love_1']],m_AnimationClips:[{m_FileID:0,m_PathID:'actual-clip'}],m_Controller:{m_LayerArray:[{data:{m_StateMachineIndex:0}}],m_StateMachineArray:[{data:machine}]}}};
+  const clip={id:'actual-clip',type:'AnimationClip',data:{m_Name:'different-clip-name',packedCurves:{start:0,stop:2}}},presentation={visualAnimations:[controller,clip]},source={data:{m_Controller:{m_FileID:0,m_PathID:'controller'}}},before=structuredClone(presentation);
+  assert.deepEqual(hotSpringAnimatorStates(presentation,source),[{name:'ani_love_1',clip:'actual-clip',speed:2,loop:false,duration:1}]);assert.deepEqual(presentation,before);
+  state.m_TransitionConstantArray=[{data:{m_DestinationState:0}}];assert.throws(()=>hotSpringAnimatorStates(presentation,source),/unsupported/);state.m_TransitionConstantArray=[];controller.data.m_AnimationClips[0].m_PathID='missing';assert.throws(()=>hotSpringAnimatorStates(presentation,source),/unavailable/);
+});
+
+test('all original love states reference direct nontransitioning clips with source default resets',t=>{
+  if(!fs.existsSync('public/assets/presentations.json')){t.skip('Local interface resources are not installed');return;}
+  const presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations,library=JSON.parse(fs.readFileSync('public/assets/library.json')),houses=expandHotSpringPresentations(presentations,library.hotSpringHouses,library.hotSpringRoles).filter(row=>row.hotSpringHouse),ui=presentations.find(row=>row.id==='UI/Prefab/Onsen');
+  if(!ui){t.skip('Local interface resources are not installed');return;}
+  for(const house of houses){assert.equal(house.hotSpringHouse.decorationError,undefined);const states=house.hotSpringHouse.decoration.states;assert.equal(states.length,10);for(const state of states){assert.equal(state.speed,1);assert.equal(state.loop,false);assert.equal(ui.visualAnimations.find(row=>row.id===state.clip).data.m_Name,state.name);}}
 });
 test('hot spring houses select their own hierarchy without mutating the source bundle',()=>{
   const go=(id,name,active=true)=>({id,type:'GameObject',data:{m_Name:name,m_IsActive:active}}),tf=(id,go,children=[])=>({id,type:'RectTransform',data:{m_GameObject:{m_PathID:go},m_Children:children.map(m_PathID=>({m_PathID}))}});

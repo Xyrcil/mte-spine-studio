@@ -64,6 +64,10 @@ timer; Close remains immediate. The recovered decoration hierarchy and heart
 sprites render above the scene using the source 1920 × 1080 Expand canvas
 scaling. Export crops preserve that captured viewport. Decoration poses derive
 from the dialogue checkpoint and reset source defaults before sampling.
+Decoration state names resolve through the original Animator controller's clip
+references, speed and loop settings. These ten selected states have no outgoing
+transitions; their source default-value resets are retained. Unsupported blend
+trees, parameter-driven playback or transitions remain marked unavailable.
 The original dialogue panel layout and general Animator transitions remain
 pending; original-client visual comparison is still needed.
 

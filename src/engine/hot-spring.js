@@ -1,12 +1,29 @@
 import {multiply,objectTransform,inversePoint} from './geometry.js';
 import {PackedAnimation} from './packed-animation.js';
 
+export function hotSpringAnimatorStates(presentation,source){
+  const pointer=source.data.m_Controller,controller=presentation.visualAnimations.find(row=>row.type==='AnimatorController'&&pointer?.m_FileID===0&&row.id===String(pointer.m_PathID));
+  if(!controller)throw new Error('Hot spring Animator controller is unavailable');
+  const data=controller.data,names=new Map(data.m_TOS),layers=data.m_Controller.m_LayerArray;
+  if(layers.length!==1)throw new Error('Hot spring Animator layers are unsupported');
+  const machine=data.m_Controller.m_StateMachineArray[layers[0].data.m_StateMachineIndex]?.data;
+  if(!machine||machine.m_AnyStateTransitionConstantArray.length)throw new Error('Hot spring Animator transitions are unsupported');
+  return machine.m_StateConstantArray.flatMap(row=>{
+    const state=row.data,name=names.get(state.m_NameID);if(!/^ani_love_[1-5](?:_[1-3])?$/.test(name))return [];
+    const trees=state.m_BlendTreeConstantArray,nodes=trees?.[0]?.data.m_NodeArray,node=nodes?.[0]?.data;
+    if(state.m_BlendTreeConstantIndexArray?.length!==1||state.m_BlendTreeConstantIndexArray[0]!==0||trees?.length!==1||nodes?.length!==1||node.m_ChildIndices.length||state.m_TransitionConstantArray.length||!state.m_WriteDefaultValues||state.m_SpeedParamID||state.m_TimeParamID||state.m_MirrorParamID||state.m_CycleOffsetParamID||state.m_Mirror||state.m_CycleOffset||node.m_CycleOffset||node.m_Mirror||typeof state.m_Speed!=='number'||!Number.isFinite(state.m_Speed)||state.m_Speed<=0)throw new Error(`Hot spring Animator state is unsupported: ${name}`);
+    const reference=data.m_AnimationClips[node.m_ClipID],clip=presentation.visualAnimations.find(row=>row.type==='AnimationClip'&&reference?.m_FileID===0&&row.id===String(reference.m_PathID)),curves=clip?.data.packedCurves;
+    if(!curves)throw new Error(`Hot spring Animator clip is unavailable: ${name}`);
+    return [{name,clip:clip.id,speed:state.m_Speed,loop:Boolean(state.m_Loop),duration:(curves.stop-curves.start)/state.m_Speed}];
+  });
+}
+
 export function expandHotSpringPresentations(presentations,houses=[],roles=[]){
   const result=[...presentations];
   const dialogueSource=presentations.find(row=>row.id==='UI/Prefab/Onsen');
-  const dialogueAnimations=(dialogueSource?.visualAnimations||[]).filter(row=>row.type==='AnimationClip'&&/^ani_love_[1-5](?:_[1-3])?$/.test(row.data.m_Name)&&row.data.packedCurves).map(row=>({name:row.data.m_Name,clip:row.id,duration:row.data.packedCurves.stop-row.data.packedCurves.start}));
+  let dialogueAnimations=(dialogueSource?.visualAnimations||[]).filter(row=>row.type==='AnimationClip'&&/^ani_love_[1-5](?:_[1-3])?$/.test(row.data.m_Name)&&row.data.packedCurves).map(row=>({name:row.data.m_Name,clip:row.id,duration:row.data.packedCurves.stop-row.data.packedCurves.start}));
   const scaler=presentations.find(row=>row.id==='UI/Prefab/UIRoot')?.canvasScalers?.find(row=>row.m_UiScaleMode===1&&row.m_ScreenMatchMode===1);
-  let decoration;
+  let decoration,decorationError;
   if(dialogueSource&&scaler){
     const nodes=new Map(dialogueSource.hierarchy.map(node=>[node.id,node])),transforms=dialogueSource.hierarchy.filter(node=>node.type.includes('Transform'));
     const main=dialogueSource.hierarchy.find(node=>node.type==='GameObject'&&node.data.m_Name==='OnsenMainView');
@@ -14,7 +31,7 @@ export function expandHotSpringPresentations(presentations,houses=[],roles=[]){
     const root=transforms.find(node=>nodes.get(String(node.data.m_GameObject?.m_PathID))?.data.m_Name==='OnsenLove'&&withinMain(node));
     if(root){const selected=new Set();const visit=node=>{selected.add(node.id);selected.add(String(node.data.m_GameObject.m_PathID));for(const child of node.data.m_Children||[])visit(nodes.get(String(child.m_PathID)));};visit(root);
       const source=dialogueSource.visualAnimations.find(node=>node.type==='Animator'&&String(node.data.m_GameObject.m_PathID)===String(root.data.m_GameObject.m_PathID));
-      if(source)decoration={rootTransform:root.id,source,scaler:structuredClone(scaler),hierarchy:structuredClone(dialogueSource.hierarchy.filter(node=>selected.has(node.id))),clips:dialogueSource.visualAnimations.filter(node=>node.type==='AnimationClip'&&dialogueAnimations.some(animation=>animation.clip===node.id)),images:dialogueSource.images.filter(image=>selected.has(image.transform)&&image.sprite?.path).map(image=>({...image,viewportDecoration:true,assetPath:`${dialogueSource.path}/${image.sprite.path}`}))};
+      if(source)try{const states=hotSpringAnimatorStates(dialogueSource,source);dialogueAnimations=states;decoration={rootTransform:root.id,source,states,scaler:structuredClone(scaler),hierarchy:structuredClone(dialogueSource.hierarchy.filter(node=>selected.has(node.id))),clips:dialogueSource.visualAnimations.filter(node=>node.type==='AnimationClip'&&states.some(animation=>animation.clip===node.id)),images:dialogueSource.images.filter(image=>selected.has(image.transform)&&image.sprite?.path).map(image=>({...image,viewportDecoration:true,assetPath:`${dialogueSource.path}/${image.sprite.path}`}))};}catch(error){decorationError=error.message;}
     }
   }
   for(const house of houses){
@@ -29,7 +46,7 @@ export function expandHotSpringPresentations(presentations,houses=[],roles=[]){
     for(const node of hierarchy)if(node.type==='GameObject'&&house.roleIds.includes(node.data.m_Name))node.data.m_IsActive=true;
     const animations=(source.visualAnimations||[]).filter(node=>node.type==='Animation'&&gameObjects.has(String(node.data.m_GameObject?.m_PathID))),clips=new Set();
     for(const node of animations)for(const pointer of [node.data.m_Animation,...(node.data.m_Animations||[])])if(pointer)clips.add(String(pointer.m_PathID));
-    result.push({...source,id:`${source.id}/${house.id}`,resourceBundle:source.id,hotSpringHouse:{...structuredClone(house),rootTransform:rootTransform.id,dialogueAnimations:structuredClone(dialogueAnimations),...(decoration?{decoration:structuredClone(decoration)}:{}),roles:structuredClone(house.roleIds.map(id=>roles.find(role=>role.id===id)).filter(Boolean))},standalone:false,hierarchy,
+    result.push({...source,id:`${source.id}/${house.id}`,resourceBundle:source.id,hotSpringHouse:{...structuredClone(house),rootTransform:rootTransform.id,dialogueAnimations:structuredClone(dialogueAnimations),...(decoration?{decoration:structuredClone(decoration)}:{}),...(decorationError?{decorationError}:{}),roles:structuredClone(house.roleIds.map(id=>roles.find(role=>role.id===id)).filter(Boolean))},standalone:false,hierarchy,
       instances:source.instances.filter(row=>selected.has(row.transform)),hotspots:source.hotspots.filter(row=>selected.has(row.transform)),controllers:source.controllers.filter(row=>gameObjects.has(row.gameObject)),
       effects:(source.effects||[]).filter(row=>selected.has(row.transform)),images:[...(source.images||[]).filter(row=>selected.has(row.transform)),...(decoration?.images||[])],canvasGroups:(source.canvasGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID))),
       visualAnimations:[...animations,...(source.visualAnimations||[]).filter(node=>node.type==='AnimationClip'&&clips.has(node.id))],sortingGroups:(source.sortingGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID)))});
@@ -58,8 +75,8 @@ export class HotSpringRoot {
   constructor(stage,group){
     this.stage=stage;this.group=group;this.house=group.presentation.hotSpringHouse;this.source={id:'hot-spring',data:{}};
     this.roles=this.house.roles;this.transform=group.nodes.get(this.house.rootTransform);
-    this.decorationModels=new Map();const decoration=this.house.decoration;
-    if(decoration){try{for(const clip of decoration.clips)this.decorationModels.set(clip.data.m_Name,new PackedAnimation(group,decoration.source,clip));this.decorationDefaults=decoration.hierarchy.map(node=>({id:node.id,data:structuredClone(group.nodes.get(node.id).data)}));this.decorationColors=group.nativeImages.filter(image=>image.source.viewportDecoration).map(image=>({image,color:{...image.color}}));}catch(error){this.decorationReason=error.message;this.decorationModels.clear();}}
+    this.decorationModels=new Map();this.decorationReason=this.house.decorationError;const decoration=this.house.decoration;
+    if(decoration){try{for(const state of decoration.states){const clip=decoration.clips.find(clip=>clip.id===state.clip),model=new PackedAnimation(group,decoration.source,clip);model.loop=state.loop;model.playbackSpeed=state.speed;this.decorationModels.set(state.name,model);}this.decorationDefaults=decoration.hierarchy.map(node=>({id:node.id,data:structuredClone(group.nodes.get(node.id).data)}));this.decorationColors=group.nativeImages.filter(image=>image.source.viewportDecoration).map(image=>({image,color:{...image.color}}));}catch(error){this.decorationReason=error.message;this.decorationModels.clear();}}
     this.hotspots=this.roles.flatMap(role=>{const go=[...group.nodes.values()].find(node=>node.type==='GameObject'&&node.data.m_Name===role.id),tf=group.transforms.get(go?.id);return tf?[{id:role.id,name:role.id,role,transform:tf.id}]:[];});
     this.hotspots.push({id:'continue',name:'Continue conversation',transform:this.transform.id},{id:'close',name:'Close conversation',transform:this.transform.id});this.reset();
   }
@@ -72,7 +89,7 @@ export class HotSpringRoot {
   restore(value){this.value=this.check(value);this.apply();}
   pose(){const v=this.value,t=['focusing','returning'].includes(v.phase)?Math.min(1,Math.max(0,v.clock-v.start)):1,ease=1-(1-t)**2;return Object.fromEntries(['x','y','scale'].map(key=>[key,v.from[key]+(v.target[key]-v.from[key])*ease]));}
   apply(){const pose=this.pose(),data=this.transform.data;data.m_LocalPosition={...data.m_LocalPosition,x:pose.x,y:pose.y};data.m_AnchoredPosition={x:pose.x,y:pose.y};data.m_LocalScale={...data.m_LocalScale,x:pose.scale,y:pose.scale};
-    const decoration=this.house.decoration;if(!decoration)return;for(const row of this.decorationDefaults||[])this.group.nodes.get(row.id).data=structuredClone(row.data);for(const row of this.decorationColors||[])row.image.color={...row.color};const root=this.group.nodes.get(decoration.rootTransform),go=this.group.nodes.get(String(root.data.m_GameObject.m_PathID)),animation=this.value.dialogueAnimation,model=this.decorationModels.get(animation?.name);go.data.m_IsActive=this.value.phase==='dialogue'&&Boolean(model);if(go.data.m_IsActive){model.time=Math.max(0,this.value.clock-animation.start);model.apply();}
+    const decoration=this.house.decoration;if(!decoration)return;for(const row of this.decorationDefaults||[])this.group.nodes.get(row.id).data=structuredClone(row.data);for(const row of this.decorationColors||[])row.image.color={...row.color};const root=this.group.nodes.get(decoration.rootTransform),go=this.group.nodes.get(String(root.data.m_GameObject.m_PathID)),animation=this.value.dialogueAnimation,model=this.decorationModels.get(animation?.name);go.data.m_IsActive=this.value.phase==='dialogue'&&Boolean(model);if(go.data.m_IsActive){model.time=Math.max(0,this.value.clock-animation.start)*model.playbackSpeed;model.apply();}
   }
   emit(type,detail={}){this.stage.dispatchEvent(new CustomEvent(type,{detail:{group:this.group.id,controller:this.source.id,...detail}}));}
   hitAt(x,y){if(this.value.phase!=='idle')return null;return this.hotspots.find(hit=>{if(!hit.role||!this.group.isActiveTransform(hit.transform))return false;const data=this.group.nodes.get(hit.transform).data,p=inversePoint(multiply(objectTransform(this.group),this.group.world(hit.transform)),x,y),size=data.m_SizeDelta,pivot=data.m_Pivot;return p&&size&&pivot&&p.x>=-pivot.x*size.x&&p.x<=(1-pivot.x)*size.x&&p.y>=-pivot.y*size.y&&p.y<=(1-pivot.y)*size.y;})||null;}
