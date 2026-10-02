@@ -64,9 +64,9 @@ export class InteractionRoot {
   emit(type,detail){this.stage.dispatchEvent(new CustomEvent(type,{detail:{group:this.group.id,controller:this.source.id,...detail}}));}
   sound(name,category='a_sound_ui',lateness=0){if(name)this.emit('sound-request',{name,category,lateness});}
   play(name,track=0,loop=false,mix){
-    let count=0,duration=0;
-    for(const layer of this.layers){const animation=layer.skeleton.data.findAnimation(name);if(!animation)continue;const entry=layer.state.setAnimation(track,name,loop);if(mix!==undefined)entry.mixDuration=mix;count++;duration=animation.duration;}
-    return {count,duration};
+    let count=0,duration=0,firstDuration=0;
+    for(const layer of this.layers){const animation=layer.skeleton.data.findAnimation(name);if(!animation)continue;const entry=layer.state.setAnimation(track,name,loop);if(mix!==undefined)entry.mixDuration=mix;if(count===0)firstDuration=animation.duration;count++;duration=animation.duration;}
+    return {count,duration,firstDuration};
   }
   clear(track){if(track>0)for(const layer of this.layers)layer.state.clearTrack(track);}
   schedule(kind,delay,extra={}){this.value.tasks.push({kind,due:this.value.clock+delay,...extra});}
@@ -94,7 +94,7 @@ export class InteractionRoot {
     Object.assign(v,{playing:true,event,track,animation:name});
     const result=this.play(name,track,false,[1,2,3].includes(event)?.25:name==='animation_game'?1:undefined);
     this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});
-    if(event===8)this.schedule('approach',result.duration);
+    if(event===8)this.schedule('approach',result.firstDuration);
     this.emit('interaction-change',{hit:hit.id,event,track,animation:name});return {accepted:true,animation:name};
   }
   onEvent(layer,track,event){

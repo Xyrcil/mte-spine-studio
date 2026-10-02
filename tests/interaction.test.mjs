@@ -72,6 +72,20 @@ test('card loss resets scores and returns to the current clothing variant',()=>{
 test('paused evaluation does not execute scheduled controller actions',()=>{
   const {root}=fixture();root.value.tasks=[{kind:'card-reveal',due:0}];root.advance(0);assert.equal(root.value.tasks.length,1);assert.equal(root.value.clock,0);
 });
+test('approach timing follows the first matching skeleton in source hierarchy order',()=>{
+  const {root}=fixture();root.value.state=1;
+  for(const [index,layer] of root.layers.entries())layer.skeleton.data.findAnimation=name=>({name,duration:index===0?1.5:4});
+  const result=root.click({event:8,track:2});assert.equal(result.accepted,true);assert.equal(result.animation,'stand_down1');
+  assert.equal(root.value.tasks[0].due,1.5);root.advance(1.49);assert.equal(root.value.playing,true);
+  root.advance(.01);assert.equal(root.value.playing,false);assert.equal(root.value.isBig,true);
+  assert.ok(root.layers.every(layer=>layer.state.getCurrent(0).animation.name==='animation3_1'));
+});
+test('approach timing skips missing first-layer animations and retains zero-length source clips',()=>{
+  const {root}=fixture();root.value.state=2;root.layers[0].skeleton.data.findAnimation=name=>name==='kaoji_01'?null:{name,duration:3};
+  root.layers[1].skeleton.data.findAnimation=name=>({name,duration:0});
+  assert.equal(root.click({event:8,track:1}).accepted,true);assert.equal(root.value.tasks[0].due,0);
+  root.advance(.001);assert.equal(root.value.playing,false);assert.equal(root.value.names[8],'kaoji_02');
+});
 test('missing interaction diagnostics include unavailable initial and alternate source names',()=>{
   const {root}=fixture();root.hotspots=[{name:'first',event:100,animation:'missing'},{name:'duplicate',event:100,animation:'missing'},{name:'toggle',event:5,animation:'overlay'}];
   for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='missing'||name==='overlay_02'?null:{name,duration:2};
