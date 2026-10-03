@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile,stat,mkdtemp,rm} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
-import {chromium} from '@playwright/test';
+import {chromium,webkit} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {expectedPackPaths,PACK_CATALOGS,resourceType} from '../src/engine/resource-pack.js';
 import {selectAsset} from './select_asset.mjs';
 import {buildAssetLibrary} from '../src/asset-library.js';
 import {expandHotSpringPresentations} from '../src/engine/hot-spring.js';
+const engineOption=process.argv.indexOf('--engine'),engine=engineOption>=0?process.argv[engineOption+1]:'chromium';
+assert.ok(['chromium','firefox','webkit'].includes(engine),'Choose --engine chromium, firefox or webkit');
 const root=resolve('dist'),assets=resolve('public/assets'),catalogues=Object.fromEntries(await Promise.all(PACK_CATALOGS.map(async name=>[name,JSON.parse(await readFile(resolve(assets,name),'utf8'))])));
 const bundle='Spines/painting/3014027_spine',appearance=catalogues['library.json'].appearances.find(row=>row.bundle===bundle),voice=catalogues['library.json'].voices.find(row=>row.targetId===appearance.characterId&&row.resourceName.includes('Login'));
 const skillRole=catalogues['library.json'].skillDisplay.roles.find(row=>row.id==='3000001'),skillIds=new Set(skillRole.skillIds),skillResource=skillRole.emblemResource,skillAppearance=catalogues['library.json'].appearances.find(row=>row.portraitResource===`UI/Image/lihui/${skillRole.id}_lihui`),skillPortrait=skillAppearance?.portrait;
@@ -24,6 +27,7 @@ const paths=[...PACK_CATALOGS,...expectedPackPaths(fixture)],allowed=new Set(pat
 const server=createServer(async(request,response)=>{
   try{
     const path=decodeURIComponent(new URL(request.url,'http://localhost').pathname);
+    if(path==='/uncached-network-probe'){response.setHeader('cache-control','no-store');response.end('Network reachable');return;}
     if(path==='/fixtures/files.json'){response.setHeader('content-type','application/json');response.end(JSON.stringify(paths));return;}
     if(path.startsWith('/fixtures/')){const name=path.slice(10);if(!allowed.has(name)){response.writeHead(404).end();return;}response.setHeader('content-type',resourceType(name));response.end(fixture[name]?JSON.stringify(fixture[name]):await readFile(resolve(assets,name)));return;}
     if(!path.startsWith('/pack-check/')){response.writeHead(404).end();return;}
@@ -32,11 +36,17 @@ const server=createServer(async(request,response)=>{
   }catch{response.writeHead(404).end();}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${server.address().port}`,url=origin+'/pack-check/';
-const full=process.argv.includes('--full'),profile=full?await mkdtemp(resolve('private/pack-check-profile-')):null;
+const full=process.argv.includes('--full'),profile=full&&engine!=='firefox'?await mkdtemp(resolve('private/pack-check-profile-')):null;
 const archiveOption=process.argv.indexOf('--archive');if(archiveOption>=0&&!process.argv[archiveOption+1])throw new Error('Archive path is required');
 const fullArchive=resolve(archiveOption>=0?process.argv[archiveOption+1]:'private/mte-resources.zip');
-const browser=full?null:await chromium.launch({channel:'chrome',headless:true});
-const context=full?await chromium.launchPersistentContext(profile,{channel:'chrome',headless:true,viewport:{width:1440,height:1000}}):await browser.newContext({viewport:{width:1440,height:1000}});
+const launched=profile?null:await launchTestBrowser(engine);
+const context=profile?await ({chromium,webkit}[engine]).launchPersistentContext(profile,{...(engine==='chromium'?{channel:'chrome'}:{}),headless:true,viewport:{width:1440,height:1000}}):await launched.browser.newContext({viewport:{width:1440,height:1000}});
+async function setOffline(value){
+  if(engine!=='webkit'){await context.setOffline(value);return;}
+  // WebKit offline emulation blocks even service-worker responses (Playwright #42775).
+  if(value){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await assert.rejects(fetch(origin+'/uncached-network-probe'));}
+  else if(!server.listening)await new Promise(resolve=>server.listen(Number(new URL(origin).port),'127.0.0.1',resolve));
+}
 try{
   const page=await context.newPage(),other=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   for(const tab of [page,other]){await tab.goto(url);await tab.waitForFunction(()=>window.mtePack&&navigator.serviceWorker.controller);assert.equal(await tab.evaluate(()=>window.mteCache.ready),true);}
@@ -54,7 +64,9 @@ try{
   await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);await page.locator('#pause').click();await page.getByRole('button',{name:'Play voice',exact:true}).click();await page.waitForFunction(()=>window.mteAudio.element.currentTime>.05);await page.getByRole('button',{name:'Stop voice',exact:true}).click();
   const audioUrl=await page.evaluate(()=>window.mteAudio.base+window.mteAudio.resolve(window.mteAudio.voiceRows[0].resourceName).path);
   const range=await page.evaluate(async url=>{const full=await fetch(url).then(r=>r.arrayBuffer()),response=await fetch(url,{headers:{Range:'bytes=2-11'}});return {status:response.status,actual:[...new Uint8Array(await response.arrayBuffer())],expected:[...new Uint8Array(full).slice(2,12)]};},audioUrl);assert.equal(range.status,206);assert.deepEqual(range.actual,range.expected);
-  await page.evaluate(()=>window.mteCache.request('CLEAR'));assert.ok(await page.evaluate(()=>window.mteCache.request('PACK_STATUS')));await context.setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
+  assert.equal(await page.evaluate(async()=>{const response=await fetch(new URL('../uncached-network-probe',location.href),{cache:'no-store'});return response.status;}),200,'Network control must succeed before disconnecting');
+  await page.evaluate(()=>window.mteCache.request('CLEAR'));assert.ok(await page.evaluate(()=>window.mteCache.request('PACK_STATUS')));await setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
+  assert.equal(await page.evaluate(async()=>{try{const response=await fetch(new URL('../uncached-network-probe',location.href),{cache:'no-store'});return !response.ok;}catch{return true;}}),true,'Uncached requests must fail while disconnected');
   const networkBefore=mediaNetworkRequests;await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');for(const [key,value] of [['width','160'],['height','120'],['end','.2']])await page.locator(`#export-${key}`).fill(value);const output=await page.evaluate(async()=>{const result=await window.mteExporter.run();return {ok:Boolean(result),frames:result?.plan.frames,status:document.querySelector('#export-status').textContent};});assert.equal(output.ok,true,output.status);assert.equal(output.frames,1);assert.equal(mediaNetworkRequests,networkBefore);
   await page.getByRole('button',{name:'Gallery',exact:true}).click();
   await selectAsset(page,'Spines/ui/Onsen');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen');
@@ -70,14 +82,15 @@ try{
   await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');const skillOutput=await page.evaluate(async()=>{const output=await window.mteExporter.run();return {ok:Boolean(output),status:document.querySelector('#export-status').textContent};});assert.ok(skillOutput.ok,skillOutput.status);assert.equal(mediaNetworkRequests,networkBefore);
   await page.getByRole('button',{name:'Gallery',exact:true}).click();
   if(full){
-    await context.setOffline(false);await page.locator('#pack-zip-file').setInputFiles(fullArchive);let previous=-1;
+    console.log(engine+': Full pack storage estimate',await page.evaluate(()=>navigator.storage.estimate()));
+    await setOffline(false);await page.locator('#pack-zip-file').setInputFiles(fullArchive);let previous=-1;
     for(let elapsed=0;elapsed<900;elapsed+=5){const progress=await page.evaluate(()=>({busy:window.mtePack.busy,done:document.querySelector('#pack-progress').value,total:document.querySelector('#pack-progress').max,status:document.querySelector('#pack-status').textContent,reload:window.mteStudio.packReloadRequired}));if(progress.done!==previous){console.log('Full pack progress',progress);previous=progress.done;}if(progress.reload)break;if(!progress.busy&&elapsed>0)throw new Error(progress.status);await page.waitForTimeout(5000);}
     assert.equal(await page.evaluate(()=>window.mteStudio.packReloadRequired),true);const imported=await page.evaluate(()=>window.mteCache.request('PACK_STATUS'));assert.ok(imported.bytes>3*1024**3);
     const fullPaths=[...PACK_CATALOGS,...expectedPackPaths(catalogues)];assert.equal(imported.files,fullPaths.length);
     const stored=await page.evaluate(async paths=>{const pack=await window.mteCache.request('PACK_STATUS'),cache=await caches.open(pack.name),missing=[];for(let start=0;start<paths.length;start+=64)await Promise.all(paths.slice(start,start+64).map(async path=>{const response=await cache.match(new URL('assets/'+path,location.href).href);if(!response)missing.push(path);await response?.body?.cancel();}));return {files:pack.files,missing};},fullPaths);assert.equal(stored.files,fullPaths.length);assert.deepEqual(stored.missing,[]);
-    await context.setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);const library=catalogues['library.json'],expanded=expandHotSpringPresentations(catalogues['presentations.json'].presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);assert.equal(await page.evaluate(()=>window.mteLibrary.rows.length),buildAssetLibrary({presentations:expanded},library).length);
+    await setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);const library=catalogues['library.json'],expanded=expandHotSpringPresentations(catalogues['presentations.json'].presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);assert.equal(await page.evaluate(()=>window.mteLibrary.rows.length),buildAssetLibrary({presentations:expanded},library).length);
     for(const name of PACK_CATALOGS){const actual=await page.evaluate(async name=>(await fetch('assets/'+name)).json(),name);assert.deepEqual(actual,catalogues[name],`Imported catalogue differs: ${name}`);}
     await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#skill-role').selectOption(skillRole.id);await page.locator('#open-skill').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.skillDisplay&&!document.querySelector('#open-skill').disabled);await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));console.log('Full converted resource archive imported, matched every indexed file and catalogue, and exported a skill offline',imported);
   }
-  await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#pack-remove').click();await page.waitForFunction(()=>window.mteStudio.packReloadRequired);assert.equal(await page.evaluate(()=>window.mteCache.request('PACK_STATUS')),null);assert.deepEqual(errors,[]);console.log('Local pack checks passed: code-only host, real imported Spine/audio, native images, particle media, original fonts, skill events and offline PNG, atomic replacement, missing-file rejection, cancellation, cross-tab reload, isolated cache clearing and byte ranges',first.result,native,fonts,skill);
-}finally{await context.close();if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));if(profile)await rm(profile,{recursive:true});}
+  await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#pack-remove').click();await page.waitForFunction(()=>window.mteStudio.packReloadRequired);assert.equal(await page.evaluate(()=>window.mteCache.request('PACK_STATUS')),null);assert.deepEqual(errors,[]);console.log(engine+': Local pack checks passed: code-only host, real imported Spine/audio, native images, particle media, original fonts, skill events and offline PNG, atomic replacement, missing-file rejection, cancellation, cross-tab reload, isolated cache clearing and byte ranges',first.result,native,fonts,skill);
+}finally{await context.close();if(launched)await launched.close();await new Promise(resolve=>server.close(resolve));if(profile)await rm(profile,{recursive:true});}

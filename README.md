@@ -397,10 +397,22 @@ For a project URL such as `/mte-studio/`, build with
 preview of the production build, not the development server.
 `MTE_BASE_PATH=/pack-check/ npm run build` followed by
 `node tools/check_resource_pack.mjs` tests import against a code-only host.
+Use `--engine chromium`, `--engine firefox` or `--engine webkit` to select the
+browser engine. The 235-file real-resource fixture passes folder import,
+replacement, cancellation, cross-tab notifications, offline reload, byte ranges,
+original fonts, skill events and offline PNG export in all three engines.
+WebKit's offline-emulation failure is [tracked upstream](https://github.com/microsoft/playwright/issues/42775);
+its test stops the origin server instead and confirms uncached requests fail.
 Add `--full` after creating `private/mte-resources.zip` to test the entire local
 library in an isolated browser profile. The isolated test profile is removed after the
 test; original game files and the resource archive are retained.
+The full 17,822-file pack also passes indexed-file and catalogue matching,
+offline library reload and offline skill PNG export in Chrome, Firefox and
+WebKit with sufficient storage. This does not establish released Safari/iOS compatibility.
 Use `--archive /path/to/resources.zip` with `--full` for a different local ZIP.
+Storage quota varies by browser and profile. A low-quota or private session may
+reject the full library even when a smaller pack works. Use a regular browser
+profile with sufficient storage; a rejected import retains the previous pack.
 Pack activation checks the imported manifest in bounded batches, including file
 sizes and media types, without enumerating a multi-gigabyte cache in one request.
 Interactive rendering preserves a CPU scene checkpoint when WebGL is lost,
