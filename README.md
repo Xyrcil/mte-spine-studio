@@ -4,6 +4,13 @@ Browser tools for animated character artwork, scene composition, and export.
 An unofficial Millennium Tour Elf project for learning and reference, not
 affiliated with the game's publisher. Game assets are not distributed here.
 
+The browser exposes `window.mteHost` (version 1) with `getState()`, `getScene()`,
+`pause()`, `resume()`, `setMuted(boolean)`, `setVolume(value, channel)`, `resize()`
+and `loadScene(scene, {signal})`. Volume channels are `voice`, `effects`, `ambient`
+or `all`, with values from 0 to 1. Resize remeasures the canvas after host layout
+changes. These local JavaScript hooks do not install a desktop host or accept
+cross-origin messages. Wallpaper Engine and MacVideoWallpaper integration remains deferred.
+
 ## Development
 
 ```sh

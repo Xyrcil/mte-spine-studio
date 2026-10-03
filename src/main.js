@@ -7,6 +7,7 @@ import {createEditor} from './editor.js';
 import {createExportPanel} from './export-panel.js';
 import {createSoundPanel} from './sound-panel.js';
 import {createVoicePanel} from './voice-panel.js';
+import {createHostApi} from './host-api.js';
 import {createCachePanel} from './cache-panel.js';
 import {createSequencePanel} from './sequence-panel.js';
 import {createCanvasInput} from './canvas-input.js';
@@ -26,7 +27,7 @@ let stage;
 try{stage=new Stage(document.querySelector('#stage'));}catch(error){status.textContent=`Rendering could not start: ${error.message}. Check browser graphics support and reload.`;document.querySelector('.library').inert=true;document.querySelector('.inspector').inert=true;for(const button of document.querySelectorAll('header button'))button.disabled=true;window.mteStartupError=error.message;}
 if(stage){
 window.mteStudio = stage;
-let view = 'gallery', catalog, runtime, request, libraryData, audio;
+let view = 'gallery', catalog, runtime, request, libraryData, audio,appReady=false;
 const message = value => {status.textContent=value;};
 const closeLibrary=()=>{const open=document.body.classList.contains('library-open');document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');if(open&&matchMedia('(max-width:540px)').matches&&document.activeElement?.closest('.library'))stage.canvas.focus({preventScroll:true});};
 const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(group);window.mteSkills?.setActive(group);if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
@@ -109,6 +110,7 @@ for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=
   document.querySelector('.library').inert=view==='export';document.querySelector('.library').classList.toggle('export-disabled',view==='export');
 };
 const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,isRecording:()=>window.mteSequence.recorder.active,onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);}});
+window.mteHost=createHostApi({stage,editor,getAudio:()=>audio,getReady:()=>appReady,clearInput:()=>canvasInput.clear(),onPreferencesChange:()=>{for(const [id,value] of [['voice-volume',audio?.volume],['effect-volume',audio?.effectVolume]]){const field=document.getElementById(id);if(field)field.value=value;}}});
 document.querySelector('#notice').textContent='Click to interact in Gallery; drag objects in Studio. Drag empty space to pan, or hold Space to pan anywhere. Scroll or pinch to zoom. With the canvas focused, use arrow keys to pan, +/− to zoom, and Home to fit.';
 stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(error=>message(error.message));});
 stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
@@ -134,6 +136,6 @@ try {
   window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.busy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
   const recovered=await editor.init(catalog.presentations,runtime.entries);
-  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);
+  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);appReady=true;
 }catch(error){message(error.message);}
 }
