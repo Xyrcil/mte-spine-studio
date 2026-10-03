@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
+  const wrongTypes=await page.evaluate(async()=>{
+    const {Stage}=await import('/src/engine/stage.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const stage=new Stage(canvas,{manual:true});
+    try{
+      await stage.add(catalog.find(row=>row.id==='Spines/painting/301600901_spine'),entries);stage.paused=true;const original=stage.snapshot(),results=[];
+      for(const state of [{kind:'skill-display',ended:false},{kind:'skill-words',schema:1,count:2,clock:0,step:0,nextUpdate:0,playing:false},{kind:'bone-drag',schema:1,writing:false,pointer:null,motion:{schema:1,current:{x:0,y:0},from:{x:0,y:0},dragging:false,returning:false,elapsed:0}}]){
+        const changed=structuredClone(original);changed.objects[0].x=999;changed.objects[0].interactions[0].state=state;let reason='';try{await stage.restore(changed,catalog,entries);}catch(error){reason=error.message;}
+        results.push({kind:state.kind,reason,unchanged:JSON.stringify(stage.snapshot())===JSON.stringify(original)});
+      }
+      return results;
+    }finally{stage.dispose();}
+  });
+  for(const result of wrongTypes){assert.match(result.reason,/interaction type does not match asset/,result.kind);assert.equal(result.unchanged,true,result.kind);}
   await page.getByRole('button',{name:'Studio',exact:true}).click();
   await page.getByRole('button',{name:'Duplicate',exact:true}).click();
   await page.waitForFunction(()=>window.mteStudio.groups.length===2&&!window.mteEditor.busy);
@@ -38,5 +50,5 @@ try{
   assert.equal(await page.locator('.inspector').isVisible(),true);
   await page.getByRole('button',{name:'Controls',exact:true}).click();
   assert.equal(await page.locator('.inspector').isVisible(),false);
-  assert.deepEqual(errors,[]);console.log('Scene browser checks passed: edit, undo/redo, image, import failure, round trip and reload');
-}finally{await browser.close();}
+  assert.deepEqual(errors,[]);console.log(engine+': Scene checks passed: edit, undo/redo, image, import failure, controller type preflight, round trip and reload');
+}finally{await close();}

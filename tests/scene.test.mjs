@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateScene,History} from '../src/engine/scene.js';
 import {Stage,objectTransform} from '../src/engine/stage.js';
+import {InteractionRoot} from '../src/engine/interaction.js';
 const scene=()=>({schema:1,name:'Scene',camera:{x:0,y:0,width:10,height:10},background:'#191b20',speed:1,paused:true,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:1,y:2,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[{id:'body',active:true,tracks:[{index:0,name:'Idle',time:2,loop:true,timeScale:1}]}]}]});
 test('derived scene artwork retains its explicit appearance association',()=>{const value=scene();value.objects[0].appearanceId='skin';assert.deepEqual(validateScene(value),value);value.objects[0].appearanceId=42;assert.throws(()=>validateScene(value),/appearance ID/);});
 test('scene word checkpoints retain coroutine progress without copying source labels',()=>{const value=scene(),state={kind:'skill-words',schema:1,count:13,clock:.4,step:1,nextUpdate:.41,playing:true};value.objects[0].interactions=[{id:'skill-words',state}];assert.deepEqual(validateScene(value),value);value.objects[0].interactions[0].state={...state,text:'Do not persist source labels'};assert.equal(validateScene(value).objects[0].interactions[0].state.text,undefined);value.objects[0].interactions[0].state.step=99;assert.throws(()=>validateScene(value),/word checkpoint/);});
@@ -26,6 +27,13 @@ test('failed asset preflight leaves existing object transforms intact',async()=>
   value.objects[0].x=99;value.objects[0].layers[0].tracks[0].name='Unknown';
   await assert.rejects(stage.restore(value,[],[]),/animation unavailable/);
   assert.equal(group.x,1);assert.equal(stage.groups[0],group);assert.equal(stage.paused,false);
+});
+test('controller type preflight rejects otherwise valid foreign states without mutating the scene',async()=>{
+  for(const state of [{kind:'skill-display',ended:false},{kind:'skill-words',schema:1,count:2,clock:0,step:0,nextUpdate:0,playing:false},{kind:'bone-drag',schema:1,writing:false,pointer:null,motion:{schema:1,current:{x:0,y:0},from:{x:0,y:0},dragging:false,returning:false,elapsed:0}}]){
+    const stage=Object.create(Stage.prototype),value=scene(),root=new InteractionRoot(new EventTarget(),{transforms:new Map(),nodes:new Map(),layers:[],presentation:{hotspots:[]}},{id:'root',gameObject:'0',data:{}}),before=root.snapshot();
+    value.objects[0].layers=[];value.objects[0].interactions=[{id:'root',state}];const group={...value.objects[0],presentation:{id:'painting'},layers:[],controllers:[root]};stage.groups=[group];stage.camera={...value.camera};stage.paused=false;value.objects[0].x=999;
+    await assert.rejects(stage.restore(value,[],[]),/interaction type does not match asset/);assert.equal(group.x,1);assert.deepEqual(root.snapshot(),before);assert.equal(stage.groups[0],group);assert.equal(stage.paused,false);
+  }
 });
 test('object transforms combine rotation and mirrors',()=>{
   const m=objectTransform({x:3,y:4,scale:2,rotation:90,flipX:true,flipY:false});
