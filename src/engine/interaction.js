@@ -66,7 +66,7 @@ export class InteractionRoot {
   }
   hitAt(x,y){
     return this.hotspots.find(hit=>{
-      if(!hit.event||!this.group.isActiveTransform(hit.transform))return false;
+      if(!hit.event||hit.enabled===0||hit.enabled===false||!this.group.isActiveTransform(hit.transform))return false;
       const matrix=this.matrix(hit),local=matrix&&inversePoint(matrix,x,y);
       return local&&hit.colliders.some(collider=>colliderContains(collider,local.x,local.y));
     })||null;

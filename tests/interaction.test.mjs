@@ -11,10 +11,14 @@ function fixture(){
 test('box and polygon colliders retain offsets and include polygon edges',()=>{
   assert.equal(colliderContains({type:'BoxCollider2D',data:{m_Size:{x:2,y:4},m_Offset:{x:3,y:1}}},3,1),true);
   assert.equal(colliderContains({type:'BoxCollider2D',data:{m_Enabled:0,m_Size:{x:2,y:4}}},0,0),false);
+  assert.equal(colliderContains({type:'BoxCollider2D',data:{m_Enabled:false,m_Size:{x:2,y:4}}},0,0),false);
   const points=[{x:0,y:0},{x:2,y:0},{x:0,y:2}];assert.equal(polygonContains(points,1,0),true);assert.equal(polygonContains(points,1.5,1.5),false);
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
+test('disabled click receivers do not intercept active regions on the same object',()=>{
+  const {root,group}=fixture();group.world=()=>[1,0,0,1,0,0];group.scale=1;group.x=0;group.y=0;const collider={type:'BoxCollider2D',data:{m_Size:{x:2,y:2}}};root.hotspots=[{id:'disabled',event:100,enabled:false,colliders:[collider]},{id:'active',event:100,enabled:1,colliders:[collider]}];assert.equal(root.hitAt(0,0).id,'active');root.hotspots[0].enabled=0;assert.equal(root.hitAt(0,0).id,'active');delete root.hotspots[0].enabled;assert.equal(root.hitAt(0,0).id,'disabled');
+});
 test('controller rebinding follows explicit skeleton visibility without changing its checkpoint',()=>{
   const {root,group}=fixture();root.value.clock=4;const before=root.snapshot();group.layers.find(layer=>layer.instance.id==='front').active=false;root.rebind();assert.equal(root.primary.instance.id,'body');assert.deepEqual(root.snapshot(),before);
   group.isActiveTransform=()=>false;group.layers.find(layer=>layer.instance.id==='front').active=true;root.rebind();assert.equal(root.primary.instance.id,'front');assert.deepEqual(root.layers.map(layer=>layer.instance.id),['front','body']);

@@ -13,7 +13,7 @@ try{
   page.on('console',message=>{if(message.text().startsWith('[controller-check]'))console.log(message.text());});
   await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const bundles=await page.evaluate(async()=>{const catalog=await fetch('/assets/presentations.json').then(response=>response.json());return catalog.presentations.filter(presentation=>presentation.controllers.length).map(presentation=>presentation.id);});
-  const selected=process.argv[2]?bundles.filter(bundle=>bundle.includes(process.argv[2])):bundles;assert.ok(selected.length);
+  const patterns=process.argv.slice(2),selected=patterns.length?bundles.filter(bundle=>patterns.some(pattern=>bundle.includes(pattern))):bundles;assert.ok(selected.length);
   const results=[];
   for(const bundle of selected){
     const result=await page.evaluate(async({bundle,stateLimit,cardBranches})=>{

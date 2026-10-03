@@ -13,7 +13,7 @@ export function polygonContains(points,x,y){
   }return inside;
 }
 export function colliderContains(collider,x,y){
-  const data=collider.data;if(data.m_Enabled===0)return false;
+  const data=collider.data;if(data.m_Enabled===0||data.m_Enabled===false)return false;
   x-=data.m_Offset?.x||0;y-=data.m_Offset?.y||0;
   if(collider.type==='BoxCollider2D')return Math.abs(x)<=data.m_Size.x/2&&Math.abs(y)<=data.m_Size.y/2;
   if(collider.type==='PolygonCollider2D')return (data.m_Points?.m_Paths||[]).some(path=>polygonContains(path,x,y));

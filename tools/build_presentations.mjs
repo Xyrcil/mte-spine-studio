@@ -39,7 +39,7 @@ for (const bundle of extraction.bundles) {
       instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null,...skeletonDisplaySettings(className(node),node.data,canvasPixelsPerUnit(owner)), skin: node.data.initialSkinName,timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
     }
     if ('cur_clickEvent' in node.data) {
-      hotspots.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, class: className(node), event: node.data.cur_clickEvent, track: node.data.trackIndex, animation: node.data.ani_name, audio: node.data.audio_name, controller: idOf(node.data.ani_root), colliders: (components.get(owner) || []).filter(item => item.type.endsWith('Collider2D')).map(item => ({id: item.id, type: item.type, data: item.data})), transform: transforms.get(owner)?.id});
+      hotspots.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, class: className(node), enabled:node.data.m_Enabled, event: node.data.cur_clickEvent, track: node.data.trackIndex, animation: node.data.ani_name, audio: node.data.audio_name, controller: idOf(node.data.ani_root), colliders: (components.get(owner) || []).filter(item => item.type.endsWith('Collider2D')).map(item => ({id: item.id, type: item.type, data: item.data})), transform: transforms.get(owner)?.id});
     }
     if (node.data.OtherSoundList || node.data.OtherEffectList || 'aniState' in node.data) {
       controllers.push({id: node.id, gameObject: owner, class: className(node), data: node.data});

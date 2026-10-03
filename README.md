@@ -361,6 +361,11 @@ Interaction details list missing initial animation references as well as absent
 alternate variants. `tools/check_controllers.mjs` explores loaded controller
 states and reports inactive regions, source gaps and its bounded-search limit;
 a limited search is not evidence of complete behavioral coverage.
+`node tools/check_interaction_regions.mjs` separately samples the source collider
+interiors after entrance playback and checks object-transform invariance across
+all interactive presentations. Regions not hit by its samples may overlap other
+regions or require a different animation state; this is not an exhaustive
+raycast or original-client priority comparison.
 Card exploration uses valid random checkpoints for each of the three possible
 reveals. Checks run in an independent scene and do not change the editing scene.
 Drag-bone receiver data and non-click bone-bound range markers are retained.

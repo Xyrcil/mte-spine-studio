@@ -130,7 +130,7 @@ export class Stage extends EventTarget {
         initializeAnimation(layer,{interactive:presentation.controllers.length>0});
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
-      group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
+      group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0&&source.data.m_Enabled!==false).map(source=>new InteractionRoot(this,group,source));
       for(const source of presentation.nativeBehaviours||[])if(source.class==='SpineAniDragBone'&&source.data.m_Enabled!==0&&source.data.m_Enabled!==false)group.controllers.push(new BoneDragRoot(group,source));
       if(presentation.skillWords)group.controllers.push(new SkillWordsRoot(group));
       if(skillReceiver){group.controllers.push(skillReceiver);skillReceiver.initialize();}
@@ -304,7 +304,7 @@ export class Stage extends EventTarget {
     if(this.sequencePlayer&&!replay)return {accepted:false,reason:'Stop sequence playback before interacting'};
     const group=this.groups.find(group=>group.id===groupId&&group.visible);
     const root=group?.controllers?.find(root=>root.source.id===controllerId);
-    const hit=root?.hotspots.find(hit=>hit.id===hitId&&group.isActiveTransform(hit.transform));
+    const hit=root?.hotspots.find(hit=>hit.id===hitId&&hit.enabled!==0&&hit.enabled!==false&&group.isActiveTransform(hit.transform));
     if(!hit)return {accepted:false,reason:'Interaction target is unavailable'};
     const result={...root.click(hit),group:groupId,controller:controllerId,hit:hitId};
     if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));
