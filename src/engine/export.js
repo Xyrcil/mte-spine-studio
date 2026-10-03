@@ -8,6 +8,7 @@ import {aacEncodingDelay} from './audio-delay.js';
 import {exportScene,omittedVisualWarnings} from './export-source.js';
 import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
+import {objectVisible} from './background-layers.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
 const yieldBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -34,7 +35,7 @@ export class RenderSession {
 }
 
 export async function collectInteractionEffects(session,plan,provider,onProgress=()=>{},interactionProvider){
-  const clips=[],voices=[],stops=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>object.visible).map(object=>object.id));let error,eventCount=0;
+  const clips=[],voices=[],stops=[],warnings=new Set(),visible=new Set(session.scene.objects.filter(object=>objectVisible(object,session.scene.objects)).map(object=>object.id));let error,eventCount=0;
   const add=(name,category,position,offset,group)=>{
     if(!provider||session.scene.audio?.muted||(session.scene.audio?.effectVolume??.8)<=0)return;
     if(group&&!visible.has(group))return;

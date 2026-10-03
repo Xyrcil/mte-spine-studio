@@ -1,3 +1,4 @@
+import {objectVisible} from './engine/background-layers.js';
 export function createSoundPanel(stage,audio,library,editor,message){
   const panel=document.createElement('section');panel.id='sound-panel';
   panel.innerHTML=`<h2>Scene sound</h2><label class="check-label"><input id="ambient-enabled" type="checkbox">Enable ambient audio</label><label class="check-label"><input id="sound-muted" type="checkbox">Mute all sound</label><label>Ambient volume <input id="ambient-volume" type="range" min="0" max="1" step=".05" value=".5"></label><div id="ambient-tracks"></div>`;
@@ -15,7 +16,7 @@ export function createSoundPanel(stage,audio,library,editor,message){
         const loopLabel=document.createElement('label');loopLabel.className='check-label';const loop=document.createElement('input');loop.type='checkbox';loop.checked=setting.loop;loop.onchange=()=>editor.mutate(()=>audio.configureAmbient(group.id,{...audio.ambientSnapshot().find(track=>track.id===group.id),loop:loop.checked,ended:false}));loopLabel.append(loop,document.createTextNode('Repeat this sound'));row.append(loopLabel);
         const gainLabel=document.createElement('label');gainLabel.textContent='Object sound volume';const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='1';gain.step='.05';gain.value=setting.gain;gain.onchange=()=>editor.mutate(()=>audio.configureAmbient(group.id,{...audio.ambientSnapshot().find(track=>track.id===group.id),gain:Number(gain.value)}));gainLabel.append(gain);row.append(gainLabel);
         const restart=document.createElement('button');restart.textContent='Restart ambient';restart.onclick=()=>editor.mutate(()=>{audio.unlocked=true;audio.configureAmbient(group.id,{...audio.ambientSnapshot().find(track=>track.id===group.id),time:0,ended:false});});row.append(restart);
-        const note=document.createElement('small');note.textContent=`${setting.loop?'Looping':'One-shot'}${group.visible?'':' · Object hidden'}${audio.ambients.get(group.id)?.ended?' · Finished':''}`;row.append(note);
+        const note=document.createElement('small');note.textContent=`${setting.loop?'Looping':'One-shot'}${objectVisible(group,stage.groups)?'':' · Object hidden'}${audio.ambients.get(group.id)?.ended?' · Finished':''}`;row.append(note);
       }
       list.append(row);
     }

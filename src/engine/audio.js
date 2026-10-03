@@ -1,4 +1,5 @@
 import {savedVoiceRow} from './voice-catalog.js';
+import {objectVisible} from './background-layers.js';
 
 export class AudioBus extends EventTarget {
   constructor(index, resources, base,voiceRows=[]) {
@@ -73,10 +74,10 @@ export class AudioBus extends EventTarget {
   syncAmbients(groups,appearances){
     this.sceneGroups=groups;this.appearances=appearances;
     const present=new Set(groups.map(group=>group.id));
-    if(this.currentVoice?.group&&!groups.some(group=>group.id===this.currentVoice.group&&group.visible))this.stop();
-    for(const effect of this.effects)if(effect.effectGroup&&!groups.some(group=>group.id===effect.effectGroup&&group.visible))this.releaseEffect(effect);
+    if(this.currentVoice?.group&&!groups.some(group=>group.id===this.currentVoice.group&&objectVisible(group,groups)))this.stop();
+    for(const effect of this.effects)if(effect.effectGroup&&!groups.some(group=>group.id===effect.effectGroup&&objectVisible(group,groups)))this.releaseEffect(effect);
     const desired=new Map();
-    for(const group of groups){const setting=this.ambientSetting(group);if(setting&&setting.enabled&&group.visible)desired.set(group.id,setting);}
+    for(const group of groups){const setting=this.ambientSetting(group);if(setting&&setting.enabled&&objectVisible(group,groups))desired.set(group.id,setting);}
     for(const [id,channel] of this.ambients)if(!desired.has(id)||desired.get(id).name!==channel.name||desired.get(id).category!==channel.category)this.releaseAmbient(id,!desired.has(id)&&present.has(id)&&this.ambientPreferences.get(id)?.enabled!==false);
     for(const id of this.ambientPreferences.keys())if(!present.has(id))this.ambientPreferences.delete(id);
     for(const [id,setting] of desired){
@@ -106,13 +107,13 @@ export class AudioBus extends EventTarget {
   }
   snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
   exportVoice(snapshot,objects){
-    const track=snapshot?.voiceTrack;if(!track||track.group&&!objects.some(object=>object.id===track.group&&object.visible))return null;
+    const track=snapshot?.voiceTrack;if(!track||track.group&&!objects.some(object=>object.id===track.group&&objectVisible(object,objects)))return null;
     const clip=this.resolve(track.name,track.category);if(!clip)throw new Error(`Voice unavailable: ${track.name}`);
     const row=savedVoiceRow(track,this.voiceRows);return {url:this.base+clip.path,text:row.text,position:track.time,gain:snapshot.voiceVolume,scene:true,repeat:false};
   }
   exportAmbients(snapshot,objects){
     if(!snapshot||snapshot.muted||!snapshot.ambientEnabled)return [];
-    const visible=new Set(objects.filter(object=>object.visible).map(object=>object.id));
+    const visible=new Set(objects.filter(object=>objectVisible(object,objects)).map(object=>object.id));
     return snapshot.ambientTracks.filter(track=>track.enabled&&!track.ended&&visible.has(track.id)).map(track=>{
       const info=this.soundInfo(track.name,track.category);if(!info.clip)throw new Error(`Ambient sound unavailable: ${track.name}`);
       return {url:this.base+info.clip.path,position:track.time,repeat:track.loop,gain:track.gain*info.volume*snapshot.ambientVolume};
@@ -122,8 +123,8 @@ export class AudioBus extends EventTarget {
     this.stop();this.stopEffects();this.stopAmbients();this.ambientPreferences.clear();this.paused=paused;
     if(snapshot){this.setVolume(snapshot.voiceVolume);this.setEffectVolume(snapshot.effectVolume);this.setAmbientVolume(snapshot.ambientVolume);this.setMuted(snapshot.muted);this.ambientEnabled=snapshot.ambientEnabled;this.language=snapshot.language;for(const track of snapshot.ambientTracks)this.ambientPreferences.set(track.id,{...track});}
     this.syncAmbients(groups,appearances);
-    for(const track of snapshot?.effectTracks||[])if(!track.group||groups.some(group=>group.id===track.group&&group.visible))this.playEffect(track.name,track.category,track.time,this.unlocked&&!paused,track.group).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
-    const track=snapshot?.voiceTrack;if(track&&(!track.group||groups.some(group=>group.id===track.group&&group.visible)))this.play(savedVoiceRow(track,this.voiceRows),track.category,{time:track.time,group:track.group,autoplay:this.unlocked&&!paused}).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
+    for(const track of snapshot?.effectTracks||[])if(!track.group||groups.some(group=>group.id===track.group&&objectVisible(group,groups)))this.playEffect(track.name,track.category,track.time,this.unlocked&&!paused,track.group).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
+    const track=snapshot?.voiceTrack;if(track&&(!track.group||groups.some(group=>group.id===track.group&&objectVisible(group,groups))))this.play(savedVoiceRow(track,this.voiceRows),track.category,{time:track.time,group:track.group,autoplay:this.unlocked&&!paused}).catch(error=>this.dispatchEvent(new CustomEvent('audio-error',{detail:error.message})));
   }
   dispose(){this.stop();this.stopEffects();this.stopAmbients();}
 }

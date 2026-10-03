@@ -8,6 +8,7 @@ import {validateHotSpringState} from './hot-spring.js';
 import {validateSkillWordsState} from './skill-words.js';
 import {validateSkillDisplayState} from './skill-receiver.js';
 import {validateBoneDragState} from './bone-drag-root.js';
+import {validateBackgroundLinks} from './background-layers.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
@@ -20,6 +21,7 @@ export function validateScene(value) {
     const id=text(object.id,'object ID');if(seen.has(id))throw new Error('Duplicate object ID');seen.add(id);
     if(!['spine','image'].includes(object.kind))throw new Error('Unsupported object type');
     const result={id,kind:object.kind,name:text(object.name||'','object name'),x:finite(object.x,'x'),y:finite(object.y,'y'),scale:finite(object.scale,'scale'),rotation:finite(object.rotation,'rotation'),opacity:finite(object.opacity,'opacity'),flipX:Boolean(object.flipX),flipY:Boolean(object.flipY),visible:object.visible!==false,locked:Boolean(object.locked)};
+    if(object.parentId!==undefined)result.parentId=text(object.parentId,'background owner');
     if(result.scale<=0||result.opacity<0||result.opacity>1)throw new Error('Invalid object scale or opacity');
     if(object.hotSpringLevel!==undefined){if(!Number.isInteger(object.hotSpringLevel)||object.hotSpringLevel<1||object.hotSpringLevel>5)throw new Error('Invalid hot spring level');result.hotSpringLevel=object.hotSpringLevel;}
     if(object.kind==='spine') {
@@ -51,6 +53,7 @@ export function validateScene(value) {
     }
     return result;
   });
+  validateBackgroundLinks(objects);
   const speed=finite(value.speed,'playback speed');if(speed<=0)throw new Error('Playback speed must be positive');
   return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
 }

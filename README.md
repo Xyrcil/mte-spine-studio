@@ -235,6 +235,13 @@ Available background music can be assigned independently to scene objects.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
+Characters and static portraits can own multiple custom background layers.
+Use **Add character background**, or assign an existing image with **Background
+for**. Linked backgrounds follow the owner's transform, visibility and opacity;
+their offsets and sibling order remain editable. Duplication copies these layers
+and their sound settings, while removal releases them with the character.
+Detaching preserves the current image geometry, opacity, visibility and draw order.
+Scene restore, undo, offline saves and independent exports retain these links.
 Source-hidden skeleton layers are loaded but remain hidden until explicitly
 enabled in the object controls. Switching active layers rebuilds this object's
 interaction bindings and restarts its playback. Older scenes that omit those

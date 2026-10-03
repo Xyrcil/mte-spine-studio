@@ -1,8 +1,9 @@
 import {History,validateScene,saveLocalScene,loadLocalScene,listLocalScenes,deleteLocalScene} from './engine/scene.js';
+import {sceneDrawOrder,moveSceneLayer,duplicateSceneObject} from './engine/background-layers.js';
 
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
-  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve();
+  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget;
   const snapshot=()=>stage.snapshot(name);
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
@@ -23,14 +24,16 @@ export function createEditor(stage,message,onSelection){
   function choose(group){selectedId=group?.id;refresh();onSelection?.(group);}
   function refresh(){
     container.replaceChildren();
-    for(const group of [...stage.groups].reverse()){
+    for(const group of sceneDrawOrder(stage.groups).reverse()){
       const row=document.createElement('div');row.className=`layer ${group.id===selectedId?'selected':''}`;
       const title=document.createElement('button');title.textContent=group.name;title.setAttribute('aria-pressed',String(group.id===selectedId));title.onclick=()=>choose(group);
-      row.append(title,button('Remove',()=>{stage.remove(group.id);if(group.id===selectedId)selectedId=stage.groups.at(-1)?.id;}));container.append(row);
+      row.append(title,button('Remove',()=>{stage.remove(group.id);if(!selected()){selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;onSelection?.(selected());}}));container.append(row);
     }
     const group=selected();
     if(group){const panel=document.createElement('section');panel.className='object-controls';
       panel.append(input('Object name','text',group.name,value=>group.name=value,{maxLength:512}));
+      if(group.kind==='spine'||group.asset){const add=document.createElement('button');add.textContent='Add character background';add.onclick=()=>{if(isBusy())return;backgroundTarget=group.id;document.querySelector('#background-file').click();};panel.append(add);}
+      if(group.kind==='image'&&!group.asset){const label=document.createElement('label');label.textContent='Background for';const select=document.createElement('select');select.setAttribute('aria-label','Background for');select.append(new Option('Scene (independent)',''));for(const owner of stage.groups.filter(row=>row.kind==='spine'||row.asset))select.append(new Option(owner.name,owner.id));select.value=group.parentId||'';select.onchange=()=>mutate(()=>stage.setBackgroundParent(group,select.value||undefined));label.append(select);panel.append(label);}
       if(group.kind==='spine'&&!group.presentation.standalone&&group.layers.some(layer=>layer.authoredActive===false)){
         const title=document.createElement('h3');title.textContent='Skeleton layers';panel.append(title);
         for(const layer of group.layers)panel.append(input(`${layer.instance.name} (${layer.instance.id})`,'checkbox',layer.active,value=>stage.setLayerActive(group,layer.instance.id,value)));
@@ -44,14 +47,14 @@ export function createEditor(stage,message,onSelection){
         for(const item of active.skeleton.data.animations)animation.append(new Option(item.name,item.name));animation.value=active.state.getCurrent(0)?.animation.name||'';
         animation.onchange=()=>mutate(()=>active.state.setAnimation(0,animation.value,true));animationLabel.append(animation);panel.append(animationLabel);
       }
-      for(const [key,label,step,min,max] of [['x','X','.1'],['y','Y','.1'],['scale','Scale','.05','.01'],['rotation','Rotation','1'],['opacity','Opacity','.05','0','1']])panel.append(input(label,'number',group[key],value=>group[key]=value,{step,...(min?{min}:{}),...(max?{max}:{})}));
+      for(const [key,label,step,min,max] of [['x','X','.1'],['y','Y','.1'],['scale','Scale','.05','.01'],['rotation','Rotation','1'],['opacity','Opacity','.05','0','1']])panel.append(input(group.parentId!==undefined&&['x','y'].includes(key)?`Offset ${label}`:label,'number',group[key],value=>group[key]=value,{step,...(min?{min}:{}),...(max?{max}:{})}));
       for(const [key,label] of [['visible','Visible'],['locked','Locked'],['flipX','Mirror horizontally'],['flipY','Mirror vertically']])panel.append(input(label,'checkbox',group[key],value=>group[key]=value));
-      const reorder=direction=>{const index=stage.groups.indexOf(group),target=index+direction;if(target<0||target>=stage.groups.length)return;[stage.groups[index],stage.groups[target]]=[stage.groups[target],stage.groups[index]];};
+      const reorder=direction=>moveSceneLayer(stage.groups,group,direction);
       panel.append(button('Move forward',()=>reorder(1)),button('Move backward',()=>reorder(-1)));
       const duplicate=document.createElement('button');duplicate.textContent='Duplicate';duplicate.onclick=async()=>{
-        if(isBusy())return;const previous=snapshot(),scene=structuredClone(previous),copy=structuredClone(scene.objects.find(row=>row.id===group.id));copy.id=crypto.randomUUID();copy.name+=' copy';copy.x+=1;scene.objects.push(copy);const sound=scene.audio?.ambientTracks.find(track=>track.id===group.id);if(sound)scene.audio.ambientTracks.push({...sound,id:copy.id});if(scene.audio?.effectTracks)scene.audio.effectTracks=[...scene.audio.effectTracks,...scene.audio.effectTracks.filter(track=>track.group===group.id).map(track=>({...track,group:copy.id}))].slice(-12);
+        if(isBusy())return;const previous=snapshot(),{scene,copy}=duplicateSceneObject(previous,group.id);
         for(const effect of copy.effects||[])if(group.effects?.find(layer=>layer.source.id===effect.id)?.source.data.moveWithTransform===0)for(const particle of effect.state.particles)particle.position[0]+=1;
-        try{await restore(scene);history.push(previous);choose(stage.groups.at(-1));changed();}catch(error){message(error.message);}
+        try{await restore(scene);history.push(previous);choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
       };panel.append(duplicate);container.append(panel);
     }
     document.querySelector('#undo').disabled=busy||!history.past.length;document.querySelector('#redo').disabled=busy||!history.future.length;
@@ -61,7 +64,7 @@ export function createEditor(stage,message,onSelection){
     if(stage.sequenceBusy)throw new Error('Stop the interaction sequence before loading a scene');
     if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
-    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries,signal);name=checked.name;selectedId=stage.groups.at(-1)?.id;onSelection?.(selected());}
+    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries,signal);name=checked.name;selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;onSelection?.(selected());}
     catch(error){changed();throw error;}
     finally{busy=false;refresh();stage.dispatchEvent(new CustomEvent('scene-ready'));}
   }
@@ -78,12 +81,12 @@ export function createEditor(stage,message,onSelection){
   document.querySelector('#scene-file').onchange=async event=>{const file=event.target.files[0];event.target.value='';if(!file)return;try{if(file.size>64*1024*1024)throw new Error('Scene file exceeds 64 MB');await recall(JSON.parse(await file.text()));}catch(error){message(`Import failed: ${error.message}`);}};
   document.querySelector('#load-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(!key)return;const scene=await loadLocalScene(key);if(scene)await recall(scene);}catch(error){message(error.message);}};
   document.querySelector('#delete-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(key){await deleteLocalScene(key);await savedList();message(`Deleted local scene ${key}`);}}catch(error){message(error.message);}};
-  document.querySelector('#add-background').onclick=()=>document.querySelector('#background-file').click();
+  document.querySelector('#add-background').onclick=()=>{backgroundTarget=undefined;document.querySelector('#background-file').click();};
   document.querySelector('#background-file').onchange=async event=>{
-    const file=event.target.files[0];event.target.value='';if(!file||isBusy())return;
+    const file=event.target.files[0],ownerId=backgroundTarget;backgroundTarget=undefined;event.target.value='';if(!file||isBusy())return;
     const previous=snapshot();busy=true;refresh();
-    try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);history.push(previous);selectedId=group.id;changed();}
-    catch(error){message(error.message);}finally{busy=false;refresh();}
+    let added;try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);added=group;if(ownerId!==undefined){const owner=stage.groups.find(row=>row.id===ownerId);if(!owner)throw new Error('Character is no longer available');group.x=owner.x;group.y=owner.y;stage.setBackgroundParent(group,ownerId);}history.push(previous);choose(group);changed();}
+    catch(error){if(added)stage.remove(added.id);message(error.message);}finally{busy=false;refresh();}
   };
   return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return isBusy();},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }

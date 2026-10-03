@@ -31,6 +31,9 @@ test('object transforms combine rotation and mirrors',()=>{
   const m=objectTransform({x:3,y:4,scale:2,rotation:90,flipX:true,flipY:false});
   assert.ok(Math.abs(m[0])<1e-10);assert.equal(m[1],-2);assert.equal(m[2],-2);assert.deepEqual(m.slice(4),[3,4]);
 });
+test('removing a character releases its backgrounds while retaining the shared scene array',()=>{
+  const stage=Object.create(Stage.prototype),actor={id:'actor'},background={id:'background',parentId:'actor'},other={id:'other'};stage.groups=[background,actor,other];const shared=stage.groups,released=[];stage.release=group=>released.push(group.id);stage.remove(actor.id);assert.equal(stage.groups,shared);assert.deepEqual(shared,[other]);assert.deepEqual(new Set(released),new Set(['actor','background']));
+});
 test('failed import releases staged resources without replacing the old scene',async()=>{
   const stage=Object.create(Stage.prototype),value=scene(),old={id:'old'},staged={kind:'spine',layers:[]};
   stage.groups=[old];stage.camera={...value.camera};stage.paused=false;

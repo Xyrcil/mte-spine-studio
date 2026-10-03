@@ -42,7 +42,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     const dx=event.clientX-action.x,dy=event.clientY-action.y;if(!action.changed&&Math.hypot(dx,dy)<=6)return;
     if(action.kind==='tap')action.kind='pan';if(!beginChange())return;
     if(action.kind==='pan')stage.camera=panCamera(action.camera,action.rect,dx,dy);
-    else if(action.kind==='object'){const moved=panCamera(action.camera,action.rect,dx,dy);action.group.x=action.object.x+action.camera.x-moved.x;action.group.y=action.object.y+action.camera.y-moved.y;}
+    else if(action.kind==='object'){const moved=panCamera(action.camera,action.rect,dx,dy),world={x:action.camera.x-moved.x,y:action.camera.y-moved.y},local=stage.objectDragDelta?.(action.group,world.x,world.y)||world;action.group.x=action.object.x+local.x;action.group.y=action.object.y+local.y;}
   };
   const up=event=>{
     if(!pointers.has(event.pointerId))return;pointers.delete(event.pointerId);if(!action)return;

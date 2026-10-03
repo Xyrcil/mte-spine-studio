@@ -2,6 +2,7 @@ import {validateScene} from './scene.js';
 import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {BoneDragRoot} from './bone-drag-root.js';
+import {backgroundMatrix,backgroundOpacity,objectVisible,matrixPose,sceneDrawOrder,setBackgroundParent,objectDragDelta} from './background-layers.js';
 import {HotSpringRoot} from './hot-spring.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
 import {initializeAnimation} from './initial-animation.js';
@@ -206,6 +207,7 @@ export class Stage extends EventTarget {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
     return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
+      if(group.parentId!==undefined)row.parentId=group.parentId;
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
       return {...row,bundle:group.presentation.id,...(group.presentation.appearanceId!==undefined?{appearanceId:group.presentation.appearanceId}:{}),...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
@@ -242,7 +244,7 @@ export class Stage extends EventTarget {
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
         for(const root of group.controllers||[])if(root instanceof HotSpringRoot||root instanceof SkillWordsRoot||root instanceof SkillDisplayRoot||root instanceof BoneDragRoot){const saved=row.interactions?.find(state=>state.id===root.source.id);if(saved)root.check(saved.state);}
       });
-      scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(row.hotSpringLevel===undefined)delete group.hotSpringLevel;else group.hotSpringLevel=row.hotSpringLevel;if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
+      scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(row.parentId===undefined)delete group.parentId;else group.parentId=row.parentId;if(row.hotSpringLevel===undefined)delete group.hotSpringLevel;else group.hotSpringLevel=row.hotSpringLevel;if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
       this.suppressEvents=true;
       try{scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const layer of group.layers){const saved=row.layers.find(saved=>saved.id===layer.instance.id);if(!saved){layer.active=false;layer.state.clearTracks();layer.skeleton.setToSetupPose();initializeAnimation(layer,{interactive:group.presentation.controllers.length>0});layer.state.update(0);layer.state.apply(layer.skeleton);}else{layer.active=saved.active;if(saved.animationState){restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);}else{layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=track.name==='<empty>'?layer.state.setEmptyAnimation(track.index,0):layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}layer.state.update(0);layer.state.apply(layer.skeleton);}}this.recordApplied(layer);this.transformLayer(group,layer);}});}finally{this.suppressEvents=false;}
       for(const group of created)for(const root of group.controllers||[])if(root instanceof InteractionRoot)root.rebind();
@@ -312,9 +314,9 @@ export class Stage extends EventTarget {
   }
   hitTest(clientX,clientY){
     const {x,y}=this.screenToWorld(clientX,clientY);
-    for(const group of [...this.groups].reverse())if(group.visible){
+    for(const group of sceneDrawOrder(this.groups).reverse())if(objectVisible(group,this.groups)){
       if(group.kind==='image'){
-        const m=objectTransform(group),det=m[0]*m[3]-m[1]*m[2],dx=x-m[4],dy=y-m[5],localX=(m[3]*dx-m[2]*dy)/det,localY=(-m[1]*dx+m[0]*dy)/det;
+        const m=backgroundMatrix(group,this.groups),det=m[0]*m[3]-m[1]*m[2],dx=x-m[4],dy=y-m[5],localX=(m[3]*dx-m[2]*dy)/det,localY=(-m[1]*dx+m[0]*dy)/det;
         if(Math.abs(localX)<=group.width/2&&Math.abs(localY)<=group.height/2)return group;
       }else for(const layer of group.layers.filter(layer=>layer.active)){
         const offset=new (s().Vector2)(),size=new (s().Vector2)();layer.skeleton.getBounds(offset,size,[]);
@@ -329,7 +331,7 @@ export class Stage extends EventTarget {
       const node=group.nodes.get(image.source.transform),bounds=nativeImageBounds(node.data.m_SizeDelta,node.data.m_Pivot,image.source.sprite),matrix=multiply(objectTransform(group),group.world(node.id));
       for(const x of [bounds.left,bounds.right])for(const y of [bounds.bottom,bounds.top]){const p=point(matrix,x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
     }
-    for(const group of this.groups.filter(group=>group.visible&&group.kind==='image'))for(const x of [-group.width/2,group.width/2])for(const y of [-group.height/2,group.height/2]){const p=point(objectTransform(group),x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
+    for(const group of this.groups.filter(group=>objectVisible(group,this.groups)&&group.kind==='image'))for(const x of [-group.width/2,group.width/2])for(const y of [-group.height/2,group.height/2]){const p=point(backgroundMatrix(group,this.groups),x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
     for (const group of this.groups.filter(group=>group.visible&&group.kind==='spine')) for (const layer of group.layers.filter(layer=>layer.active)) {
       const offset=new (s().Vector2)(), size=new (s().Vector2)();
       layer.skeleton.getBounds(offset,size,[]);
@@ -352,14 +354,14 @@ export class Stage extends EventTarget {
     renderer.camera.viewportWidth=width; renderer.camera.viewportHeight=width/aspect;
     renderer.camera.position.x=this.camera.x; renderer.camera.position.y=this.camera.y;
     renderer.begin();
-    for (const group of this.groups) if(group.visible) {
+    for (const group of sceneDrawOrder(this.groups)) if(objectVisible(group,this.groups)) {
       if(group.kind==='image'){
-        const width=group.width*group.scale*(group.flipX?-1:1),height=group.height*group.scale*(group.flipY?-1:1);
-        renderer.drawTextureRotated(group.texture,group.x-width/2,group.y-height/2,width,height,width/2,height/2,group.rotation,new (s().Color)(1,1,1,group.opacity),false);
+        const pose=matrixPose(backgroundMatrix(group,this.groups)),width=group.width*pose.scale,height=group.height*pose.scale*(pose.flipY?-1:1);
+        renderer.drawTextureRotated(group.texture,pose.x-width/2,pose.y-height/2,width,height,width/2,height/2,pose.rotation,new (s().Color)(1,1,1,backgroundOpacity(group,this.groups)),false);
       }else{
         const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used&&!image.source.viewportDecoration).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
         for(const slot of group.nativeTextLayer?.slots||[])if(slot.used)draws.push({order:0,path:hierarchyOrder(group,slot.source.transform),text:slot});draws.sort(compareDraws);
-        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){draw.layer.skeleton.color.a=group.opacity;if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots);else renderer.drawSkeleton(draw.layer.skeleton,false);}
+        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
       }
     }
     const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};
@@ -374,10 +376,10 @@ export class Stage extends EventTarget {
     this.frame=requestAnimationFrame(next => this.tick(next));
   }
   remove(id) {
-    const index=this.groups.findIndex(group=>group.id===id);
-    if (index<0) return;
-    this.release(this.groups[index]); this.groups.splice(index,1);
+    for(let index=this.groups.length-1;index>=0;index--){const group=this.groups[index];if(group.id===id||group.parentId===id){this.release(group);this.groups.splice(index,1);}}
   }
+  setBackgroundParent(group,parentId){if(!this.groups.includes(group))throw new Error('Background is unavailable');const order=sceneDrawOrder(this.groups);setBackgroundParent(group,parentId,this.groups);if(parentId===undefined)this.groups.splice(0,this.groups.length,...order);}
+  objectDragDelta(group,x,y){return objectDragDelta(group,this.groups,x,y);}
   dispose() {
     this.contextAbort.abort();
     this.disposed=true;this.canvas.removeEventListener('webglcontextlost',this.onContextLost);this.canvas.removeEventListener('webglcontextrestored',this.onContextRestored);
