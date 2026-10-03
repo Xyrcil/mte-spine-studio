@@ -244,6 +244,10 @@ device; unavailable browser storage does not prevent browsing. On small screens,
 the library opens as a bottom panel and closes after loading artwork.
 The voice panel plays the available source and Chinese tracks with subtitles
 and volume control.
+Choose **All character voices** to browse lines without a linked artwork entry.
+This scope searches original target IDs and resource names, keeps missing tracks
+visible, and is also available when choosing an export voice. Manual playback
+in this scope does not attach an unrelated line to the selected scene object.
 Hot spring artwork exposes the source conversation pools for six roles and
 five levels, including their alternate voice resources. Conversation level is
 an object-level preview setting retained by scenes, undo and duplication; no
