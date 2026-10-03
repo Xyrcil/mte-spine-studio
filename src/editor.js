@@ -4,7 +4,7 @@ import {createSceneFile,readSceneFile} from './engine/scene-file.js';
 
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
-  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController;
+  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing;
   const snapshot=()=>stage.snapshot(name);
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
@@ -28,8 +28,12 @@ export function createEditor(stage,message,onSelection){
   };
   const button=(title,action)=>{const node=document.createElement('button');node.textContent=title;node.dataset.editorKey=title;node.onclick=()=>mutate(action);return node;};
   function choose(group){selectedId=group?.id;refresh();onSelection?.(group);}
+  container.addEventListener('compositionstart',event=>{composing=event.target;});
+  container.addEventListener('compositionend',event=>{if(composing===event.target)composing=null;requestAnimationFrame(()=>refresh());});
   function refresh(){
     const active=document.activeElement,owner=active?.closest('[data-editor-object]')?.dataset.editorObject,key=controlKey(active);
+    if(composing===active&&owner===selectedId&&!isBusy())return;
+    composing=null;
     const focus=owner&&key?{owner,key,value:active.value,baseline:active.dataset.editorValue,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection}:null;
     const locked=isBusy();container.inert=locked;
     if(container.contains(active))active.onchange=null;
