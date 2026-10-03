@@ -336,6 +336,9 @@ Character and story voices can be selected for export. Optional burned-in
 subtitles retain the source line, wrap to fit the output and follow the selected
 voice's offset, duration, speed and repeat settings. They use whole-line timing,
 not inferred word timings, and can also be rendered without an audio track.
+AAC files use their gapless playback tags to trim retained encoder padding.
+Audio already aligned by the browser is left unchanged. Export mixing uses
+48 kHz audio for consistent voice, effect and subtitle timing.
 Ambient audio follows the captured scene interval, speed and loop mode,
 including reversed ping-pong playback and crossfade mixing. Export respects
 captured mute, visibility, gains, positions and completed one-shot sounds.

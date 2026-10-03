@@ -4,7 +4,7 @@ import {Stage} from './stage.js';
 import {exportPlan,frameSources,exportCamera} from './export-plan.js';
 import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
-import {aacEncodingDelay} from './audio-delay.js';
+import {aacEncodingDelay,aacGaplessMetadata,normalizeDecodedAac} from './audio-delay.js';
 import {exportScene,omittedVisualWarnings} from './export-source.js';
 import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
@@ -103,11 +103,12 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(hasAudio||subtitleClip||voiceCaption||scheduledCaptions.length){
       if(hasAudio&&!await canEncodeAudio(audioCodec,{sampleRate:48000,numberOfChannels:2,quality:new Quality({bitrate:128000})}))throw new Error('Audio encoding is unavailable for this video format. Try another video format, turn off audio, or export a PNG sequence.');
       if(hasAudio&&audioCodec==='aac')audioDelay=await aacEncodingDelay(signal);
-      decoder=new AudioContext();const decoded=new Map();let decodedBytes=0;
+      decoder=new AudioContext({sampleRate:48000});const decoded=new Map();let decodedBytes=0;
       for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...scheduledAudio,...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[]),...scheduledCaptions]){
         checkpoint(signal);let buffer=decoded.get(clip.url);
         if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
-          buffer=await decoder.decodeAudioData(await response.arrayBuffer());checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
+          const data=await response.arrayBuffer(),timing=aacGaplessMetadata(data);
+          buffer=normalizeDecodedAac(decoder,await decoder.decodeAudioData(data),timing);checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
           if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);
         }
         if(clip.sceneCaption){sceneCaptions.push({layout:prepareSubtitle(ctx,clip.text,plan.width,plan.height),duration:buffer.duration,position:clip.position,rate:clip.sceneRate,offset:clip.offset||0,until:clip.until});}

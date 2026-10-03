@@ -1,5 +1,34 @@
 let cachedAacDelay;
 
+export function aacGaplessMetadata(data){
+  const bytes=ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):new Uint8Array(data),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),text=(start,end)=>new TextDecoder().decode(bytes.subarray(start,end));
+  let visited=0;
+  const boxes=(start,end)=>{const rows=[];while(start<end){if(++visited>4096||start+8>end)throw new Error('Invalid audio boxes');let size=view.getUint32(start),header=8;if(size===1){if(start+16>end)throw new Error('Invalid audio box');size=Number(view.getBigUint64(start+8));header=16;}if(size===0)size=end-start;if(!Number.isSafeInteger(size)||size<header||start+size>end)throw new Error('Invalid audio box');rows.push({type:text(start+4,start+8),start:start+header,end:start+size});start+=size;}return rows;};
+  const child=(parent,type,skip=0)=>{if(!parent)return null;const found=boxes(parent.start+skip,parent.end).filter(row=>row.type===type);return found.length===1?found[0]:null;};
+  try{
+    if(bytes.length<12||text(4,8)!=='ftyp')return null;
+    const root={start:0,end:bytes.length},moov=child(root,'moov'),trak=child(moov,'trak'),mdia=child(trak,'mdia'),minf=child(mdia,'minf'),stbl=child(minf,'stbl'),stsd=child(stbl,'stsd');
+    if(!stsd||stsd.start+8>stsd.end||view.getUint32(stsd.start+4)!==1)return null;
+    const sample=child(stsd,'mp4a',8);if(!sample||sample.start+28>sample.end||view.getUint16(sample.start+8)!==0)return null;
+    const sampleRate=view.getUint32(sample.start+24)/65536;if(!Number.isInteger(sampleRate)||sampleRate<8000||sampleRate>192000)return null;
+    const udta=child(moov,'udta'),meta=child(udta,'meta'),ilst=child(meta,'ilst',4);if(!ilst)return null;
+    const records=[];for(const row of boxes(ilst.start,ilst.end).filter(row=>row.type==='----')){const mean=child(row,'mean'),name=child(row,'name'),value=child(row,'data');if(!mean||!name||!value||mean.start+4>mean.end||name.start+4>name.end||value.start+8>value.end||value.end-value.start>1024)continue;if(text(mean.start+4,mean.end)!=='com.apple.iTunes'||text(name.start+4,name.end)!=='iTunSMPB'||view.getUint32(value.start)!==1)continue;records.push(text(value.start+8,value.end).trim());}
+    if(records.length!==1)return null;const words=records[0].split(/\s+/);if(words.length<4||words.slice(0,4).some(word=>! /^[0-9a-f]{8,16}$/i.test(word)))return null;
+    const [reserved,delay,padding,samples]=words.slice(0,4).map(word=>Number(BigInt('0x'+word)));if(reserved!==0||![delay,padding,samples,delay+padding+samples].every(Number.isSafeInteger)||samples<=0)return null;
+    return {sampleRate,delay,padding,samples};
+  }catch{return null;}
+}
+
+export function normalizeDecodedAac(context,buffer,timing){
+  if(!timing)return buffer;
+  const ratio=buffer.sampleRate/timing.sampleRate,length=Math.round(timing.samples*ratio),fullLength=Math.round((timing.samples+timing.delay+timing.padding)*ratio);
+  if(length<1||length>buffer.length||Math.abs(buffer.length-length)<=2||Math.abs(buffer.length-fullLength)>2)return buffer;
+  const start=Math.min(Math.round(timing.delay*ratio),buffer.length-length);
+  const trimmed=context.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);
+  for(let channel=0;channel<buffer.numberOfChannels;channel++)trimmed.copyToChannel(buffer.getChannelData(channel).subarray(start,start+length),channel);
+  return trimmed;
+}
+
 export function normalizeAacDecoderConfig(config){
   if(!config?.description)return config;
   const value=config.description,bytes=ArrayBuffer.isView(value)?new Uint8Array(value.buffer,value.byteOffset,value.byteLength):new Uint8Array(value);
