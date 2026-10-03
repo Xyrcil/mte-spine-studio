@@ -15,6 +15,10 @@ test('box and polygon colliders retain offsets and include polygon edges',()=>{
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
+test('controller rebinding follows explicit skeleton visibility without changing its checkpoint',()=>{
+  const {root,group}=fixture();root.value.clock=4;const before=root.snapshot();group.layers.find(layer=>layer.instance.id==='front').active=false;root.rebind();assert.equal(root.primary.instance.id,'body');assert.deepEqual(root.snapshot(),before);
+  group.isActiveTransform=()=>false;group.layers.find(layer=>layer.instance.id==='front').active=true;root.rebind();assert.equal(root.primary.instance.id,'front');assert.deepEqual(root.layers.map(layer=>layer.instance.id),['front','body']);
+});
 test('stage changes coordinate skeletons, lock clicks, and use exact event target',()=>{
   const {root,group}=fixture(),hit={id:'hit',event:100,track:0,animation:'transition'};
   assert.equal(root.click(hit).accepted,true);assert.ok(group.layers.every(layer=>layer.state.getCurrent(0).animation.name==='transition'));

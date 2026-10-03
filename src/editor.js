@@ -31,6 +31,11 @@ export function createEditor(stage,message,onSelection){
     const group=selected();
     if(group){const panel=document.createElement('section');panel.className='object-controls';
       panel.append(input('Object name','text',group.name,value=>group.name=value,{maxLength:512}));
+      if(group.kind==='spine'&&!group.presentation.standalone&&group.layers.some(layer=>layer.authoredActive===false)){
+        const title=document.createElement('h3');title.textContent='Skeleton layers';panel.append(title);
+        for(const layer of group.layers)panel.append(input(`${layer.instance.name} (${layer.instance.id})`,'checkbox',layer.active,value=>stage.setLayerActive(group,layer.instance.id,value)));
+        const note=document.createElement('p');note.textContent='Changing active layers restarts this object’s interactions. Source-hidden layers are optional.';panel.append(note);
+      }
       if(group.kind==='spine'&&group.presentation.standalone){
         const active=group.layers.find(layer=>layer.active)||group.layers[0],skeletonLabel=document.createElement('label');skeletonLabel.textContent='Skeleton variant';
         const skeleton=document.createElement('select');skeleton.id='skeleton-preview';for(const layer of group.layers)skeleton.append(new Option(layer.instance.name,layer.instance.id));skeleton.value=active.instance.id;

@@ -54,7 +54,7 @@ function describe(group){
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
   if(group.presentation.hotSpringHouse){const root=group.controllers.find(root=>root.source.id==='hot-spring');parts.push(!root?'Hot spring focus configuration unavailable':root.decorationModels.size&&!root.decorationReason?root.dialoguePanelAvailable?group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Hot spring conversations · original fonts and panel · browser text rasterization needs visual verification':'Hot spring conversations · original decorations and panel · dialogue text not yet restored':'Hot spring conversations · original decorations · dialogue panel layout not yet restored':'Hot spring conversations · original dialogue decorations not yet restored');}
   if(libraryData?.appearances.some(row=>row.bundle===group.presentation.id&&row.hotSpringRoleId)&&!group.controllers.length)parts.push('Hot spring click behavior unavailable in this standalone asset');
-  if(gaps.length)parts.push(`Missing source animations: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
+  if(gaps.length)parts.push(`Unavailable animations in active layers: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
   if(effects)parts.push(`Additional effects unavailable: ${effects}`);
   if(group.effects?.some(effect=>effect.verification))parts.push('Effect visual verification pending');
   const ordering=group.layers.filter(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason)).length;

@@ -235,6 +235,10 @@ Available background music can be assigned independently to scene objects.
 The scene editor supports object selection, transforms, image backgrounds,
 layer ordering, duplication, undo/redo, local saves, autosave recovery and JSON
 import/export. Scene files embed background images and retain animation times.
+Source-hidden skeleton layers are loaded but remain hidden until explicitly
+enabled in the object controls. Switching active layers rebuilds this object's
+interaction bindings and restarts its playback. Older scenes that omit those
+hidden layers remain readable; missing originally visible layers are rejected.
 Gallery clicks fire on release; dragging pans without triggering character
 interactions. Studio drags objects or pans from empty space. Space-drag, Alt-drag
 and middle-button drag pan over objects too. Wheel and two-finger zoom preserve

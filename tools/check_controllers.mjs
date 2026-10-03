@@ -9,6 +9,7 @@ const cardBranches=cardOutcomeSeeds(seed=>InteractionRoot.prototype.randomCard.c
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/@vite/client',async route=>{const response=await route.fetch(),body=(await response.text()).replaceAll('case "update":','case "audit-disabled-update":').replaceAll('case "full-reload":','case "audit-disabled-reload":').replaceAll('case "bundled-dev-update":','case "audit-disabled-bundled-update":');await route.fulfill({response,body});});
   page.on('console',message=>{if(message.text().startsWith('[controller-check]'))console.log(message.text());});
   await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const bundles=await page.evaluate(async()=>{const catalog=await fetch('/assets/presentations.json').then(response=>response.json());return catalog.presentations.filter(presentation=>presentation.controllers.length).map(presentation=>presentation.id);});

@@ -25,9 +25,13 @@ export function validateInteraction(value){
 export class InteractionRoot {
   constructor(stage,group,source){
     this.stage=stage;this.group=group;this.source=source;
+    this.sounds=new Map((source.data.OtherSoundList||[]).map(row=>[row.Key,row.Value]));this.rebind();this.reset();this.initializeBackgrounds();
+  }
+  rebind(){
+    const {group,source}=this;
     const order=sourceOrder(group,source.gameObject);
-    this.layers=group.layers.filter(layer=>order.includes(layer.instance.transform)&&group.isActiveTransform(layer.instance.transform)).sort((a,b)=>order.indexOf(a.instance.transform)-order.indexOf(b.instance.transform));
-    this.primary=this.layers[0];this.sounds=new Map((source.data.OtherSoundList||[]).map(row=>[row.Key,row.Value]));
+    this.layers=group.layers.filter(layer=>order.includes(layer.instance.transform)&&layer.active!==false).sort((a,b)=>order.indexOf(a.instance.transform)-order.indexOf(b.instance.transform));
+    this.primary=this.layers[0];
     this.hotspots=group.presentation.hotspots.filter(hit=>hit.controller===source.id).sort((a,b)=>order.indexOf(a.transform)-order.indexOf(b.transform));
     this.bindings=new Map();
     for(const hit of this.hotspots){
@@ -35,7 +39,8 @@ export class InteractionRoot {
       if(!(dynamic?!hit.name.includes('move'):STATIC_BONES.has(hit.name)))continue;
       for(const layer of this.layers){const bone=layer.skeleton.findBone(hit.name);if(bone)this.bindings.set(hit.id,{layer,bone});}
     }
-    this.reset();
+  }
+  initializeBackgrounds(){const {source}=this;
     for(const pointer of source.data.bg_list||[]){const layer=this.layers.find(layer=>layer.instance.transform===String(pointer.m_PathID));if(layer?.skeleton.data.findAnimation('animation_bg'))layer.state.setAnimation(1,'animation_bg',true);}
   }
   reset(){this.value={schema:1,playing:false,event:0,track:0,animation:'',names:{...DEFAULT_ANIMATIONS},variants:{},isBig:false,state:this.source.data.aniState||0,stockingDown:false,cardStage:false,cardClickable:true,selectedCard:-1,wins:0,rounds:0,clock:0,random:0x12345678,tasks:[]};}

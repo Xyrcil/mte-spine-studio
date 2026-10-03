@@ -78,7 +78,7 @@ export class Stage extends EventTarget {
         return Boolean(go?.data.m_IsActive ?? true) && isActive(String(transform.data.m_Father?.m_PathID || '0'), seen);
       };
       group.nodes=tree;group.transforms=new Map([...tree.values()].filter(node=>node.type.includes('Transform')).map(node=>[String(node.data.m_GameObject?.m_PathID),node]));group.world=world;group.isActiveTransform=isActive;
-      const instances = presentation.instances.filter(instance => isActive(instance.transform));
+      const instances = presentation.instances;
       for (const instance of instances) {
         const entry = byId.get(instance.skeletonId);
         if (!entry || entry.status !== 'parsed') throw new Error(`Missing skeleton ${instance.name}`);
@@ -88,7 +88,8 @@ export class Stage extends EventTarget {
         if (entry.skeleton.endsWith('.json')) manager.loadText(skeleton);
         else manager.loadBinary(skeleton);
         manager.loadTextureAtlas(atlas);
-        group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:instance.active!==false});
+        const authoredActive=isActive(instance.transform)&&instance.active!==false;
+        group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:authoredActive,authoredActive});
       }
       group.effects=createParticleLayers(group,base,manager);
       if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
@@ -162,6 +163,11 @@ export class Stage extends EventTarget {
     }
   }
   recordApplied(layer){layer.appliedChanged=layer.state.animationsChanged;layer.appliedTracks=Array.from(layer.state.tracks,track=>track?Object.fromEntries(APPLIED_FIELDS.map(key=>[key,track[key]])):null);}
+  setLayerActive(group,id,active){
+    if(group?.kind!=='spine'||typeof active!=='boolean')throw new Error('Invalid skeleton layer selection');const layer=group.layers.find(row=>row.instance.id===id);if(!layer)throw new Error('Skeleton layer is unavailable');layer.active=active;
+    for(const root of group.controllers||[])if(root instanceof InteractionRoot){root.rebind();root.reset();for(const member of root.layers){member.state.clearTracks();member.skeleton.setToSetupPose();initializeAnimation(member,{interactive:true});}root.initializeBackgrounds();}
+    this.evaluate(0);this.fit();
+  }
   transformLayer(group,layer){
       layer.transform=group.world(layer.instance.transform);
       const sk=layer.skeleton;sk.updateWorldTransform();
@@ -228,14 +234,15 @@ export class Stage extends EventTarget {
         if(row.appearanceId!==undefined&&row.appearanceId!==group.presentation.appearanceId)throw new Error('Scene appearance does not match asset');
         preflightParticles(group,row.effects);
         preflightNativeAnimations(group,row.nativeAnimations);
-        if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
+        if(row.layers.length>group.layers.length||group.layers.some(layer=>!row.layers.some(saved=>saved.id===layer.instance.id)&&layer.authoredActive!==false))throw new Error('Scene layer count does not match asset');
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(track.name!=='<empty>'&&!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);assertCheckpoint(layer,state.animationState,state.pose);}
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
         for(const root of group.controllers||[])if(root instanceof HotSpringRoot||root instanceof SkillWordsRoot||root instanceof SkillDisplayRoot){const saved=row.interactions?.find(state=>state.id===root.source.id);if(saved)root.check(saved.state);}
       });
       scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(row.hotSpringLevel===undefined)delete group.hotSpringLevel;else group.hotSpringLevel=row.hotSpringLevel;if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
       this.suppressEvents=true;
-      try{scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const saved of row.layers){const layer=group.layers.find(layer=>layer.instance.id===saved.id);layer.active=saved.active;if(saved.animationState){restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);}else{layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=track.name==='<empty>'?layer.state.setEmptyAnimation(track.index,0):layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}layer.state.update(0);layer.state.apply(layer.skeleton);}this.recordApplied(layer);this.transformLayer(group,layer);}});}finally{this.suppressEvents=false;}
+      try{scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const layer of group.layers){const saved=row.layers.find(saved=>saved.id===layer.instance.id);if(!saved){layer.active=false;layer.state.clearTracks();layer.skeleton.setToSetupPose();initializeAnimation(layer,{interactive:group.presentation.controllers.length>0});layer.state.update(0);layer.state.apply(layer.skeleton);}else{layer.active=saved.active;if(saved.animationState){restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);}else{layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=track.name==='<empty>'?layer.state.setEmptyAnimation(track.index,0):layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}layer.state.update(0);layer.state.apply(layer.skeleton);}}this.recordApplied(layer);this.transformLayer(group,layer);}});}finally{this.suppressEvents=false;}
+      for(const group of created)for(const root of group.controllers||[])if(root instanceof InteractionRoot)root.rebind();
       scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else root.reset();}});
       scene.objects.forEach((row,index)=>{for(const effect of created[index].effects||[])if(effect.model){const saved=row.effects?.find(saved=>saved.id===effect.source.id);if(saved)effect.model.restore(saved);else effect.model=effect.make(effect.model.seed);}});
       scene.objects.forEach((row,index)=>{for(const native of created[index].nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(saved=>saved.id===native.source.id)||{...native.model.snapshot(),time:0,playing:Boolean(native.source.data.m_PlayAutomatically)};native.model.restore(saved);}});
