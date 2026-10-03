@@ -29,6 +29,7 @@ if(stage){
 window.mteStudio = stage;
 let view = 'gallery', catalog, runtime, request, libraryData, audio,appReady=false;
 const message = value => {status.textContent=value;};
+const sourcePreview=document.createElement('button');sourcePreview.id='source-preview';sourcePreview.textContent='Source preview';document.querySelector('#fit').after(sourcePreview);
 const closeLibrary=()=>{const open=document.body.classList.contains('library-open'),focused=document.activeElement;document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');if(open&&matchMedia('(max-width:540px)').matches&&(!focused||focused===document.body||focused.closest('.library')))stage.canvas.focus({preventScroll:true});};
 const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(group);window.mteSkills?.setActive(group);if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
@@ -53,6 +54,7 @@ function describe(group){
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const regions=group.presentation.hotspots.length+(group.controllers||[]).filter(root=>root.source.id==='hot-spring').reduce((count,root)=>count+root.hotspots.filter(hit=>hit.role).length,0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
+  if(group.presentation.previewView)parts.push(group.previewReason?`Source preview unavailable: ${group.previewReason}`:group.presentation.previewView.origin==='archive'?'Archive-client preview configuration':'Legacy-client preview configuration');
   if(group.presentation.unassignedInstances?.length)parts.push(`Unassigned source skeleton components: ${group.presentation.unassignedInstances.map(instance=>instance.name).join(', ')}`);
   if(group.presentation.nativeBehaviours?.some(row=>row.class==='SpineAniDragBone'&&row.data.m_Enabled))parts.push('Source bone dragging · original-client verification pending');
   if(group.presentation.hotSpringHouse){const root=group.controllers.find(root=>root.source.id==='hot-spring');parts.push(!root?'Hot spring focus configuration unavailable':root.decorationModels.size&&!root.decorationReason?root.dialoguePanelAvailable?group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Hot spring conversations · original fonts and panel · browser text rasterization needs visual verification':'Hot spring conversations · original decorations and panel · dialogue text not yet restored':'Hot spring conversations · original decorations · dialogue panel layout not yet restored':'Hot spring conversations · original dialogue decorations not yet restored');}
@@ -81,7 +83,7 @@ async function loadAsset(label,create,loadedMessage=label){
     if(current.signal.aborted||request!==current||view!==selectedView)throw new DOMException('Loading cancelled','AbortError');
     finishAssetLoading();editor.before(previous);audio?.stop();audio?.stopEffects();if(selectedView==='gallery')audio?.stopAmbients();stage.groups.push(group);
     if(selectedView==='gallery')for(const previousGroup of old)stage.remove(previousGroup.id);
-    stage.evaluate(0);stage.fit();editor.choose(group);editor.changed();request=null;message(loadedMessage);closeLibrary();return true;
+    stage.evaluate(0);stage.fit();if(selectedView==='gallery')stage.fitPreview(group);editor.choose(group);editor.changed();request=null;message(loadedMessage);closeLibrary();return true;
   }catch(error){if(group&&!stage.groups.includes(group))stage.release(group);if(request===current&&error.name!=='AbortError')message(error.message);return false;}
   finally{if(request===current){request=null;finishAssetLoading();}}
 }
@@ -97,6 +99,7 @@ document.querySelector('#background').onchange=event=>{const value=event.target.
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
+sourcePreview.onclick=()=>editor.mutate(()=>{const group=editor.selected();if(!stage.fitPreview(group))message(`Source preview unavailable: ${group?.previewReason||'No matching configuration'}`);});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   if(button.dataset.view!==view)cancelAssetLoading();
   canvasInput.clear();
@@ -127,7 +130,7 @@ try {
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
   const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles,libraryData.voices,libraryData.characters);
   const skills=skillDisplayOptions(catalog.presentations,libraryData);catalog.presentations.push(...skills.flatMap(row=>row.presentation?[row.presentation]:[]));
-  for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance)presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');}
+  for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const sourceId=presentation.id.match(/^Spines\/painting\/(\d+)_spine(?:_hx)?$/)?.[1],views=libraryData.artworkViews?.views,view=views?.find(row=>row.id===appearance.id)||views?.find(row=>row.id===sourceId);if(view)presentation.previewView={...view,camera:libraryData.artworkViews.camera};}}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
   if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices]);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('voice-state',()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}

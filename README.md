@@ -242,6 +242,12 @@ All indexed display entries remain reachable through 24-item pages, including
 missing artwork and static previews. Favorites and recent entries stay on the
 device; unavailable browser storage does not prevent browsing. On small screens,
 the library opens as a bottom panel and closes after loading artwork.
+Gallery uses the archived management-view placement and camera when a matching
+configuration exists. **Source preview** restores that framing for the selected
+artwork at the current viewport ratio; **Fit scene** includes every active layer,
+including offstage variants. The source framing does not remove those layers.
+Details distinguish legacy-client settings from modified archive-client settings.
+Resources without a matching configuration keep the general scene fit.
 Artwork loads without replacing the current scene until its resources are ready.
 Use **Cancel loading** to keep the current scene. Choosing another entry replaces
 the pending request; switching workspaces cancels it. Scene edits and imports

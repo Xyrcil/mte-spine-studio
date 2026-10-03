@@ -19,6 +19,7 @@ const fixture={
   'audio-index.json':{schema:1,entries:catalogues['audio-index.json'].entries.filter(row=>row.name===voice.resourceName)},
   'portrait-index.json':{schema:1,entries:catalogues['portrait-index.json'].entries.filter(row=>row.sprites.some(sprite=>sprite.path===appearance.portrait.path||sprite.path===skillPortrait.path||sprite.name===skillResource.split('/').at(-1)))}
 };
+fixture['library.json'].artworkViews=catalogues['library.json'].artworkViews;
 const paths=[...PACK_CATALOGS,...expectedPackPaths(fixture)],allowed=new Set(paths);let mediaNetworkRequests=0;
 const server=createServer(async(request,response)=>{
   try{

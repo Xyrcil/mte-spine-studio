@@ -1,5 +1,5 @@
 import {validateScene} from './scene.js';
-import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
+import {identity,multiply,unityTransform,objectTransform,point,sourcePreviewCamera} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {BoneDragRoot} from './bone-drag-root.js';
 import {switchLayerSkin} from './artwork-variant.js';
@@ -348,6 +348,13 @@ export class Stage extends EventTarget {
       maxX=Math.max(maxX,offset.x+size.x); maxY=Math.max(maxY,offset.y+size.y);
     }
     if (Number.isFinite(minX)) this.camera={x:(minX+maxX)/2,y:(minY+maxY)/2,width:Math.max(1,maxX-minX)*1.15,height:Math.max(1,maxY-minY)*1.15};
+  }
+  fitPreview(group){
+    if(!group?.presentation?.previewView)return false;
+    try{
+      const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,frame=sourcePreviewCamera(group.presentation.previewView,aspect),matrix=objectTransform(group),center=point(matrix,frame.x,frame.y);
+      this.camera={x:center.x,y:center.y,width:Math.abs(matrix[0])*frame.width+Math.abs(matrix[2])*frame.height,height:Math.abs(matrix[1])*frame.width+Math.abs(matrix[3])*frame.height};delete group.previewReason;return true;
+    }catch(error){group.previewReason=error.message;return false;}
   }
   draw() {
     if(this.contextLost||this.disposed)return;

@@ -14,6 +14,60 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
+def preview_stands(configs, origin):
+    result = []
+    for name in ("WitchCultivateStandConfig", "GospelCultivateStandConfig"):
+        for identifier, row in configs.get(name, {}).items():
+            position, scale = row.get("posSpine"), row.get("scaleSpine")
+            offset = row.get("Offset", 1.1)
+            values = [position.get(axis) if position else None for axis in "xy"] + [scale.get(axis) if scale else None for axis in "xy"] + [offset]
+            if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values) or scale["x"] <= 0 or scale["y"] <= 0:
+                continue
+            result.append({"id": identifier, "origin": origin, "context": name, "position": position, "scale": scale, "offset": offset})
+    return result
+
+
+def artwork_view_catalogue(source):
+    sys.path.insert(0, str(source / "tools/python-libs"))
+    import UnityPy
+    level = source / "android-embed/base-decoded/assets/bin/Data/level0"
+    if not level.is_file():
+        return {"views": [], "reason": "Preview camera is absent from archive"}
+    environment = UnityPy.load(level.read_bytes())
+    cameras = [reader for reader in environment.objects if reader.type.name == "Camera" and reader.read().m_GameObject.deref().peek_name() == "Main Camera"]
+    if len(cameras) != 1:
+        raise ValueError("Original preview camera is ambiguous")
+    camera = cameras[0].read_typetree()
+    if not camera["orthographic"] or camera["m_NormalizedViewPortRect"] != {"x": 0, "y": 0, "width": 1, "height": 1}:
+        raise ValueError("Unsupported original preview camera")
+    go = cameras[0].read().m_GameObject.deref().read()
+    transform = next(component.component.deref().read_typetree() for component in go.m_Component if component.component.deref().type.name == "Transform")
+    if transform["m_Father"]["m_PathID"] or any(abs(transform["m_LocalRotation"][axis]) > 1e-6 for axis in "xyz"):
+        raise ValueError("Unsupported original preview camera transform")
+    position = transform["m_LocalPosition"]
+    result = {"camera": {"x": position["x"], "y": position["y"], "halfHeight": camera["orthographic size"], "referenceAspect": 16/9}, "views": []}
+    decoder = load_decoder(source)
+    merged = {}
+    for suffix, origin in (("full-files/files", "legacy"), ("qnzl-2.0-poc/overlay", "archive")):
+        files = source / suffix
+        if not (files / "Configs/StandConfigs.dat").is_file():
+            continue
+        record = next(row for row in decoder.iter_local_records((files / "FrameworkList.dat").read_bytes()) if row.resource_name == "Configs/StandConfigs")
+        raw = (files / "Configs/StandConfigs.dat").read_bytes()
+        configs = {}
+        for reader in UnityPy.load(raw if raw.startswith(b"UnityFS") else decoder.xor_prefix(raw, record.hash_code)).objects:
+            if reader.type.name == "TextAsset" and reader.peek_name() in ("WitchCultivateStandConfig", "GospelCultivateStandConfig"):
+                asset = reader.read()
+                configs[asset.m_Name] = json.loads(asset.m_Script)
+        for view in preview_stands(configs, origin):
+            previous = merged.get(view["id"])
+            if previous and all(previous[key] == view[key] for key in ("position", "scale", "offset", "context")):
+                continue
+            merged[view["id"]] = view
+    result["views"] = list(merged.values())
+    return result
+
+
 def skill_role_bindings(people, gospels, skills, skins=(), drawings=()):
     result = []
     for row in people + gospels:
@@ -132,7 +186,7 @@ def join_portraits(appearances, portrait_entries, source_spines, names):
         sprite = next((item for item in candidates if item["name"] == resource.split("/")[-1]), None) if resource else None
         if sprite is None and len(candidates) == 1:
             sprite = candidates[0]
-        row["spineStatus"] = "available" if row["status"] == "available" else "not-extracted" if row.get("bundle") in source_spines else "missing-source"
+        row["spineStatus"] = "unassigned" if row["status"] == "unassigned" else "available" if row["status"] == "available" else "not-extracted" if row.get("bundle") in source_spines else "missing-source"
         row["portraitStatus"] = "available" if sprite else "unavailable" if entry else "not-extracted"
         if sprite:
             row["portrait"] = sprite
@@ -194,13 +248,13 @@ def build(source, output):
         appearances.append({"id": "v2-" + row["Id"], "characterId": row.get("RoleResId"), "name": row.get("__unnamed_3") or row.get("Name"), "bundle": bundle, "kind": "storyCG", "status": "available" if presentation and presentation["instances"] else "missing-spine"})
         used.add(bundle)
     for presentation in presentations:
-        if presentation["id"] in used or not presentation["instances"]:
+        if presentation["id"] in used or not (presentation["instances"] or presentation.get("unassignedInstances")):
             continue
         filename = presentation["id"].split("/")[-1]
         character_id = filename.removesuffix("_spine").removesuffix("_spine_hx")
         name = names.get(character_id, filename)
         story_role = (story_roles.get(filename) or story_roles.get(filename.removesuffix("_hx"))) if presentation["category"] == "story" else None
-        appearances.append({"id": presentation["id"], "characterId": story_role.get("RoleId") if story_role else character_id if character_id in names else None, "characterName": story_role.get("__unnamed_2") if story_role else names.get(character_id), "name": filename if story_role else name, "bundle": presentation["id"], "kind": presentation["category"], "status": "available"})
+        appearances.append({"id": presentation["id"], "characterId": story_role.get("RoleId") if story_role else character_id if character_id in names else None, "characterName": story_role.get("__unnamed_2") if story_role else names.get(character_id), "name": filename if story_role else name, "bundle": presentation["id"], "kind": presentation["category"], "status": "available" if presentation["instances"] else "unassigned"})
     portrait_path = output / "portrait-index.json"
     portrait_entries = []
     if portrait_path.is_file():
@@ -229,7 +283,7 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

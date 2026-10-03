@@ -3,10 +3,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_preview_stands_keep_authored_placement_separate_from_portrait_offsets(self):
+        configs={"GospelCultivateStandConfig":{"skin":{"posSpine":{"x":.177,"y":.005,"z":-25},"scaleSpine":{"x":.185,"y":.185,"z":.185},"pos2D":{"x":99,"y":99},"Offset":1.1},"empty":{},"zero":{"posSpine":{"x":0,"y":0},"scaleSpine":{"x":0,"y":0}}}}
+        rows=preview_stands(configs,"archive")
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["id"],"skin")
+        self.assertEqual(rows[0]["origin"],"archive")
+        self.assertEqual(rows[0]["position"]["x"],.177)
+        self.assertEqual(rows[0]["scale"]["x"],.185)
+        self.assertEqual(rows[0]["offset"],1.1)
+
     def test_skill_emblems_use_original_id_boundary_custom_badge_and_parent_fallback(self):
         rows = skill_role_bindings([{"id": 1}, {"id": 6}], [{"id": 10}, {"id": 11}], {},
                                    [{"id": 100, "gospel_id": 10, "badge": "custom"}, {"id": 101, "gospel_id": 11, "badge": ""}], [])
@@ -71,6 +81,12 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(rows[0]["displayKind"], "static-preview")
         self.assertEqual(rows[0]["spineStatus"], "missing-source")
         self.assertEqual(rows[0]["portrait"], sprite)
+
+    def test_unassigned_source_templates_remain_visible_without_claiming_available_artwork(self):
+        rows=[{"id":"template","bundle":"Spines/drawing","status":"unassigned"}]
+        join_portraits(rows,[],{"Spines/drawing"},{})
+        self.assertEqual(rows[0]["spineStatus"],"unassigned")
+        self.assertEqual(rows[0]["displayKind"],"missing")
 
     def test_orphan_images_remain_available_without_inventing_spine(self):
         rows = []

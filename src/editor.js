@@ -65,6 +65,7 @@ export function createEditor(stage,message,onSelection){
     }
     document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
     for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
+    const preview=document.querySelector('#source-preview');if(preview)preview.disabled=locked||!selected()?.presentation?.previewView;
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
   async function restore(scene,signal){
