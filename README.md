@@ -149,6 +149,10 @@ images to fill their original rectangles. Older resources without content
 bounds retain their previous drawing behavior and need extraction refresh.
 UI image components retain their original color, sprite and material
 references; CanvasGroup opacity and RectTransform data stay in the presentation.
+Stretched UI images require an explicit viewport root and supported CanvasScaler;
+missing layout context remains unavailable. The original Onsen background matches
+direct texture rendering at four landscape and portrait sizes in Chrome, Firefox
+and WebKit. This verifies the bound image layout, not the complete client UI.
 The recovered smoke images and skill-animation graphics are local resources,
 not generated replacements. The smoke clip plays its original looping color
 and anchored-position curves, inherits CanvasGroup opacity and pauses under

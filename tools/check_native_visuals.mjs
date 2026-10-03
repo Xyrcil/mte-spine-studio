@@ -1,8 +1,8 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteHost?.getState().ready&&!window.mteEditor.busy);await page.evaluate(()=>window.mteHost.pause());
@@ -31,5 +31,24 @@ try{
   const recovered=await page.evaluate(()=>{const stage=window.mteStudio;stage.draw();const data=new Uint8Array(window.nativeRecovery.pixels.length);stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,data);return JSON.stringify(stage.snapshot())===JSON.stringify(window.nativeRecovery.saved)&&data.every((value,index)=>value===window.nativeRecovery.pixels[index]);});assert.equal(recovered,true);assert.deepEqual(errors,[]);
   await page.getByRole('button',{name:'Studio',exact:true}).click();await page.getByRole('button',{name:'Duplicate',exact:true}).click();await page.waitForFunction(()=>window.mteStudio.groups.length===2);
   const isolated=await page.evaluate(()=>{const [a,b]=window.mteStudio.groups,original=a.nativeAnimations[0].model.snapshot();b.nativeAnimations[0].model.advance(.1);return JSON.stringify(a.nativeAnimations[0].model.snapshot())===JSON.stringify(original)&&a.nodes.get(a.nativeImages[0].source.transform)!==b.nodes.get(b.nativeImages[0].source.transform)&&a.nativeImages[0].color!==b.nativeImages[0].color;});assert.equal(isolated,true);assert.deepEqual(errors,[]);
-  console.log('Native smoke checks passed: source curves, inactive hierarchy, pause, exact restore, legacy scenes, invalid source safety, PNG parity, backward seeking, context recovery and duplicate isolation',result);
-}finally{await browser.close();}
+  const stretched=await page.evaluate(async()=>{
+    const {Stage}=await import('/src/engine/stage.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations;
+    const source=catalog.find(row=>row.id==='UI/Prefab/Onsen'),root='6812473470622339526',image=structuredClone(source.images.find(row=>row.transform==='-214455285360051969'));
+    image.assetPath=source.path+'/'+image.sprite.path;image.viewportRoot=root;image.viewportDecoration=true;
+    const presentation={...source,id:'Viewport image check',instances:[],controllers:[],hotspots:[],effects:[],canvasGroups:[],visualAnimations:[],nativeText:[],nativeBehaviours:[],images:[image],hierarchy:source.hierarchy.filter(row=>[root,image.transform,image.gameObject,'-2866512241356400126'].includes(row.id)),hotSpringHouse:{decoration:{scaler:catalog.find(row=>row.id==='UI/Prefab/UIRoot').canvasScalers[0]}}};
+    const canvas=document.createElement('canvas'),stage=new Stage(canvas,{manual:true}),results=[];
+    try{
+      const group=await stage.add(presentation,[]);if(group.nativeImages[0].reason)throw new Error(group.nativeImages[0].reason);
+      for(const [width,height] of [[1170,540],[1920,1080],[960,1080],[2340,1080]]){
+        canvas.width=width;canvas.height=height;stage.camera={x:17,y:-9,width,height};stage.background='#ff00ff';stage.draw();const pixels=new Uint8Array(width*height*4);stage.gl.readPixels(0,0,width,height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,pixels);
+        group.visible=false;stage.draw();const renderer=stage.renderer,gl=stage.gl;renderer.begin();renderer.batcher.setBlendMode(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);renderer.drawTexture(group.manager.get(group.nativeImages[0].texture),stage.camera.x-width/2,stage.camera.y-height/2,width,height);renderer.end();group.visible=true;
+        const reference=new Uint8Array(pixels.length);gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,reference);let error=0,drawn=0;
+        for(let i=0;i<pixels.length;i++){error=Math.max(error,Math.abs(pixels[i]-reference[i]));if(i%4===0&&(pixels[i]!==255||pixels[i+1]!==0||pixels[i+2]!==255))drawn++;}
+        results.push({width,height,error,drawn});
+      }
+      return results;
+    }finally{stage.dispose();}
+  });
+  for(const view of stretched){assert.ok(view.drawn>view.width*view.height/2,JSON.stringify(view));assert.ok(view.error<=1,JSON.stringify(view));}assert.deepEqual(errors,[]);
+  console.log(engine+': Native visuals passed: source curves, inactive hierarchy, pause, exact restore, legacy scenes, invalid source safety, PNG parity, backward seeking, context recovery, duplicate isolation and viewport-bound source background',result,stretched);
+}finally{await close();}

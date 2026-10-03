@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createNativeVisuals,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds,compileNativeVectorCurve,NativeAnimation} from '../src/engine/native-visuals.js';
+import {createNativeVisuals,drawNativeImage,preflightNativeAnimations,validateNativeAnimation,viewportDecorationMatrix,nativeImageBounds,compileNativeVectorCurve,NativeAnimation} from '../src/engine/native-visuals.js';
 
 test('trimmed sprite content preserves source padding, pivot and rounded canvas dimensions',()=>{
   const sprite={rect:{width:256,height:256},contentRect:{x:4,y:24,width:243,height:205}};
@@ -22,6 +22,16 @@ test('cross-bundle native images use the app asset root rather than the characte
   const presentation=fixture();presentation.images[0].assetPath='spines/interfaces/UI/Prefab/Onsen/heart.png';const {group}=load(presentation),urls=[];
   createNativeVisuals(group,'/project/assets/spines/ui/Onsen/',{loadTexture:url=>urls.push(url)},'/project/assets/');
   assert.deepEqual(urls,['/project/assets/spines/interfaces/UI/Prefab/Onsen/heart.png']);
+});
+test('stretched source images resolve a bound viewport and retain unbound-layout errors',()=>{
+  const source=fixture();source.visualAnimations=[];source.images[0].viewportRoot='rootT';source.images[0].viewportDecoration=true;source.hotSpringHouse={decoration:{scaler:{m_UiScaleMode:1,m_ScreenMatchMode:1,m_ReferenceResolution:{x:1920,y:1080}}}};
+  for(const node of source.hierarchy.filter(node=>node.type==='RectTransform'))Object.assign(node.data,{m_AnchorMin:{x:0,y:0},m_AnchorMax:{x:1,y:1},m_SizeDelta:{x:0,y:0},m_AnchoredPosition:{x:0,y:0},m_Pivot:{x:.5,y:.5},m_LocalPosition:{x:0,y:0,z:0}});
+  source.hierarchy.find(node=>node.id==='childT').data.m_Father={m_FileID:0,m_PathID:'rootT'};
+  const {group,urls}=load(source);group.manager={get:()=>({})};group.opacity=1;group.isActiveTransform=()=>true;assert.equal(group.nativeImages[0].reason,undefined);assert.deepEqual(urls,['/assets/smoke.png']);
+  let quad;const renderer={context:{gl:{SRC_ALPHA:1,ONE_MINUS_SRC_ALPHA:2}},enableRenderer(){},batcher:{setBlendMode(){},draw(_texture,vertices){quad=vertices;}}};
+  for(const [width,height] of [[1920,1080],[960,1080],[2340,1080]]){drawNativeImage(renderer,group,group.nativeImages[0],{x:3,y:4,width,height});const positions=Array.from({length:4},(_,index)=>quad.slice(index*8,index*8+2));assert.deepEqual(positions,[[3-width/2,4-height/2],[3+width/2,4-height/2],[3+width/2,4+height/2],[3-width/2,4+height/2]]);}
+  const broken=structuredClone(source);delete broken.hotSpringHouse;assert.match(load(broken).group.nativeImages[0].reason,/context/);source.images[0].viewportRoot='missing';assert.match(load(source).group.nativeImages[0].reason,/hierarchy|unavailable/);
+  delete source.images[0].viewportRoot;assert.match(load(source).group.nativeImages[0].reason,/layout/);
 });
 
 function fixture(){

@@ -70,7 +70,9 @@ export function createNativeVisuals(group,base,manager,assetBase=base){
   group.nativeCanvasGroups=structuredClone(group.presentation.canvasGroups||[]);
   group.nativeImages=(group.presentation.images||[]).map(source=>{
     const node=group.nodes.get(source.transform),data=node?.data;
-    let reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||source.data.m_UseSpriteMesh||!data||data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y?'Native image layout or material is not supported yet':undefined;
+    const stretched=data&&(data.m_AnchorMin?.x!==data.m_AnchorMax?.x||data.m_AnchorMin?.y!==data.m_AnchorMax?.y);
+    let reason=source.status!=='extracted'||!source.sprite||source.material||source.data.m_Type!==0||source.data.m_PreserveAspect||source.data.m_UseSpriteMesh||!data||stretched&&!source.viewportRoot?'Native image layout or material is not supported yet':undefined;
+    if(!reason&&source.viewportRoot)try{const context=source.viewportPanel?group.presentation.hotSpringHouse?.dialoguePanel:group.presentation.hotSpringHouse?.decoration,reference=context?.scaler?.m_ReferenceResolution;if(!reference)throw new Error('Viewport image context is unavailable');viewportDecorationMatrix({x:0,y:0,width:reference.x,height:reference.y},context.scaler);viewportRectLayout(group.nodes,node.id,source.viewportRoot,reference);}catch(error){reason=error.message;}
     if(!reason&&source.sprite.contentRect)try{nativeImageBounds({x:1,y:1},{x:.5,y:.5},source.sprite);}catch(error){reason=error.message;}
     return {source,color:{...source.data.m_Color},texture:source.assetPath?assetBase+source.assetPath:base+source.sprite?.path,reason,used:Boolean(source.viewportDecoration)};
   });
