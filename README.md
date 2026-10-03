@@ -167,7 +167,12 @@ receiver maps. They retain source parameters, same-time ordering and loop-bounda
 events. Checkpoints keep the next event cursor; restoring a pose or drawing a
 paused frame does not replay consumed callbacks. Unresolved functions and external
 object parameters keep the clip unavailable. This infrastructure does not yet
-enable the complete skill receiver or its non-looping lifecycle.
+enable the complete skill receiver. Explicit Once clips now stop, reset their
+time and restore their bound defaults; ClampForever retains the final sample.
+Checkpoints distinguish an enabled paused pose from a stopped clip. Restarting
+clears the old event cursor, including restarts requested inside a callback.
+Unresolved Default wrap modes remain unavailable until their owning playback
+context is known rather than being treated as a loop.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser

@@ -6,7 +6,7 @@ import {NativeEventTimeline} from './native-events.js';
 
 export function validateNativeAnimation(value){
   if(value?.schema!==1||typeof value.id!=='string'||value.id.length>512||typeof value.clip!=='string'||value.clip.length>512||typeof value.time!=='number'||!Number.isFinite(value.time)||value.time<0||typeof value.playing!=='boolean')throw new Error('Invalid native animation checkpoint');
-  const result={schema:1,id:value.id,clip:value.clip,time:value.time,playing:value.playing};if(value.eventCursor!==undefined){if(!Number.isSafeInteger(value.eventCursor)||value.eventCursor<0)throw new Error('Invalid native event checkpoint');result.eventCursor=value.eventCursor;}return result;
+  const result={schema:1,id:value.id,clip:value.clip,time:value.time,playing:value.playing};if(value.enabled!==undefined){if(typeof value.enabled!=='boolean'||!value.enabled&&value.playing)throw new Error('Invalid native animation enabled state');result.enabled=value.enabled;}if(value.eventCursor!==undefined){if(!Number.isSafeInteger(value.eventCursor)||value.eventCursor<0)throw new Error('Invalid native event checkpoint');result.eventCursor=value.eventCursor;}return result;
 }
 function resolvePath(group,root,path){
   let node=group.transforms.get(root);
@@ -26,7 +26,7 @@ export class NativeAnimation {
     this.source=source;this.clip=clip;this.time=0;this.playing=Boolean(source.data.m_PlayAutomatically);this.group=group;
     const data=clip?.data;if(!data?.m_Legacy||data.m_Compressed||['m_RotationCurves','m_CompressedRotationCurves','m_PPtrCurves'].some(key=>data[key]?.length))throw new Error('Native animation channels or events are not supported yet');
     if(data.m_Events?.length&&!group.nativeEventHandlers?.has(String(source.data.m_GameObject.m_PathID)))throw new Error('Native animation events are not supported yet');
-    this.wrap=data.m_WrapMode||source.data.m_WrapMode;if(this.wrap!==2)throw new Error('Native animation wrap mode is not supported yet');
+    this.wrap=data.m_WrapMode||source.data.m_WrapMode;if(![1,2,8].includes(this.wrap))throw new Error('Native animation wrap mode is not supported yet');this.enabled=this.playing;this.epoch=0;
     this.duration=0;
     this.channels=(data.m_FloatCurves||[]).map(row=>{
       const node=resolvePath(group,String(source.data.m_GameObject.m_PathID),row.path);let target,key;
@@ -45,22 +45,25 @@ export class NativeAnimation {
       for(let component=0;component<3;component++)if(kind!=='rotation'||component===2){const key='xyz'[component],data=target.data;if(!Number.isFinite((kind==='scale'?data.m_LocalScale:data.m_LocalPosition)?.[key]))throw new Error('Native animated transform is unavailable');const offset=kind==='localPosition'&&component<2&&data.m_AnchoredPosition?data.m_LocalPosition[key]-data.m_AnchoredPosition[key]:null;if(offset!==null&&!Number.isFinite(offset))throw new Error('Native anchored position offset is unavailable');this.channels.push({target,key,transform:target.id,kind,sample:samples[component],offset});}
     }
     if(!this.channels.length||!Number.isFinite(this.duration)||this.duration<=0)throw new Error('Invalid native animation duration');
-    if(data.m_Events?.length)this.events=new NativeEventTimeline(data.m_Events,this.duration,true,group.nativeEventHandlers.get(String(source.data.m_GameObject.m_PathID)));
+    this.defaults=this.channels.map(channel=>{const data=channel.target.data;return channel.kind==='color'?channel.target.color[channel.key]:channel.kind==='textSpacing'?channel.target.spacing[channel.key]:channel.kind==='position'?data.m_AnchoredPosition[channel.key]:channel.kind==='localPosition'?data.m_LocalPosition[channel.key]:channel.kind==='scale'?data.m_LocalScale[channel.key]:channel.kind==='rotation'?structuredClone(data.m_LocalRotation||{x:0,y:0,z:0,w:1}):channel.kind==='active'?(data.m_IsActive??true):data.m_Alpha;});
+    if(data.m_Events?.length)this.events=new NativeEventTimeline(data.m_Events,this.duration,this.wrap===2,group.nativeEventHandlers.get(String(source.data.m_GameObject.m_PathID)));
   }
-  advance(delta){if(typeof delta!=='number'||!Number.isFinite(delta)||delta<0||!Number.isFinite(this.time+delta))throw new Error('Invalid native animation delta');const playing=this.playing,time=playing?Math.round((this.time+delta)*1e12)/1e12:this.time;if(playing&&delta>0)this.events?.range(time);this.time=time;this.apply();if(playing&&delta>0)this.events?.advance(this.time,()=>this.playing&&(!this.group.isActiveTransform||this.group.isActiveTransform(this.group.transforms.get(String(this.source.data.m_GameObject.m_PathID))?.id)));}
-  apply(){const time=this.time%this.duration,values=this.channels.map(channel=>channel.sample(time));if(values.some(value=>!Number.isFinite(value)))throw new Error('Native animation produced a nonfinite value');for(let i=0;i<this.channels.length;i++){const channel=this.channels[i],value=values[i],data=channel.target.data;
+  play(){this.epoch++;this.time=0;this.playing=true;this.enabled=true;this.events?.reset();this.apply();}
+  stop(){this.epoch++;this.time=0;this.playing=false;this.enabled=false;this.events?.reset();this.apply();}
+  advance(delta){if(typeof delta!=='number'||!Number.isFinite(delta)||delta<0||!Number.isFinite(this.time+delta))throw new Error('Invalid native animation delta');const playing=this.playing,epoch=this.epoch,raw=playing?Math.round((this.time+delta)*1e12)/1e12:this.time,time=this.wrap===1?Math.min(raw,this.duration):raw;if(!Number.isFinite(time))throw new Error('Invalid native animation delta');if(playing&&delta>0)this.events?.range(time);this.time=time;this.apply();if(playing&&delta>0)this.events?.advance(this.time,()=>this.playing&&(!this.group.isActiveTransform||this.group.isActiveTransform(this.group.transforms.get(String(this.source.data.m_GameObject.m_PathID))?.id)));if(playing&&delta>0&&this.wrap===1&&time>=this.duration&&epoch===this.epoch)this.stop();}
+  apply(){const time=this.wrap===2?this.time%this.duration:Math.min(this.time,this.duration),values=this.enabled?this.channels.map(channel=>channel.sample(time)):this.defaults;if(this.enabled&&values.some(value=>!Number.isFinite(value)))throw new Error('Native animation produced a nonfinite value');for(let i=0;i<this.channels.length;i++){const channel=this.channels[i],value=values[i],data=channel.target.data;
     if(channel.kind==='color')channel.target.color[channel.key]=value;
     else if(channel.kind==='textSpacing')channel.target.spacing[channel.key]=value;
     else if(channel.kind==='position'){data.m_LocalPosition[channel.key]=channel.offset+value;data.m_AnchoredPosition[channel.key]=value;}
     else if(channel.kind==='scale')data.m_LocalScale={...data.m_LocalScale,[channel.key]:value};
     else if(channel.kind==='localPosition'){data.m_LocalPosition={...data.m_LocalPosition,[channel.key]:value};if(channel.offset!==null)data.m_AnchoredPosition={...data.m_AnchoredPosition,[channel.key]:value-channel.offset};}
-    else if(channel.kind==='rotation'){const half=value*Math.PI/360;data.m_LocalRotation={x:0,y:0,z:Math.sin(half),w:Math.cos(half)};}
-    else if(channel.kind==='active')data.m_IsActive=value>=.5;
+    else if(channel.kind==='rotation'){if(!this.enabled)data.m_LocalRotation=structuredClone(value);else{const half=value*Math.PI/360;data.m_LocalRotation={x:0,y:0,z:Math.sin(half),w:Math.cos(half)};}}
+    else if(channel.kind==='active')data.m_IsActive=this.enabled?value>=.5:value;
     else if(channel.kind==='canvasAlpha')data.m_Alpha=value;
   }}
-  snapshot(){return {schema:1,id:this.source.id,clip:this.clip.id,time:this.time,playing:this.playing,...(this.events?{eventCursor:this.events.cursor}:{})};}
-  check(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');if(this.events)this.events.check(value.eventCursor??(value.time===0?0:NaN),value.time);else if(value.eventCursor!==undefined)throw new Error('Native event checkpoint does not match asset');return value;}
-  restore(value){value=this.check(value);const previous=this.snapshot();this.time=value.time;this.playing=value.playing;try{this.apply();}catch(error){this.time=previous.time;this.playing=previous.playing;throw error;}if(this.events)this.events.restore(value.eventCursor??0,value.time);}
+  snapshot(){return {schema:1,id:this.source.id,clip:this.clip.id,time:this.time,playing:this.playing,...(this.wrap!==2||!this.enabled?{enabled:this.enabled}:{}),...(this.events?{eventCursor:this.events.cursor}:{})};}
+  check(value){value=validateNativeAnimation(value);if(value.id!==this.source.id||value.clip!==this.clip.id)throw new Error('Native animation source does not match checkpoint');if(this.wrap!==2&&value.enabled===undefined)throw new Error('Native non-looping checkpoint is incomplete');if(this.wrap===1&&value.time>this.duration||value.enabled===false&&value.time!==0)throw new Error('Invalid native animation lifecycle checkpoint');if(this.events)this.events.check(value.eventCursor??(value.time===0?0:NaN),value.time);else if(value.eventCursor!==undefined)throw new Error('Native event checkpoint does not match asset');return value;}
+  restore(value){value=this.check(value);const previous=this.snapshot(),enabled=this.enabled;this.time=value.time;this.playing=value.playing;this.enabled=value.enabled??true;try{this.apply();}catch(error){this.time=previous.time;this.playing=previous.playing;this.enabled=enabled;throw error;}this.epoch++;if(this.events)this.events.restore(value.eventCursor??0,value.time);}
 }
 
 export function createNativeVisuals(group,base,manager,assetBase=base){
