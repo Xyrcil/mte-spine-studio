@@ -251,6 +251,11 @@ Source-hidden skeleton layers are loaded but remain hidden until explicitly
 enabled in the object controls. Switching active layers rebuilds this object's
 interaction bindings and restarts its playback. Older scenes that omit those
 hidden layers remain readable; missing originally visible layers are rejected.
+Skeletons with multiple source skins expose **Artwork variants** in the object
+controls. These are internal skeleton variants, not additional character costumes.
+Changing one keeps track times, interaction state and pending notifications, without
+replaying animation sounds. Pose checkpoints retain the chosen skin for scene
+restore, undo, duplication and independent export.
 Gallery clicks fire on release; dragging pans without triggering character
 interactions. Studio drags objects or pans from empty space. Space-drag, Alt-drag
 and middle-button drag pan over objects too. Wheel and two-finger zoom preserve

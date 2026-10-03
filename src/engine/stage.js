@@ -2,6 +2,7 @@ import {validateScene} from './scene.js';
 import {identity,multiply,unityTransform,objectTransform,point} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {BoneDragRoot} from './bone-drag-root.js';
+import {switchLayerSkin} from './artwork-variant.js';
 import {backgroundMatrix,backgroundOpacity,objectVisible,matrixPose,sceneDrawOrder,setBackgroundParent,objectDragDelta} from './background-layers.js';
 import {HotSpringRoot} from './hot-spring.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
@@ -167,6 +168,9 @@ export class Stage extends EventTarget {
     }
   }
   recordApplied(layer){layer.appliedChanged=layer.state.animationsChanged;layer.appliedTracks=Array.from(layer.state.tracks,track=>track?Object.fromEntries(APPLIED_FIELDS.map(key=>[key,track[key]])):null);}
+  setLayerSkin(group,id,name){
+    if(group?.kind!=='spine')throw new Error('Invalid artwork selection');const layer=group.layers.find(row=>row.instance.id===id);if(!layer)throw new Error('Skeleton layer is unavailable');switchLayerSkin(layer,name);this.recordApplied(layer);for(const root of group.controllers||[])if(root instanceof BoneDragRoot)root.apply(layer);this.transformLayer(group,layer);
+  }
   setLayerActive(group,id,active){
     if(group?.kind!=='spine'||typeof active!=='boolean')throw new Error('Invalid skeleton layer selection');const layer=group.layers.find(row=>row.instance.id===id);if(!layer)throw new Error('Skeleton layer is unavailable');layer.active=active;
     for(const root of group.controllers||[])if(root instanceof InteractionRoot){root.rebind();root.reset();for(const member of root.layers){member.state.clearTracks();member.skeleton.setToSetupPose();initializeAnimation(member,{interactive:true});}root.initializeBackgrounds();}
