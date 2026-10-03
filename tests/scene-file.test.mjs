@@ -17,6 +17,12 @@ test('scene ZIP deduplicates backgrounds across current and recorded initial sce
   const value=scene();value.objects.push({...image('copy'),x:1},{...image('portrait'),asset:'portraits/role/1.png'});delete value.objects[2].src;const initial=structuredClone(value);value.sequence={schema:1,initial,duration:0,actions:[]};
   const file=await createSceneFile(value,{format:'zip'}),files=unzipSync(new Uint8Array(await file.blob.arrayBuffer())),manifest=JSON.parse(strFromU8(files['scene.json']));assert.equal(file.images,1);assert.deepEqual(Object.keys(files).sort(),['images/0.png','scene.json']);assert.equal(manifest.scene.objects[0].src,undefined);assert.equal(manifest.scene.objects[2].asset,'portraits/role/1.png');assert.deepEqual(await readSceneFile(file.blob),validateScene(value));
 });
+test('scene JSON and ZIP preserve independent source preview settings in recorded initial scenes',async()=>{
+  const value=scene();value.objects.push({id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:0,y:0,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[]});
+  value.camera.sourcePreview={group:'actor',aspect:1.6,view:{camera:{x:0,y:.09,halfHeight:1,referenceAspect:16/9},position:{x:.177,y:.005},scale:{x:.185,y:.185},offset:1.1}};
+  value.sequence={schema:1,initial:structuredClone(value),duration:0,actions:[]};const before=structuredClone(value);
+  for(const format of ['json','zip']){const file=await createSceneFile(value,{format}),restored=await readSceneFile(file.blob);assert.deepEqual(restored,validateScene(value));restored.sequence.initial.camera.sourcePreview.view.offset=2;assert.equal(restored.camera.sourcePreview.view.offset,1.1);assert.deepEqual(value,before);}
+});
 test('ZIP rejects unsafe paths, missing or unreferenced images, malformed manifests and truncated directories',async()=>{
   const files=await contents();await assert.rejects(readSceneFile(archive({...files,'../extra.png':files['images/0.png']})),/Unsafe/);
   await assert.rejects(readSceneFile(archive({'scene.json':files['scene.json']})),/missing/);

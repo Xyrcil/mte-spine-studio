@@ -1,16 +1,16 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
   await selectAsset(page,'Spines/painting/301619402_spine');
   await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');
   await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];stage.paused=true;root.reset();for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.play('animation',0,true);stage.evaluate(0);stage.fit();});
-  await page.locator('[data-view="studio"]').click();await page.locator('#sequence-record').click();
+  await page.locator('[data-view="studio"]').click();await page.evaluate(()=>{if(!window.mteStudio.fitPreview(window.mteStudio.groups[0]))throw new Error('Source preview is unavailable');});await page.locator('#sequence-record').click();
   assert.equal(await page.locator('[data-view="gallery"]').getAttribute('class'),'selected');
   assert.equal(await page.evaluate(()=>window.mteEditor.busy),true);
   const position=await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0],hit=root.hotspots.find(hit=>hit.name==='HitArea_anim_anim2'),m=root.matrix(hit),rect=stage.canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;return {x:rect.left+((m[4]-stage.camera.x)/width+.5)*rect.width,y:rect.top+(.5-(m[5]-stage.camera.y)/height)*rect.height};});
@@ -20,6 +20,7 @@ try{
   await page.evaluate(()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];for(let i=0;i<1200&&root.value.playing;i++)stage.evaluate(1/120);stage.evaluate(.2);});
   await page.locator('#sequence-stop').click();assert.equal(await page.evaluate(()=>window.mteEditor.busy),false);
   const recorded=await page.evaluate(()=>window.mteSequence.sequence);
+  assert.equal(recorded.initial.camera.sourcePreview.group,recorded.initial.objects[0].id);
   await page.getByLabel('Click 1 time (s)',{exact:true}).fill('0.137');await page.getByLabel('Click 1 time (s)',{exact:true}).dispatchEvent('change');assert.equal(await page.evaluate(()=>window.mteSequence.sequence.actions[0].at),.137);
   await page.locator('#sequence-duration').fill('0.1');await page.locator('#sequence-duration').dispatchEvent('change');assert.equal(await page.evaluate(()=>window.mteSequence.sequence.duration),recorded.duration);
   await page.locator('#sequence-duration').fill(String(recorded.duration+1));await page.locator('#sequence-duration').dispatchEvent('change');
@@ -53,5 +54,5 @@ try{
   const interrupted=await page.evaluate(()=>window.mteStudio.snapshot().sequence);assert.ok(interrupted.duration>0);
   await page.evaluate(()=>window.sequenceLoss.restoreContext());await page.waitForFunction(()=>!window.mteStudio.recoveryPending,null,{timeout:20000});
   assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence),interrupted);assert.equal(await page.evaluate(()=>window.mteEditor.busy),false);
-  assert.deepEqual(errors,[]);console.log('Sequence UI checks passed: real click, edit lock, time editing, duration validation, repeatable silent seeking, cancellation/failure rollback, deletion, bounded pagination, pause, replay, file round-trip, corrupt import, refresh and rendering-loss recovery');
-}finally{await browser.close();}
+  assert.deepEqual(errors,[]);console.log(engine+': Sequence checks passed: source-preview recording, real click, edit lock, time editing, duration validation, repeatable seeking, cancellation/failure rollback, pagination, pause, replay, file round-trip, corrupt import, reload and rendering recovery');
+}finally{await close();}
