@@ -23,6 +23,7 @@ export function materialEffectLimitations(entry){
   for(const page of entry.materialBindings?.pages||[])for(const material of Object.values(page.materials)){
     if(material.keywords?.includes('_FLOW_MAP_ON'))effects.add('Flow-map distortion');
     if(material.keywords?.includes('_NOISE_TEX_ON'))effects.add('Noise-texture distortion');
+    for(const error of material.textureErrors||[])effects.add(`Material texture unavailable: ${error.texture}`);
   }
   return [...effects];
 }

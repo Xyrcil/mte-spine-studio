@@ -88,6 +88,46 @@ class ExtractionTests(unittest.TestCase):
             self.assertEqual((page["atlas"], page["page"], page["sourcePage"]), (0, "page-0.png", "original.png"))
             self.assertEqual(page["materials"]["normal"], {"id": "4", "renderQueue": 3005, "shader": "Spine/Skeleton", "keywords": ["_STRAIGHT_ALPHA_INPUT"], "properties": {}})
             self.assertEqual(page["materials"]["additive"], {"id": "5", "renderQueue": 3000, "shader": "Spine/Blend Modes/Skeleton PMA Additive", "keywords": ["_STRAIGHT_ALPHA_INPUT"], "properties": {"m_Colors": [["_Color", {"r": 4, "g": 4, "b": 4, "a": 1}]], "m_Floats": [["_BloomFacter", 0]]}})
+            tree = rows[4].read_typetree()
+            tree["m_ShaderKeywords"] = "_FLOW_MAP_ON _NOISE_TEX_ON"
+            env = lambda number: {"m_Texture": pointer(number), "m_Scale": {"x": 9, "y": 7}, "m_Offset": {"x": .1, "y": .2}}
+            tree["m_SavedProperties"] = {"m_TexEnvs": [("_FlowMap", env(8)), ("_NoiseTex", env(9)), ("_MaskTex", env(0))]}
+            extractor.skeleton_texture = Mock(side_effect=lambda owner, reference, location, name: {"id": str(reference["m_PathID"]), "path": "materials/" + name + ".png"})
+            result = extractor.skeleton_materials(owner, export_textures=True)
+            profile = result["pages"][0]["materials"]["normal"]
+            self.assertEqual(profile["textures"]["_NoiseTex"]["scale"], {"x": 9, "y": 7})
+            self.assertEqual(profile["textures"]["_NoiseTex"]["offset"], {"x": .1, "y": .2})
+            self.assertEqual(profile["textures"]["_MaskTex"], {"default": "white"})
+            self.assertEqual(extractor.skeleton_texture.call_count, 2)
+            self.assertEqual(extractor.skeleton_texture.call_args_list[0].args[:3], (rows[4], pointer(8), "1/atlas-0/page-0/normal"))
+            extractor.skeleton_texture.reset_mock()
+            retained = extractor.skeleton_materials(owner, previous=result)
+            self.assertEqual(retained["pages"][0]["materials"]["normal"]["textures"], profile["textures"])
+            extractor.skeleton_texture.assert_not_called()
+            tree["m_ShaderKeywords"] = ""
+            self.assertNotIn("textures", extractor.skeleton_materials(owner, previous=result)["pages"][0]["materials"]["normal"])
+            tree["m_ShaderKeywords"] = "_FLOW_MAP_ON"
+            extractor.skeleton_texture.side_effect = ValueError("Dependency unavailable")
+            failed = extractor.skeleton_materials(owner, export_textures=True)
+            self.assertEqual(failed["errors"], [])
+            self.assertEqual(failed["pages"][0]["materials"]["normal"]["textureErrors"][0]["error"], "Texture dependency unavailable or could not be decoded")
+            self.assertEqual(failed["pages"][0]["materials"]["normal"]["textureErrors"][0]["type"], "ValueError")
+
+    def test_skeleton_textures_deduplicate_resolved_references_without_cross_file_path_collisions(self):
+        images = [Mock(), Mock()]
+        files = [SimpleNamespace(name="first"), SimpleNamespace(name="second")]
+        readers = [SimpleNamespace(path_id=7, assets_file=file, read=lambda image=image: SimpleNamespace(image=image, m_Width=64, m_Height=32), read_typetree=lambda: {"m_TextureSettings": {"m_WrapU": 1}, "m_ColorSpace": 0}) for file, image in zip(files, images)]
+        with tempfile.TemporaryDirectory() as folder:
+            extractor = BundleExtractor(SimpleNamespace(objects=[]), Path(folder))
+            extractor.resolve = lambda owner, pointer: readers[owner]
+            first = extractor.skeleton_texture(0, {}, "first/normal", "_NoiseTex")
+            self.assertEqual(extractor.skeleton_texture(0, {}, "duplicate/normal", "_NoiseTex"), first)
+            second = extractor.skeleton_texture(1, {}, "second/normal", "_NoiseTex")
+            self.assertNotEqual(first["path"], second["path"])
+            self.assertEqual(first["settings"], {"m_WrapU": 1})
+            self.assertEqual((first["width"], first["height"], first["colorSpace"]), (64, 32, 0))
+            for image in images:
+                image.save.assert_called_once()
 
     def test_renderer_queues_resolve_custom_values_and_shader_defaults_without_textures(self):
         pointer = lambda value: {"m_FileID": 0, "m_PathID": value}

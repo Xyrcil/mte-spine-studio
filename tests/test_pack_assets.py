@@ -10,6 +10,21 @@ from pack_assets import pack, CATALOGUES, indexed_files
 
 
 class ResourceArchiveTests(unittest.TestCase):
+    def test_skeleton_material_dependencies_are_required_and_packed_relative_to_the_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "assets"
+            self.setup_assets(root)
+            entry = {"status": "parsed", "path": "spines/painting/role", "skeleton": "id/skeleton.skel", "atlases": [], "materialBindings": {"pages": [{"materials": {"normal": {"textures": {"_NoiseTex": {"path": "materials/noise.png"}, "_MaskTex": {"default": "white"}}}}}]}}
+            (root / "runtime-index.json").write_text(json.dumps({"schema": 1, "entries": [entry]}))
+            for path in ["id/skeleton.skel", "materials/noise.png"]:
+                destination = root / entry["path"] / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"resource")
+            self.assertEqual(set(indexed_files(root)), set(CATALOGUES + [entry["path"] + "/id/skeleton.skel", entry["path"] + "/materials/noise.png"]))
+            entry["materialBindings"]["pages"][0]["materials"]["normal"]["textures"]["_NoiseTex"]["path"] = "materials/missing.png"
+            (root / "runtime-index.json").write_text(json.dumps({"schema": 1, "entries": [entry]}))
+            with self.assertRaisesRegex(ValueError, "Indexed resource missing"):
+                indexed_files(root)
     def test_native_and_particle_media_are_packed_with_presentation_relative_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "assets"

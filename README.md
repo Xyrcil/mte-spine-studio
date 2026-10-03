@@ -151,6 +151,12 @@ colors stay unchanged between draws.
 Flow-map and noise-texture distortion remain unimplemented. Active source
 keywords are reported in artwork details and export warnings; the underlying
 Spine animation remains available.
+Their source flow, noise and mask textures can be recovered with
+`python3 tools/extract_assets.py --source /path/to/archive --merge --metadata-only --material-textures`.
+Rebuild the indexes and resource ZIP afterward. Texture filtering, wrap modes,
+scale and offset remain in the material profile and offline preparation includes
+these files. Ordinary metadata refresh retains existing texture records only
+when their material and texture references still match.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI sprites retain their original canvas rectangle and trimmed
 content bounds, including atlas offsets and unpacked rotation. The native image

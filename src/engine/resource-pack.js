@@ -25,6 +25,7 @@ export function expectedPackPaths(catalogues){
   const result=new Set(),add=path=>result.add(packPath(path));
   for(const entry of catalogues['runtime-index.json'].entries)if(entry.status==='parsed'){
     add(entry.path+'/'+entry.skeleton);for(const atlas of entry.atlases){const path=`${entry.path}/${entry.id}/${atlas.atlas}`;add(path);const directory=path.slice(0,path.lastIndexOf('/')+1);for(const page of atlas.pages)add(directory+page);}
+    for(const page of entry.materialBindings?.pages||[])for(const material of Object.values(page.materials))for(const texture of Object.values(material.textures||{}))if(texture.path)add(packPath(entry.path)+'/'+packPath(texture.path));
   }
   for(const entry of catalogues['audio-index.json'].entries)if(!entry.errors?.length)for(const clip of entry.clips||[])add(clip.path);
   for(const presentation of catalogues['presentations.json'].presentations){

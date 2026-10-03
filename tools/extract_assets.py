@@ -127,6 +127,7 @@ class BundleExtractor:
         self.objects = list(environment.objects)
         self.references = []
         self.effect_textures = {}
+        self.skeleton_textures = {}
         self.effect_sprites = {}
 
     def tree(self, reader):
@@ -179,6 +180,20 @@ class BundleExtractor:
         if isinstance(keywords, str):
             keywords = keywords.split()
         return {"id": str(reader.path_id), "name": tree.get("m_Name", ""), "shader": shader_name, "keywords": sorted(set(keywords)), "renderQueue": tree.get("m_CustomRenderQueue", -1), "disabledPasses": tree.get("disabledShaderPasses", []), "tags": precise_references(tree.get("stringTagMap", [])), "instancing": bool(tree.get("m_EnableInstancingVariants", False)), "properties": precise_references(settings), "textures": textures}
+
+    def skeleton_texture(self, owner, pointer, location, name):
+        reader = self.resolve(owner, pointer)
+        key = (id(reader.assets_file), reader.path_id)
+        if key in self.skeleton_textures:
+            return self.skeleton_textures[key]
+        texture = reader.read()
+        destination = self.output / "materials/textures" / location / (safe_name(name) + ".png")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        texture.image.save(destination)
+        tree = self.tree(reader)
+        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace")}
+        self.skeleton_textures[key] = result
+        return result
 
     def effect_sprite(self, owner, pointer):
         reader = self.resolve(owner, pointer)
@@ -249,7 +264,7 @@ class BundleExtractor:
             entries.append({"id": str(reader.path_id), "gameObject": str(tree["m_GameObject"]["m_PathID"]), "materials": materials, "errors": errors})
         return entries
 
-    def skeleton_materials(self, reader):
+    def skeleton_materials(self, reader, export_textures=False, previous=None):
         tree = self.tree(reader)
         pages, errors = [], []
         for atlas_index, pointer in enumerate(tree.get("atlasAssets", [])):
@@ -277,6 +292,36 @@ class BundleExtractor:
                         if isinstance(keywords, str):
                             keywords = keywords.split()
                         materials[mode] = {"id": str(material.path_id), "renderQueue": queue, "shader": shader.get("m_Name") or shader.get("m_ParsedForm", {}).get("m_Name") or shader.get("m_ParsedForm", {}).get("name", ""), "keywords": sorted(set(keywords)), "properties": precise_references(data.get("m_SavedProperties", {}))}
+                        profile = materials[mode]
+                        old_page = next((page for page in (previous or {}).get("pages", []) if page["atlas"] == atlas_index and page["page"] == f"page-{index}.png"), {})
+                        old_material = old_page.get("materials", {}).get(mode, {})
+                        if not export_textures:
+                            if old_material.get("id") == profile["id"] and old_material.get("shader") == profile["shader"] and old_material.get("keywords") == profile["keywords"] and old_material.get("properties", {}).get("m_TexEnvs") == profile["properties"].get("m_TexEnvs"):
+                                for field in ("textures", "textureErrors"):
+                                    if field in old_material:
+                                        profile[field] = old_material[field]
+                            continue
+                        texture_names = []
+                        if "_FLOW_MAP_ON" in keywords:
+                            texture_names.append("_FlowMap")
+                        if "_NOISE_TEX_ON" in keywords:
+                            texture_names.extend(("_NoiseTex", "_MaskTex"))
+                        envs = dict(data.get("m_SavedProperties", {}).get("m_TexEnvs", []))
+                        textures, texture_errors = {}, []
+                        for texture_name in texture_names:
+                            value = envs.get(texture_name, {})
+                            reference = value.get("m_Texture", {})
+                            if not reference.get("m_PathID") and texture_name == "_MaskTex":
+                                textures[texture_name] = {"default": "white"}
+                                continue
+                            try:
+                                textures[texture_name] = {**self.skeleton_texture(material, reference, f"{reader.path_id}/atlas-{atlas_index}/page-{index}/{mode}", texture_name), "scale": value.get("m_Scale"), "offset": value.get("m_Offset")}
+                            except Exception as error:
+                                texture_errors.append({"texture": texture_name, "reference": precise_references(reference), "error": "Texture dependency unavailable or could not be decoded", "type": type(error).__name__})
+                        if textures:
+                            profile["textures"] = textures
+                        if texture_errors:
+                            profile["textureErrors"] = texture_errors
                     pages.append({"atlas": atlas_index, "page": f"page-{index}.png", "sourcePage": name, "materials": materials})
             except Exception as error:
                 errors.append({"atlas": atlas_index, "error": str(error)})
@@ -387,7 +432,7 @@ class BundleExtractor:
                     (atlas_folder / "texture.atlas").write_text(atlas_text, encoding="utf-8")
                     write_json(atlas_folder / "materials.json", material_settings)
                     atlases.append({"atlas": f"atlas-{index}/texture.atlas", "pages": names})
-                skeletons.append({"id": str(reader.path_id), "name": tree.get("m_Name"), "skeleton": f"{reader.path_id}/{filename}", "version": version, "bounds": bounds, "scale": tree.get("scale", 1), "defaultMix": tree.get("defaultMix", 0), "atlases": atlases, "materialBindings": self.skeleton_materials(reader), "mixes": {k: tree.get(k, []) for k in ("fromAnimation", "toAnimation", "duration")}})
+                skeletons.append({"id": str(reader.path_id), "name": tree.get("m_Name"), "skeleton": f"{reader.path_id}/{filename}", "version": version, "bounds": bounds, "scale": tree.get("scale", 1), "defaultMix": tree.get("defaultMix", 0), "atlases": atlases, "materialBindings": self.skeleton_materials(reader, export_textures=True), "mixes": {k: tree.get(k, []) for k in ("fromAnimation", "toAnimation", "duration")}})
             except Exception as exc:
                 errors.append({"id": str(reader.path_id), "type": "SkeletonDataAsset", "error": str(exc)})
         write_json(self.output / "hierarchy.json", precise_references(hierarchy))
@@ -403,6 +448,7 @@ def main():
     parser.add_argument("--bundle", action="append", type=resource_bundle_key, default=[], help="Extract an exact resource bundle instead of scanning Spine bundles; repeat for multiple bundles")
     parser.add_argument("--merge", action="store_true", help="Update matching bundle records without dropping other extracted bundles")
     parser.add_argument("--metadata-only", action="store_true", help="Refresh renderer material queues without rewriting existing media")
+    parser.add_argument("--material-textures", action="store_true", help="Also export active skeleton material textures during metadata refresh")
     args = parser.parse_args()
     if args.metadata_only and not args.merge:
         parser.error("--metadata-only requires --merge")
@@ -456,7 +502,7 @@ def main():
             destination.mkdir(parents=True, exist_ok=True)
             extractor = BundleExtractor(environment, destination)
             dependency_errors = []
-            if args.metadata_only or any(reader.type.name in ("Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController") for reader in extractor.objects):
+            if records[key].dependencies:
                 pending = list(records[key].dependencies)
                 loaded = {key.lower()}
                 while pending:
@@ -496,9 +542,10 @@ def main():
                     raise ValueError("Metadata refresh requires an existing extracted bundle")
                 result = {**previous, "renderers": extractor.extract_renderers()}
                 readers = {str(reader.path_id): reader for reader in extractor.objects}
-                result["skeletons"] = [{**item, "materialBindings": extractor.skeleton_materials(readers[item["id"]])} for item in previous["skeletons"]]
+                result["skeletons"] = [{**item, "materialBindings": extractor.skeleton_materials(readers[item["id"]], export_textures=args.material_textures, previous=item.get("materialBindings"))} for item in previous["skeletons"]]
                 catalog = [item for item in catalog if item["id"] != key] + [result]
-                print(key, "renderers", len(result["renderers"]), "errors", sum(len(row["errors"]) for row in result["renderers"]), flush=True)
+                texture_errors = sum(len(material.get("textureErrors", [])) for item in result["skeletons"] for page in item["materialBindings"]["pages"] for material in page["materials"].values())
+                print(key, "renderers", len(result["renderers"]), "errors", sum(len(row["errors"]) for row in result["renderers"]), "texture errors", texture_errors, flush=True)
                 write_json(args.output / "extraction.json", {"schema": 1, "bundles": catalog})
                 continue
             result = extractor.extract()

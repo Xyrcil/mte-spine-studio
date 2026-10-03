@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {resourceFiles,validatePackCatalogues,packPath,packUrl,resourceType,PACK_CATALOGS,expectedPackPaths,verifyPackCache} from '../src/engine/resource-pack.js';
 const catalogue=name=>name==='library.json'?{schema:1,characters:[],appearances:[],voices:[],storyVoices:[],soundResources:[]}:name==='presentations.json'?{schema:1,presentations:[]}:{schema:1,entries:[]};
 function file(path,content=''){const result=new File([content],path.split('/').at(-1));Object.defineProperty(result,'webkitRelativePath',{value:'assets/'+path});return result;}
+test('skeleton material textures are required relative to their own bundle and cannot escape it',async()=>{
+  const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)])),texture={path:'materials/noise.png'},entry={status:'parsed',path:'spines/painting/role',skeleton:'id/skeleton.skel',atlases:[],materialBindings:{pages:[{materials:{normal:{textures:{_NoiseTex:texture,_MaskTex:{default:'white'}}}}}]}};catalogs['runtime-index.json'].entries=[entry];
+  assert.deepEqual(expectedPackPaths(catalogs),['spines/painting/role/id/skeleton.skel','spines/painting/role/materials/noise.png']);
+  const selected=PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogs[name])));selected.push(file('spines/painting/role/id/skeleton.skel'));await assert.rejects(validatePackCatalogues(resourceFiles(selected).rows),/noise.png/);selected.push(file('spines/painting/role/materials/noise.png'));await validatePackCatalogues(resourceFiles(selected).rows);
+  texture.path='../outside.png';assert.throws(()=>expectedPackPaths(catalogs),/Invalid resource path/);
+});
 const files=()=>PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogue(name))));
 test('large imported packs verify their manifest in bounded batches without enumerating the cache',async()=>{
   const base='https://example.test/mte/',manifest=[...PACK_CATALOGS.map(path=>({path,size:0})),...Array.from({length:18000},(_,index)=>({path:`portraits/${index}.png`,size:0}))],byUrl=new Map(manifest.map(row=>[packUrl(row.path,base),row]));let active=0,maximum=0,progress;

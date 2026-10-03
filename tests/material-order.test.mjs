@@ -50,4 +50,5 @@ test('vertex color power retains alpha, chains previous effects and restores the
 test('unimplemented material effects follow source keywords without treating disabled saved settings as active',()=>{
   const entry={materialBindings:{pages:[{materials:{normal:{keywords:['_FLOW_MAP_ON','_NOISE_TEX_ON']},additive:{keywords:['_FLOW_MAP_ON']}}},{materials:{normal:{keywords:[],properties:{m_Floats:[['_NoiseTexON',1]]}}}}]}};
   assert.deepEqual(materialEffectLimitations(entry),['Flow-map distortion','Noise-texture distortion']);assert.deepEqual(materialEffectLimitations({}),[]);
+  entry.materialBindings.pages[0].materials.normal.textureErrors=[{texture:'_NoiseTex',error:'Dependency unavailable'}];assert.deepEqual(materialEffectLimitations(entry),['Flow-map distortion','Noise-texture distortion','Material texture unavailable: _NoiseTex']);
 });

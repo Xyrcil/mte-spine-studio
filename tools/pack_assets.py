@@ -18,6 +18,11 @@ def indexed_files(root):
         if entry.get("status") != "parsed":
             continue
         paths.add(entry["path"] + "/" + entry["skeleton"])
+        for page in entry.get("materialBindings", {}).get("pages", []):
+            for material in page["materials"].values():
+                for texture in material.get("textures", {}).values():
+                    if texture.get("path"):
+                        paths.add(entry["path"] + "/" + texture["path"])
         for atlas in entry["atlases"]:
             path = entry["path"] + "/" + entry["id"] + "/" + atlas["atlas"]
             paths.add(path)
