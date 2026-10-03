@@ -1,14 +1,17 @@
 import {History,validateScene,saveLocalScene,loadLocalScene,listLocalScenes,deleteLocalScene} from './engine/scene.js';
 import {sceneDrawOrder,moveSceneLayer,duplicateSceneObject} from './engine/background-layers.js';
+import {createSceneFile,readSceneFile} from './engine/scene-file.js';
 
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
-  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget;
+  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController;
   const snapshot=()=>stage.snapshot(name);
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
   controls.innerHTML=`<label>Scene name <input id="scene-name" value="Untitled scene" maxlength="512"></label><div class="actions"><button id="undo">Undo</button><button id="redo">Redo</button></div><div class="actions"><button id="save-scene">Save locally</button><button id="download-scene">Export scene</button><button id="import-scene">Import scene</button></div><label>Saved scenes <select id="saved-scenes"><option value="">Choose a scene</option></select></label><div class="actions"><button id="load-scene">Load</button><button id="delete-scene">Delete saved</button></div><button id="add-background">Add background image</button><input id="scene-file" type="file" accept="application/json,.json" hidden><input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>`;
   document.querySelector('.inspector h2').after(controls);
+  const formatLabel=document.createElement('label');formatLabel.textContent='Scene file format';const fileFormat=document.createElement('select');fileFormat.id='scene-format';fileFormat.setAttribute('aria-label','Scene file format');for(const [value,title] of [['auto','Automatic (JSON or ZIP)'],['json','JSON'],['zip','ZIP (embedded images)']])fileFormat.append(new Option(title,value));formatLabel.append(fileFormat);controls.querySelector('#download-scene').parentElement.after(formatLabel);
+  const cancelFile=document.createElement('button');cancelFile.id='cancel-scene-file';cancelFile.textContent='Cancel file operation';cancelFile.hidden=true;cancelFile.onclick=()=>fileController?.abort();controls.append(cancelFile);document.querySelector('#scene-file').accept='application/json,.json,application/zip,.zip';
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
   const isBusy=()=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired);
   const before=()=>{if(isBusy())return false;history.push(snapshot());return true;};
@@ -58,6 +61,7 @@ export function createEditor(stage,message,onSelection){
       };panel.append(duplicate);container.append(panel);
     }
     document.querySelector('#undo').disabled=busy||!history.past.length;document.querySelector('#redo').disabled=busy||!history.future.length;
+    for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=busy;fileFormat.disabled=busy;cancelFile.hidden=!fileController;
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
   async function restore(scene,signal){
@@ -68,7 +72,7 @@ export function createEditor(stage,message,onSelection){
     catch(error){changed();throw error;}
     finally{busy=false;refresh();stage.dispatchEvent(new CustomEvent('scene-ready'));}
   }
-  async function recall(scene){const previous=snapshot();await restore(scene);history.push(previous);changed();message('Scene loaded');}
+  async function recall(scene,signal){const previous=snapshot();await restore(scene,signal);history.push(previous);changed();message('Scene loaded');}
   async function savedList(){const select=document.querySelector('#saved-scenes');select.replaceChildren(new Option('Choose a scene',''));for(const key of await listLocalScenes())select.append(new Option(key,key));}
   document.querySelector('#scene-name').onchange=event=>mutate(()=>name=event.target.value||'Untitled scene');
   for(const operation of ['undo','redo'])document.querySelector(`#${operation}`).onclick=async()=>{
@@ -76,9 +80,18 @@ export function createEditor(stage,message,onSelection){
     const current=snapshot();try{await restore(target);history[operation](current);changed();}catch(error){message(error.message);}
   };
   document.querySelector('#save-scene').onclick=async()=>{try{await saveLocalScene(snapshot(),name);await savedList();message(`Saved ${name}`);}catch(error){message(error.message);}};
-  document.querySelector('#download-scene').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=`${name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  const fileProgress=progress=>message(`${progress.phase==='exporting'?'Preparing scene file':'Reading scene file'} · ${progress.images??progress.files} / ${progress.total}`);
+  document.querySelector('#download-scene').onclick=async()=>{
+    if(busy||stage.sequenceBusy||stage.resourceImportBusy||stage.packReloadRequired)return;fileController=new AbortController();busy=true;refresh();message('Preparing scene file…');
+    try{const result=await createSceneFile(snapshot(),{format:fileFormat.value,signal:fileController.signal,onProgress:fileProgress}),url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=`${name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.${result.extension}`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message(`Scene exported (${result.extension.toUpperCase()})`);}
+    catch(error){message(error.name==='AbortError'?'Scene file export cancelled':`Export failed: ${error.message}`);}finally{fileController=undefined;busy=false;refresh();}
+  };
   document.querySelector('#import-scene').onclick=()=>document.querySelector('#scene-file').click();
-  document.querySelector('#scene-file').onchange=async event=>{const file=event.target.files[0];event.target.value='';if(!file)return;try{if(file.size>64*1024*1024)throw new Error('Scene file exceeds 64 MB');await recall(JSON.parse(await file.text()));}catch(error){message(`Import failed: ${error.message}`);}};
+  document.querySelector('#scene-file').onchange=async event=>{
+    const file=event.target.files[0];event.target.value='';if(!file||isBusy())return;fileController=new AbortController();busy=true;refresh();message('Reading scene file…');
+    try{const scene=await readSceneFile(file,{signal:fileController.signal,onProgress:fileProgress});busy=false;await recall(scene,fileController.signal);}
+    catch(error){message(error.name==='AbortError'?'Scene file import cancelled; previous scene retained':`Import failed: ${error.message}`);}finally{fileController=undefined;busy=false;refresh();}
+  };
   document.querySelector('#load-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(!key)return;const scene=await loadLocalScene(key);if(scene)await recall(scene);}catch(error){message(error.message);}};
   document.querySelector('#delete-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(key){await deleteLocalScene(key);await savedList();message(`Deleted local scene ${key}`);}}catch(error){message(error.message);}};
   document.querySelector('#add-background').onclick=()=>{backgroundTarget=undefined;document.querySelector('#background-file').click();};

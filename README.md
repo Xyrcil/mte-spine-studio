@@ -242,6 +242,11 @@ their offsets and sibling order remain editable. Duplication copies these layers
 and their sound settings, while removal releases them with the character.
 Detaching preserves the current image geometry, opacity, visibility and draw order.
 Scene restore, undo, offline saves and independent exports retain these links.
+Scene file export supports JSON and ZIP. Automatic mode uses ZIP when embedded
+images would exceed the JSON import limit. ZIP stores each distinct custom image
+once, including images in the recorded initial scene; game assets remain catalogue
+references. Both formats can be imported without uploading files. ZIP preparation
+and reading show progress and can be cancelled without replacing the current scene.
 Source-hidden skeleton layers are loaded but remain hidden until explicitly
 enabled in the object controls. Switching active layers rebuilds this object's
 interaction bindings and restarts its playback. Older scenes that omit those
