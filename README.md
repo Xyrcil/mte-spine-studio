@@ -26,6 +26,21 @@ the deployable output. `npm run build:local` creates a separate `dist-local/`
 with local assets for offline-cache testing. Do not publish that local build.
 Development still reads the local assets folder.
 
+## Website deployment
+
+Confirm permission to distribute the included Spine runtime before publishing.
+In the repository's **Settings → Pages**, choose **GitHub Actions** as the build
+source, then run **Deploy website** from the **Actions** tab. Deployment is manual;
+commits do not publish automatically. The workflow tests the code, builds `dist/`
+without game assets, and uses the site's configured path for project sites,
+account sites and custom domains. It does not upload local resource packs.
+Visitors import their own converted resources in the browser.
+
+For a local project-path build, use `MTE_BASE_PATH=/mte-spine-studio/ npm run build`.
+Never deploy `dist-local/` or `public/assets/`.
+
+## Local resources
+
 The production app can import a converted assets folder or a resource ZIP
 without uploading files. For large libraries, create a local archive with
 `python3 tools/pack_assets.py --assets /path/to/assets --output /path/to/resources.zip`,
