@@ -242,6 +242,10 @@ All indexed display entries remain reachable through 24-item pages, including
 missing artwork and static previews. Favorites and recent entries stay on the
 device; unavailable browser storage does not prevent browsing. On small screens,
 the library opens as a bottom panel and closes after loading artwork.
+Artwork loads without replacing the current scene until its resources are ready.
+Use **Cancel loading** to keep the current scene. Choosing another entry replaces
+the pending request; switching workspaces cancels it. Scene edits and imports
+wait until loading finishes or is cancelled.
 The voice panel plays the available source and Chinese tracks with subtitles
 and volume control.
 Choose **All character voices** to browse lines without a linked artwork entry.

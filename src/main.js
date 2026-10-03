@@ -66,31 +66,27 @@ function describe(group){
   document.querySelector('#details').textContent=parts.join(' · ');
 }
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
-async function selectPortrait(appearance){
-  if(editor.busy)return false;canvasInput.clear();request?.abort();request=new AbortController();audio?.stop();audio?.stopEffects();if(view==='gallery')audio?.stopAmbients();
-  try{const old=[...stage.groups];editor.before();const group=await stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,request.signal);if(view==='gallery')for(const previous of old)stage.remove(previous.id);stage.fit();editor.choose(group);editor.changed();message('Static portrait loaded');closeLibrary();return true;}catch(error){if(error.name!=='AbortError')message(error.message);return false;}
+const cancelAsset=document.createElement('button');cancelAsset.id='cancel-asset-load';cancelAsset.textContent='Cancel loading';cancelAsset.hidden=true;document.querySelector('.workspace').append(cancelAsset);
+function finishAssetLoading(){stage.assetLoadBusy=false;cancelAsset.hidden=true;stage.canvas.setAttribute('aria-busy','false');editor.refresh();}
+function cancelAssetLoading(){if(!request)return;const pending=request;request=null;pending.abort();finishAssetLoading();message('Asset loading cancelled');}
+cancelAsset.onclick=cancelAssetLoading;
+async function loadAsset(label,create,loadedMessage=label){
+  if(editor.assetSelectionBusy)return false;
+  canvasInput.clear();request?.abort();const current=new AbortController();request=current;
+  const previous=editor.snapshot(),old=[...stage.groups],selectedView=view;
+  stage.assetLoadBusy=true;cancelAsset.hidden=false;stage.canvas.setAttribute('aria-busy','true');editor.refresh();message(`Loading ${label}…`);
+  let group;
+  try{
+    group=await create(current.signal);
+    if(current.signal.aborted||request!==current||view!==selectedView)throw new DOMException('Loading cancelled','AbortError');
+    finishAssetLoading();editor.before(previous);audio?.stop();audio?.stopEffects();if(selectedView==='gallery')audio?.stopAmbients();stage.groups.push(group);
+    if(selectedView==='gallery')for(const previousGroup of old)stage.remove(previousGroup.id);
+    stage.evaluate(0);stage.fit();editor.choose(group);editor.changed();request=null;message(loadedMessage);closeLibrary();return true;
+  }catch(error){if(group&&!stage.groups.includes(group))stage.release(group);if(request===current&&error.name!=='AbortError')message(error.message);return false;}
+  finally{if(request===current){request=null;finishAssetLoading();}}
 }
-async function select(presentation) {
-  if(editor.busy)return false;
-  canvasInput.clear();
-  request?.abort();request=new AbortController();
-  audio?.stop();
-  audio?.stopEffects();
-  if(view==='gallery')audio?.stopAmbients();
-  message(`Loading ${presentation.id}…`);
-  try {
-    const old=[...stage.groups];editor.before();
-    const group=await stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),request.signal);
-    if(view==='gallery')for(const previous of old)stage.remove(previous.id);
-    stage.fit();
-    editor.choose(group);editor.changed();
-    describe(group);
-    message(presentation.id);
-    voicePanel(presentation);
-    closeLibrary();
-    return true;
-  } catch(error) { if(error.name!=='AbortError')message(error.message);return false; }
-}
+function selectPortrait(appearance){return loadAsset(appearance.name||appearance.id,signal=>stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,signal,true),'Static portrait loaded');}
+function select(presentation){return loadAsset(presentation.id,signal=>stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true));}
 function voicePanel(presentation) {
   createVoicePanel(presentation,libraryData,audio,editor,message);
 }
@@ -102,6 +98,7 @@ document.querySelector('#speed').onchange=event=>{const value=Number(event.targe
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
+  if(button.dataset.view!==view)cancelAssetLoading();
   canvasInput.clear();
   closeLibrary();
   view=button.dataset.view;
@@ -134,7 +131,7 @@ try {
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
   if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices]);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});audio.addEventListener('voice-state',()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
-  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.busy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
+  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
   const recovered=await editor.init(catalog.presentations,runtime.entries);
   const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);appReady=true;

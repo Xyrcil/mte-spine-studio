@@ -57,6 +57,9 @@ export class Stage extends EventTarget {
     presentation=prepareSkillArtwork(presentation);
     const contextEpoch=this.contextEpoch;
     const manager = new (s().webgl.AssetManager)(this.gl);
+    let released=false;const textureLoader=manager.textureLoader,disposeManager=manager.dispose.bind(manager);
+    manager.textureLoader=image=>released||signal?.aborted||this.disposed||this.contextLost||contextEpoch!==this.contextEpoch?new (s().FakeTexture)(image):textureLoader(image);
+    manager.dispose=()=>{released=true;disposeManager();};
     this.activeLoads=(this.activeLoads||0)+1;
     const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager, layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
     try {
@@ -190,22 +193,23 @@ export class Stage extends EventTarget {
   setImageAssets(entries){this.imageAssets=new Map(entries.flatMap(entry=>entry.sprites.map(sprite=>[sprite.path,sprite])));}
   async addPortrait(asset,name,appearanceId,signal,detached=false){
     const sprite=this.imageAssets.get(asset);if(!sprite)throw new Error(`Portrait unavailable: ${asset}`);
-    const group=await this.addImage(`${import.meta.env.BASE_URL}assets/${asset}`,name,true);
+    const group=await this.addImage(`${import.meta.env.BASE_URL}assets/${asset}`,name,true,signal);
     if(signal?.aborted){this.release(group);throw new DOMException('Loading cancelled','AbortError');}
     group.asset=asset;if(appearanceId!==undefined)group.appearanceId=appearanceId;
     const density=sprite.pixelsPerUnit>0?sprite.pixelsPerUnit:100;group.width=sprite.width/density;group.height=sprite.height/density;
     if(!detached){this.groups.push(group);this.fit();}return group;
   }
-  async addImage(src,name='Background image',detached=false) {
-    const contextEpoch=this.contextEpoch,image=new Image(),signal=this.contextAbort?.signal;let timer,cancel;
+  async addImage(src,name='Background image',detached=false,signal) {
+    const contextEpoch=this.contextEpoch,image=new Image(),signals=[signal,this.contextAbort?.signal].filter(Boolean);let timer,cancel;
     this.activeLoads=(this.activeLoads||0)+1;
-    try{image.src=src;await Promise.race([image.decode(),new Promise((_resolve,reject)=>{cancel=()=>{image.src='';reject(new DOMException('Rendering context is unavailable','AbortError'));};signal?.addEventListener('abort',cancel,{once:true});timer=setTimeout(()=>{image.src='';reject(new Error('Image loading timed out'));},60000);if(signal?.aborted)cancel();})]);
+    try{image.src=src;await Promise.race([image.decode(),new Promise((_resolve,reject)=>{cancel=()=>{image.src='';reject(new DOMException(signal?.aborted?'Loading cancelled':'Rendering context is unavailable','AbortError'));};for(const pending of signals)pending.addEventListener('abort',cancel,{once:true});timer=setTimeout(()=>{image.src='';reject(new Error('Image loading timed out'));},60000);if(signals.some(pending=>pending.aborted))cancel();})]);
+    if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
     if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
     const width=this.camera.width,height=width*image.naturalHeight/image.naturalWidth;
     const texture=new (s().webgl.GLTexture)(this.gl,image);
     const group={id:crypto.randomUUID(),kind:'image',src,name,texture,width,height,x:this.camera.x,y:this.camera.y,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[]};
     if(!detached)this.groups.unshift(group);return group;
-    }finally{clearTimeout(timer);if(cancel)signal?.removeEventListener('abort',cancel);this.activeLoads--;}
+    }finally{clearTimeout(timer);if(cancel)for(const pending of signals)pending.removeEventListener('abort',cancel);this.activeLoads--;}
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
@@ -229,7 +233,7 @@ export class Stage extends EventTarget {
         if(row.kind==='image'&&row.asset&&!this.imageAssets.has(row.asset))throw new Error(`Portrait unavailable: ${row.asset}`);
         const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?row.asset?group.asset===row.asset:!group.asset&&group.src===row.src:group.presentation.id===row.bundle));
         if(group){created.push(group);continue;}
-        if(row.kind==='image')created.push(row.asset?await this.addPortrait(row.asset,row.name,row.appearanceId,signal,true):await this.addImage(row.src,row.name,true));
+        if(row.kind==='image')created.push(row.asset?await this.addPortrait(row.asset,row.name,row.appearanceId,signal,true):await this.addImage(row.src,row.name,true,signal));
         else {
           const presentation=presentations.find(item=>item.id===row.bundle);if(!presentation)throw new Error(`Scene asset unavailable: ${row.bundle}`);
           created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===(presentation.resourceBundle||row.bundle)),signal,true));

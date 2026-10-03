@@ -13,8 +13,8 @@ export function createEditor(stage,message,onSelection){
   const formatLabel=document.createElement('label');formatLabel.textContent='Scene file format';const fileFormat=document.createElement('select');fileFormat.id='scene-format';fileFormat.setAttribute('aria-label','Scene file format');for(const [value,title] of [['auto','Automatic (JSON or ZIP)'],['json','JSON'],['zip','ZIP (embedded images)']])fileFormat.append(new Option(title,value));formatLabel.append(fileFormat);controls.querySelector('#download-scene').parentElement.after(formatLabel);
   const cancelFile=document.createElement('button');cancelFile.id='cancel-scene-file';cancelFile.textContent='Cancel file operation';cancelFile.hidden=true;cancelFile.onclick=()=>fileController?.abort();controls.append(cancelFile);document.querySelector('#scene-file').accept='application/json,.json,application/zip,.zip';
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
-  const isBusy=()=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired);
-  const before=()=>{if(isBusy())return false;history.push(snapshot());return true;};
+  const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
+  const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
   function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
@@ -26,6 +26,7 @@ export function createEditor(stage,message,onSelection){
   const button=(title,action)=>{const node=document.createElement('button');node.textContent=title;node.onclick=()=>mutate(action);return node;};
   function choose(group){selectedId=group?.id;refresh();onSelection?.(group);}
   function refresh(){
+    const locked=isBusy();container.inert=locked;
     container.replaceChildren();
     for(const group of sceneDrawOrder(stage.groups).reverse()){
       const row=document.createElement('div');row.className=`layer ${group.id===selectedId?'selected':''}`;
@@ -62,11 +63,12 @@ export function createEditor(stage,message,onSelection){
         try{await restore(scene);history.push(previous);choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
       };panel.append(duplicate);container.append(panel);
     }
-    document.querySelector('#undo').disabled=busy||!history.past.length;document.querySelector('#redo').disabled=busy||!history.future.length;
-    for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=busy;fileFormat.disabled=busy;cancelFile.hidden=!fileController;
+    document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
+    for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
   }
   async function restore(scene,signal){
+    if(stage.assetLoadBusy)throw new Error('Finish or cancel asset loading before loading a scene');
     if(stage.sequenceBusy)throw new Error('Stop the interaction sequence before loading a scene');
     if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
@@ -103,5 +105,5 @@ export function createEditor(stage,message,onSelection){
     let added;try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);added=group;if(ownerId!==undefined){const owner=stage.groups.find(row=>row.id===ownerId);if(!owner)throw new Error('Character is no longer available');group.x=owner.x;group.y=owner.y;stage.setBackgroundParent(group,ownerId);}history.push(previous);choose(group);changed();}
     catch(error){if(added)stage.remove(added.id);message(error.message);}finally{busy=false;refresh();}
   };
-  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return isBusy();},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
+  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return isBusy();},get assetSelectionBusy(){return isBusy(false);},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }
