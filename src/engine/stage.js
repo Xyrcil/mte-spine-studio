@@ -274,6 +274,24 @@ export class Stage extends EventTarget {
   }
   release(group){group.nativeTextLayer?.dispose();group.dialogueTypography?.dispose();group.maskedRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
+  boneDragAt(clientX,clientY){
+    if(this.paused||this.recoveryPending||this.sequencePlayer)return null;const position=this.screenToWorld(clientX,clientY);
+    for(const group of [...this.groups].reverse())for(const root of group.controllers||[])if(root instanceof BoneDragRoot&&root.contains(position.x,position.y))return {group:group.id,controller:root.source.id,hit:root.target,position};
+    return null;
+  }
+  triggerBoneDrag(action,{replay=false}={}){
+    const group=this.groups.find(row=>row.id===action.group),root=group?.controllers?.find(row=>row instanceof BoneDragRoot&&row.source.id===action.controller&&row.target===action.hit);
+    if(!root||!root.enabled()||this.recoveryPending&&action.operation!=='release'||this.sequencePlayer&&!replay)return {accepted:false,reason:'Bone drag target is unavailable'};
+    let accepted=false;
+    if(action.operation==='start'&&action.position&&root.contains(action.position.x,action.position.y)){accepted=root.begin();if(accepted)root.move(action.position);}
+    else if(action.operation==='move'&&root.motion.dragging&&action.position){root.move(action.position);accepted=true;}
+    else if(action.operation==='release'){root.release();accepted=true;}
+    const result={...action,type:'bone-drag',animation:'',accepted};
+    if(accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));return result;
+  }
+  releaseBoneDrags({onlyDragging=false}={}){
+    for(const group of this.groups)for(const root of group.controllers||[])if(root instanceof BoneDragRoot&&root.enabled()&&(!onlyDragging||root.motion.dragging))this.triggerBoneDrag({group:group.id,controller:root.source.id,hit:root.target,operation:'release'});
+  }
   interact(clientX,clientY){
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
     if(this.paused)return {accepted:false,reason:'Playback is paused'};

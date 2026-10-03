@@ -367,8 +367,12 @@ Drag-bone receiver data and non-click bone-bound range markers are retained.
 The scene-local receiver retains target colliders, strict world-space bounds,
 shared bone writes and the default OutQuad return. Its motion and pointer state
 survive scene restore; disabled source components stay disabled. Check the real
-six-skeleton receiver with `node tools/check_bone_drag.mjs`. Canvas pointer handling
-and recorded drag playback remain pending.
+six-skeleton receiver with `node tools/check_bone_drag.mjs`. Gallery pointer input
+prioritizes the source drag collider over camera panning, with cancellation on
+pinch, pause or rendering interruption. Recording stores world-space pointer
+positions, including ignored out-of-range input, and closes held drags when
+recording stops. Replay and independent export use the same receiver; original-client
+input ordering and visual comparison remain pending.
 
 The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,

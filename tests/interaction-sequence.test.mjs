@@ -13,6 +13,15 @@ initial.objects[0].interactions=[{id:'root',state:new InteractionRoot(new EventT
 const action=(at,hit='hit')=>({at,group:'actor',controller:'root',hit,animation:'click'});
 const sequence=()=>({schema:1,initial,duration:1,actions:[action(0),action(.35),action(1)]});
 class FakeStage extends EventTarget {snapshot(){return structuredClone(initial);}triggerInteraction(...args){this.calls.push(args);return {accepted:true,animation:'click'};}calls=[];}
+const dragInitial=()=>{const scene=structuredClone(initial);scene.objects[0].interactions.push({id:'drag',state:{schema:1,kind:'bone-drag',writing:false,pointer:null,motion:{schema:1,current:{x:0,y:0},from:{x:0,y:0},dragging:false,returning:false,elapsed:0}}});return scene;};
+test('drag sequence validation and replay retain world positions and ordered operations',()=>{
+  const actions=['start','move','release'].map((operation,index)=>({at:index/4,group:'actor',controller:'drag',hit:'target',type:'bone-drag',operation,position:{x:index,y:1},animation:''})),value={schema:1,initial:dragInitial(),duration:1,actions},checked=validateSequence(value);
+  const stage=new FakeStage();stage.triggerBoneDrag=(action,options)=>{stage.calls.push({action,options});return {accepted:true,animation:''};};new InteractionPlayer(stage,checked).advance(1,()=>{});assert.deepEqual(stage.calls.map(row=>row.action.operation),['start','move','release']);assert.deepEqual(stage.calls[1].action.position,{x:1,y:1});assert.equal(stage.calls[0].options.replay,true);
+  for(const patch of [{operation:'unknown'},{position:{x:NaN,y:0}},{controller:'root'}])assert.throws(()=>validateSequence({...value,actions:[{...actions[0],...patch}]}),/drag/);
+});
+test('stopping drag recording retains the release at the final simulation timestamp',()=>{
+  const stage=new FakeStage();stage.snapshot=dragInitial;const recorder=new InteractionRecorder(stage);recorder.start();const detail={group:'actor',controller:'drag',hit:'target',type:'bone-drag',animation:''};stage.dispatchEvent(new CustomEvent('interaction-invoked',{detail:{...detail,operation:'start',position:{x:0,y:1}}}));stage.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta:.25}}));stage.releaseBoneDrags=()=>stage.dispatchEvent(new CustomEvent('interaction-invoked',{detail:{...detail,operation:'release'}}));const saved=recorder.stop();assert.deepEqual(saved.actions.map(row=>[row.operation,row.at]),[['start',0],['release',.25]]);recorder.dispose();
+});
 
 test('sequence validates scene references, ordering and bounded times',()=>{
   const original=sequence(),checked=validateSequence(original);original.initial.name='Changed';assert.equal(checked.initial.name,'Test');

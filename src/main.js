@@ -52,7 +52,7 @@ function describe(group){
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const regions=group.presentation.hotspots.length+(group.controllers||[]).filter(root=>root.source.id==='hot-spring').reduce((count,root)=>count+root.hotspots.filter(hit=>hit.role).length,0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
-  if(group.presentation.nativeBehaviours?.some(row=>row.class==='SpineAniDragBone'&&row.data.m_Enabled))parts.push('Source bone dragging is not available yet');
+  if(group.presentation.nativeBehaviours?.some(row=>row.class==='SpineAniDragBone'&&row.data.m_Enabled))parts.push('Source bone dragging · original-client verification pending');
   if(group.presentation.hotSpringHouse){const root=group.controllers.find(root=>root.source.id==='hot-spring');parts.push(!root?'Hot spring focus configuration unavailable':root.decorationModels.size&&!root.decorationReason?root.dialoguePanelAvailable?group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Hot spring conversations · original fonts and panel · browser text rasterization needs visual verification':'Hot spring conversations · original decorations and panel · dialogue text not yet restored':'Hot spring conversations · original decorations · dialogue panel layout not yet restored':'Hot spring conversations · original dialogue decorations not yet restored');}
   if(libraryData?.appearances.some(row=>row.bundle===group.presentation.id&&row.hotSpringRoleId)&&!group.controllers.length)parts.push('Hot spring click behavior unavailable in this standalone asset');
   if(gaps.length)parts.push(`Unavailable animations in active layers: ${[...new Set(gaps.map(row=>row.animation))].join(', ')}`);
@@ -97,7 +97,7 @@ document.querySelector('#editor-toggle').onclick=event=>{closeLibrary();event.ta
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('library-open')){closeLibrary();document.querySelector('#library-toggle').focus();}});
 document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
-document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
+document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   canvasInput.clear();

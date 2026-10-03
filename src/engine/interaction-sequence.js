@@ -13,6 +13,12 @@ export function validateSequence(value){
     const group=identifier(action.group,'object'),controller=identifier(action.controller,'controller'),hit=identifier(action.hit,'region');
     const object=initial.objects.find(object=>object.id===group&&object.kind==='spine');
     if(!object?.interactions?.some(root=>root.id===controller))throw new Error('Sequence controller is absent from its initial scene');
+    if(action.type==='bone-drag'){
+      if(!['start','move','release'].includes(action.operation)||action.animation!==''||object.interactions.find(root=>root.id===controller)?.state.kind!=='bone-drag')throw new Error('Invalid sequence bone drag');
+      let position;if(action.operation!=='release'){if(!Number.isFinite(action.position?.x)||!Number.isFinite(action.position?.y))throw new Error('Invalid sequence drag position');position={x:action.position.x,y:action.position.y};}
+      return {at,group,controller,hit,animation:'',type:'bone-drag',operation:action.operation,...(position?{position}:{})};
+    }
+    if(action.type!==undefined)throw new Error('Unsupported sequence action');
     if(typeof action.animation!=='string'||action.animation.length>512)throw new Error('Invalid sequence animation');
     return {at,group,controller,hit,animation:action.animation};
   });
@@ -51,16 +57,16 @@ export class InteractionRecorder {
   constructor(stage){
     this.stage=stage;this.active=false;this.elapsed=0;this.actions=[];
     this.onStep=event=>{if(this.active){this.elapsed+=event.detail.delta;if(this.elapsed>86400){this.elapsed=86400;this.stop();}}};
-    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000){this.stop();return;}const {group,controller,hit,animation=''}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation});}};
+    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000)return;const {group,controller,hit,animation='',type,operation,position}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation,...(type==='bone-drag'?{type,operation,...(position?{position:{...position}}:{})}:{})});if(!this.stopping&&this.actions.length>=10000-this.dragReserve)this.stop();}};
     this.onLost=()=>{if(this.active)this.stop();};
     stage.addEventListener('simulation-step',this.onStep);stage.addEventListener('interaction-invoked',this.onInteraction);stage.addEventListener('rendering-pausing',this.onLost);stage.addEventListener('rendering-lost',this.onLost);
   }
   start(){
     if(this.active||this.stage.sequencePlayer||this.stage.recoveryPending)throw new Error('Finish the current recording or playback first');
     const initial=structuredClone(this.stage.captureScene?.()||this.stage.snapshot());delete initial.sequence;
-    this.initial=validateScene(initial);this.elapsed=0;this.actions=[];this.active=true;return structuredClone(this.initial);
+    this.initial=validateScene(initial);this.dragReserve=this.initial.objects.reduce((sum,object)=>sum+(object.interactions||[]).filter(root=>root.state.kind==='bone-drag').length,0);this.elapsed=0;this.actions=[];this.active=true;return structuredClone(this.initial);
   }
-  stop(){const active=this.active;this.active=false;if(!this.initial)return null;const sequence=validateSequence({schema:1,initial:this.initial,duration:this.elapsed,actions:this.actions});if(active)this.stage.dispatchEvent(new CustomEvent('sequence-recorded',{detail:sequence}));return sequence;}
+  stop(){const active=this.active;if(active){this.stopping=true;try{this.stage.releaseBoneDrags?.({onlyDragging:true});}finally{this.stopping=false;}}this.active=false;if(!this.initial)return null;const sequence=validateSequence({schema:1,initial:this.initial,duration:this.elapsed,actions:this.actions});if(active)this.stage.dispatchEvent(new CustomEvent('sequence-recorded',{detail:sequence}));return sequence;}
   dispose(){this.active=false;this.stage.removeEventListener('simulation-step',this.onStep);this.stage.removeEventListener('interaction-invoked',this.onInteraction);this.stage.removeEventListener('rendering-pausing',this.onLost);this.stage.removeEventListener('rendering-lost',this.onLost);}
 }
 
@@ -78,7 +84,7 @@ export class InteractionPlayer {
     const advanceTo=target=>{while(target-this.elapsed>TIME_EPSILON){const remaining=target-this.elapsed,step=remaining>=SIMULATION_STEP-TIME_EPSILON?SIMULATION_STEP:remaining;timed(Math.min(target,this.elapsed+step),()=>evaluate(step));this.elapsed+=step;}this.elapsed=target;};
     while(this.cursor<this.sequence.actions.length&&this.sequence.actions[this.cursor].at<=end){
       const action=this.sequence.actions[this.cursor];advanceTo(action.at);
-      const result=timed(action.at,()=>this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
+      const result=timed(action.at,()=>action.type==='bone-drag'?this.stage.triggerBoneDrag(action,{replay:true}):this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
       if(!result.accepted||result.animation!==action.animation)throw new Error(`Sequence action ${this.cursor+1} could not be reproduced: ${result.reason||'animation changed'}`);
       this.cursor++;
     }

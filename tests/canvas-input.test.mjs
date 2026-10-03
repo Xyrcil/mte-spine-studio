@@ -54,3 +54,8 @@ test('rendering interruption releases gestures and flushes pending camera histor
   const f=fixture();f.send('wheel',{deltaY:50});f.send('pointerdown');f.stage.dispatchEvent(new Event('rendering-pausing'));f.send('pointerup');assert.equal(f.counts.clicks,0);assert.equal(f.counts.changed,1);
   f.send('pointerdown');f.send('pointermove',{clientX:350});f.stage.dispatchEvent(new Event('scene-ready'));f.send('pointerup',{clientX:350});assert.equal(f.counts.changed,2);assert.equal(f.counts.clicks,0);f.input.dispose();
 });
+test('source bone drag takes priority over Gallery pan, including recording and cancellation',()=>{
+  const f=fixture(),actions=[];f.stage.boneDragAt=()=>({group:'actor',controller:'drag',hit:'bone',position:{x:0,y:0}});f.stage.triggerBoneDrag=action=>{actions.push(action);return {accepted:true};};f.stage.screenToWorld=(x,y)=>({x,y});f.stage.releaseBoneDrags=()=>actions.push({operation:'release'});
+  f.editor.busy=true;f.state.recording=true;f.send('pointerdown');f.send('pointermove',{clientX:350});f.send('pointercancel');assert.deepEqual(actions.map(row=>row.operation),['start','move','release']);assert.equal(f.counts.clicks,0);assert.deepEqual(f.stage.camera,camera);
+  f.editor.busy=false;f.state.recording=false;f.send('pointerdown');f.stage.dispatchEvent(new Event('sequence-paused'));assert.equal(actions.at(-1).operation,'release');f.send('pointerup');assert.equal(f.counts.clicks,0);f.input.dispose();
+});

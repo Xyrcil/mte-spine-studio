@@ -12,7 +12,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
   const rect=()=>canvas.getBoundingClientRect();
   const commit=()=>{if(action?.changed)editor.changed();};
   const flushWheel=()=>{clearTimeout(wheelTimer);if(wheelChanged){wheelChanged=false;editor.changed();}};
-  const clear=()=>{commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
+  const clear=()=>{if(action?.kind==='bone-drag'){stage.releaseBoneDrags?.({onlyDragging:true});if(!action.recording)editor.changed();}commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
   const beginChange=()=>{if(action.changed)return true;if(!editor.before())return false;action.changed=true;return true;};
   const down=event=>{
     const editable=canEdit(),recording=getView()==='gallery'&&isRecording();if(!editable&&!recording||event.button>1)return;
@@ -20,16 +20,20 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     if(pointers.size>2){commit();action={kind:'blocked'};return;}
     if(action?.kind==='blocked'&&pointers.size>1)return;
     if(pointers.size===2){
+      if(action?.kind==='bone-drag')stage.releaseBoneDrags?.({onlyDragging:true});
       if(!editable){action={kind:'blocked'};return;}
       if(action?.group&&action.changed){action.group.x=action.object.x;action.group.y=action.object.y;}
       const [a,b]=[...pointers.values()];action={kind:'pinch',camera:{...stage.camera},rect:rect(),center:{x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance:Math.max(2,Math.hypot(a.x-b.x,a.y-b.y)),changed:action?.changed||false};return;
     }
     const pan=event.button===1||event.altKey||space||getTool()==='pan';if(pan&&!editable){action={kind:'blocked'};return;}
+    const drag=!pan&&getView()==='gallery'?stage.boneDragAt?.(event.clientX,event.clientY):null;
+    if(drag&&stage.triggerBoneDrag({...drag,operation:'start'}).accepted){action={kind:'bone-drag',target:drag,recording};return;}
     const group=!pan&&getView()==='studio'?stage.hitTest(event.clientX,event.clientY):null;if(group)editor.choose(group);
     action={kind:pan||getView()==='studio'&&!group?'pan':getView()==='gallery'?'tap':group?.locked?'blocked':'object',id:event.pointerId,x:event.clientX,y:event.clientY,camera:{...stage.camera},rect:rect(),group,object:group?{x:group.x,y:group.y}:null,changed:false,recording};
   };
   const move=event=>{
     if(!pointers.has(event.pointerId)||!action)return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(action.kind==='bone-drag'){if(stage.paused)return;stage.triggerBoneDrag({...action.target,operation:'move',position:stage.screenToWorld(event.clientX,event.clientY)});return;}
     if(action.kind==='blocked')return;if(!canEdit()){if(Math.hypot(event.clientX-action.x,event.clientY-action.y)>6)action.kind='blocked';return;}
     if(action.kind==='pinch'){
       const [a,b]=[...pointers.values()];if(!a||!b)return;const center={x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance=Math.max(2,Math.hypot(a.x-b.x,a.y-b.y));if(!beginChange())return;
@@ -43,6 +47,8 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
   const up=event=>{
     if(!pointers.has(event.pointerId))return;pointers.delete(event.pointerId);if(!action)return;
     if(event.type==='pointerup'&&action.kind==='tap'&&!action.changed&&Math.hypot(event.clientX-action.x,event.clientY-action.y)<=6&&getView()==='gallery'&&(!editor.busy||isRecording())){const bounds=rect();if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)onInteraction(stage.interact(event.clientX,event.clientY));}
+    if(action.kind==='bone-drag'||getView()==='gallery'&&event.type==='pointerup'&&event.button===0)stage.releaseBoneDrags?.({onlyDragging:event.type!=='pointerup'});
+    if(action.kind==='bone-drag'&&!action.recording)editor.changed();
     commit();action=pointers.size?{kind:'blocked'}:null;try{canvas.releasePointerCapture(event.pointerId);}catch{}
   };
   const wheel=event=>{event.preventDefault();if(!canEdit())return;const bounds=rect(),delta=event.deltaY*(event.deltaMode===1?40:event.deltaMode===2?bounds.height:1);if(!Number.isFinite(delta)||delta===0)return;if(!wheelChanged){if(!editor.before())return;wheelChanged=true;}stage.camera=zoomCameraAt(stage.camera,bounds,event.clientX,event.clientY,Math.exp(Math.max(-1000,Math.min(1000,delta))*.001));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelChanged=false;editor.changed();},150);};
@@ -56,9 +62,9 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
   const document=canvas.ownerDocument;
   const globalSpace=event=>{if(event.ctrlKey||event.metaKey||event.code!=='Space'||event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;if(event.target===canvas||canvas.matches(':hover')){space=true;event.preventDefault();}};
   document?.addEventListener('keydown',globalSpace);document?.addEventListener('keyup',keyUp);document?.defaultView?.addEventListener('blur',blur);
-  canvas.tabIndex=0;canvas.setAttribute('aria-description','Drag to pan in Gallery. In Studio, drag objects or empty space. Pinch or scroll to zoom. Arrow keys pan; plus and minus zoom; Home fits the scene.');
+  canvas.tabIndex=0;canvas.setAttribute('aria-description','Drag source bone handles in Gallery; drag elsewhere to pan. In Studio, drag objects or empty space. Pinch or scroll to zoom. Arrow keys pan; plus and minus zoom; Home fits the scene.');
   for(const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',up],['lostpointercapture',up],['wheel',wheel],['keydown',keyDown],['keyup',keyUp],['blur',blur]])canvas.addEventListener(name,handler,{passive:false});
-  const resetEvents=['rendering-pausing','scene-ready','sequence-playing','sequence-loaded'];
+  const resetEvents=['rendering-pausing','scene-ready','sequence-playing','sequence-paused','sequence-loaded'];
   for(const name of resetEvents)stage.addEventListener(name,clear);
   return {clear,dispose(){clear();document?.removeEventListener('keydown',globalSpace);document?.removeEventListener('keyup',keyUp);document?.defaultView?.removeEventListener('blur',blur);for(const name of resetEvents)stage.removeEventListener(name,clear);for(const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',up],['lostpointercapture',up],['wheel',wheel],['keydown',keyDown],['keyup',keyUp],['blur',blur]])canvas.removeEventListener(name,handler);}};
 }
