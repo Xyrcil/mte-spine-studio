@@ -364,8 +364,11 @@ a limited search is not evidence of complete behavioral coverage.
 Card exploration uses valid random checkpoints for each of the three possible
 reveals. Checks run in an independent scene and do not change the editing scene.
 Drag-bone receiver data and non-click bone-bound range markers are retained.
-The range and return-motion model preserves strict source bounds and the default
-OutQuad return; pointer handling and full drag playback remain pending.
+The scene-local receiver retains target colliders, strict world-space bounds,
+shared bone writes and the default OutQuad return. Its motion and pointer state
+survive scene restore; disabled source components stay disabled. Check the real
+six-skeleton receiver with `node tools/check_bone_drag.mjs`. Canvas pointer handling
+and recorded drag playback remain pending.
 
 The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,
