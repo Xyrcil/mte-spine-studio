@@ -42,6 +42,7 @@ npm run assets:index
 python3 tools/extract_audio.py --source /path/to/archive
 python3 tools/build_library.py --source /path/to/archive
 python3 tools/extract_portraits.py --source /path/to/archive
+python3 tools/extract_portraits.py --emblems --source /path/to/archive
 python3 tools/extract_fonts.py --source /path/to/archive
 npm run assets:index
 python3 tools/build_library.py --source /path/to/archive
@@ -161,11 +162,13 @@ and the source 0.33-second divided wait, advancing once per eligible frame rathe
 than catching up multiple letters. Checkpoints retain count, progress and the next
 wait; scene restore and independent export rebuild their derived letters without
 copying game text into scene files. The complete skill display remains unavailable
-until its complete event receiver and emblem assignment are connected.
+until its complete event receiver is connected.
 Dynamic role artwork can now bind both original Image components using the
 sprite's logical rectangle, trimmed content bounds and explicit canvas pixel
 ratio. The upper layer retains its authored opacity and local transform.
-This binding does not enable the unresolved emblem or complete skill receiver.
+Badges and skin-configured emblems bind both logo layers with their original
+native size, tint and badge-only 0.7 scale. They stay outside the artwork gallery.
+Missing references remain explicit; the complete skill receiver is still pending.
 Native Legacy event timelines now dispatch only through explicit, scene-local
 receiver maps. They retain source parameters, same-time ordering and loop-boundary
 events. Checkpoints keep the next event cursor; restoring a pose or drawing a

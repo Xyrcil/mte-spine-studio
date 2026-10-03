@@ -7,6 +7,22 @@ from build_library import join_portraits, hot_spring_roles, join_hot_springs, ho
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_skill_emblems_use_original_id_boundary_custom_badge_and_parent_fallback(self):
+        rows = skill_role_bindings([{"id": 1}, {"id": 6}], [{"id": 10}, {"id": 11}], {},
+                                   [{"id": 100, "gospel_id": 10, "badge": "custom"}, {"id": 101, "gospel_id": 11, "badge": ""}], [])
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["1"]["emblemResource"], "UI/Image/Icon/Badge/1_huizhang-bai")
+        self.assertEqual(by_id["6"]["emblemScale"], .7)
+        self.assertEqual(by_id["10"]["emblemResource"], "UI/Image/wenzhang/wenzhang_10_icon")
+        self.assertEqual(by_id["100"]["emblemResource"], "UI/Image/wenzhang/custom")
+        self.assertEqual(by_id["101"]["emblemResource"], "UI/Image/wenzhang/wenzhang_11_icon")
+        self.assertEqual(by_id["101"]["emblemScale"], 1)
+
+    def test_skill_emblem_sprites_do_not_become_gallery_portraits(self):
+        rows = []
+        join_portraits(rows, [{"resource": "UI/Image/Icon/Badge", "usage": "skill-emblem", "sprites": [{"id": "1", "name": "badge"}]}], set(), {})
+        self.assertEqual(rows, [])
+
     def test_skills_use_explicit_role_and_skin_references_and_retain_missing_ids(self):
         rows = skill_role_bindings([{"id": 1, "skill": "[11,12]", "skill_normal": 11, "skill_qte": 13, "skill_ub": "14,12"}], [{"id": 2, "skill": "[21]"}], {"11": {}, "12": {}, "14": {}, "21": {}}, [{"id": 99, "gospel_id": 2}], [{"id": 100, "people_id": 1}, {"id": 101, "gospel_id": 999}])
         self.assertEqual(rows[0]["skillIds"], ["11", "12", "13", "14"])

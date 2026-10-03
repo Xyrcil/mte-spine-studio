@@ -24,10 +24,29 @@ export function prepareSkillArtwork(presentation){
   lower.m_LocalPosition=structuredClone(transform.position);lower.m_LocalScale=structuredClone(transform.scale);
   lower.m_AnchorMax=structuredClone(lower.m_AnchorMin);
   for(const {image,node} of views){image.sprite=structuredClone(descriptor.portrait);image.assetPath=descriptor.portrait.path;image.status='extracted';node.data.m_SizeDelta={...size};}
+  if(descriptor.emblem){
+    const emblemSize=skillPortraitSize(descriptor.emblem.sprite,descriptor.referencePixelsPerUnit),scale=descriptor.emblem.scale;
+    if(!Number.isFinite(scale)||scale<=0)throw new Error('Original skill emblem scale is unavailable');
+    for(const field of ['logoB','logo']){
+      const pointer=receiver.data[field],image=prepared.images?.find(row=>row.id===String(pointer?.m_PathID)),node=prepared.hierarchy?.find(row=>row.id===image?.transform);
+      if(pointer?.m_FileID!==0||!image||node?.type!=='RectTransform')throw new Error('Original skill emblem image reference is unavailable');
+      image.sprite=structuredClone(descriptor.emblem.sprite);image.assetPath=descriptor.emblem.sprite.path;image.status='extracted';node.data.m_SizeDelta={x:emblemSize.x*scale,y:emblemSize.y*scale};
+      if(field==='logoB')node.data.m_AnchorMax=structuredClone(node.data.m_AnchorMin);
+    }
+  }
   return prepared;
 }
 
-export function resolveSkillDisplay(library,roleId,skillId){
+export function resolveSkillEmblem(source,roleId,appearanceId=roleId){
+  const role=source.roles.find(row=>row.id===roleId),appearance=source.roles.find(row=>row.id===appearanceId);
+  const family=row=>{const seen=new Set();while(row?.parentId){if(seen.has(row.id))throw new Error('Cyclic skill role relationship');seen.add(row.id);row=source.roles.find(parent=>parent.id===row.parentId);if(!row)throw new Error('Original skill parent role is unavailable');}return row?.id;};
+  if(!role||!appearance||family(role)!==family(appearance))throw new Error('This appearance is not configured for the selected role');
+  const selected=role.emblemScale===.7?role:appearance,resource=selected.emblemResource,matches=(source.emblems||[]).filter(row=>row.resource===resource);
+  if(matches.length!==1)return {emblem:null,warning:matches.length?'Original skill emblem reference is ambiguous':'Original skill emblem is unavailable'};
+  return {emblem:{resource,sprite:structuredClone(matches[0].sprite),scale:selected.emblemScale},warning:null};
+}
+
+export function resolveSkillDisplay(library,roleId,skillId,appearanceId=roleId){
   const source=library.skillDisplay;
   if(source?.sourceVersion!=='legacy')throw new Error('Original skill display data is unavailable; refresh the resource pack');
   const role=source.roles.find(row=>row.id===roleId),skill=source.skills.find(row=>row.id===skillId);
@@ -41,5 +60,6 @@ export function resolveSkillDisplay(library,roleId,skillId){
     if(!['x','y','z'].every(key=>Number.isFinite(stand.position?.[key])&&Number.isFinite(stand.scale?.[key])))throw new Error('Invalid original skill stand transform');
     transform={position:{x:stand.position.x*538,y:(stand.position.y-.09)*538,z:0},scale:Object.fromEntries(['x','y','z'].map(key=>[key,stand.scale[key]*5.4]))};
   }
-  return {roleId,skillId,firstCharacter:skill.name.slice(0,1),remainingName:skill.name.slice(1),englishName:skill.englishName,portrait:portraits.size===1?structuredClone([...portraits.values()][0]):null,transform,warnings};
+  const {emblem,warning}=resolveSkillEmblem(source,roleId,appearanceId);if(warning)warnings.push(warning);
+  return {roleId,skillId,appearanceId,firstCharacter:skill.name.slice(0,1),remainingName:skill.name.slice(1),englishName:skill.englishName,portrait:portraits.size===1?structuredClone([...portraits.values()][0]):null,transform,emblem,warnings};
 }

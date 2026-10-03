@@ -33,6 +33,18 @@ def skill_role_bindings(people, gospels, skills, skins=(), drawings=()):
             child = {"id": identifier, "parentId": parent_id, "skillIds": list(parent["skillIds"]), "missingSkillIds": list(parent["missingSkillIds"])}
             by_id[identifier] = child
             result.append(child)
+    skin_by_id = {str(row["id"]): row for row in skins}
+    maximum = max((row["id"] for row in people), default=-1)
+    for row in result:
+        identifier = row["id"]
+        if int(identifier) <= maximum:
+            row.update(emblemResource=f"UI/Image/Icon/Badge/{identifier}_huizhang-bai", emblemScale=0.7)
+        else:
+            skin = skin_by_id.get(identifier)
+            name = skin.get("badge") if skin else None
+            if not name:
+                name = "wenzhang_" + str(skin["gospel_id"] if skin else identifier) + "_icon"
+            row.update(emblemResource="UI/Image/wenzhang/" + name, emblemScale=1)
     return result
 
 
@@ -58,7 +70,7 @@ def skill_stand_transforms(main, witch, gospel, people, drawings):
     return result
 
 
-def skill_display_catalogue(source):
+def skill_display_catalogue(source, portrait_entries=()):
     root = source / "generated/content"
     skills = {str(row["id"]): row for row in records(root / "a_skill.json")}
     people, gospels = records(root / "a_people.json"), records(root / "a_gospel.json")
@@ -80,7 +92,8 @@ def skill_display_catalogue(source):
     if len(configs) != 3:
         raise ValueError("Original skill stand configuration is incomplete")
     drawings = records(root / "a_station_drawing.json")
-    return {"sourceVersion": "legacy", "skills": [{"id": key, "name": row["skill_name"], "englishName": row["skill_name_e"]} for key, row in skills.items()], "roles": skill_role_bindings(people, gospels, skills, records(root / "a_gospel_skin.json"), drawings), "stands": skill_stand_transforms(configs["MainStandConfig"], configs["WitchCultivateStandConfig"], configs["GospelCultivateStandConfig"], people, drawings)}
+    emblems = [{"resource": row["resource"] + "/" + sprite["name"], "sprite": sprite} for row in portrait_entries if row.get("usage") == "skill-emblem" for sprite in row["sprites"]]
+    return {"sourceVersion": "legacy", "skills": [{"id": key, "name": row["skill_name"], "englishName": row["skill_name_e"]} for key, row in skills.items()], "roles": skill_role_bindings(people, gospels, skills, records(root / "a_gospel_skin.json"), drawings), "stands": skill_stand_transforms(configs["MainStandConfig"], configs["WitchCultivateStandConfig"], configs["GospelCultivateStandConfig"], people, drawings), "emblems": emblems}
 
 
 def hot_spring_roles(resources, levels):
@@ -108,7 +121,7 @@ def join_hot_springs(appearances, roles, names):
 
 
 def join_portraits(appearances, portrait_entries, source_spines, names):
-    portraits = {entry["resource"]: entry for entry in portrait_entries}
+    portraits = {entry["resource"]: entry for entry in portrait_entries if entry.get("usage") != "skill-emblem"}
     used = set()
     for row in appearances:
         resource = row.get("portraitResource")
@@ -189,6 +202,7 @@ def build(source, output):
         story_role = (story_roles.get(filename) or story_roles.get(filename.removesuffix("_hx"))) if presentation["category"] == "story" else None
         appearances.append({"id": presentation["id"], "characterId": story_role.get("RoleId") if story_role else character_id if character_id in names else None, "characterName": story_role.get("__unnamed_2") if story_role else names.get(character_id), "name": filename if story_role else name, "bundle": presentation["id"], "kind": presentation["category"], "status": "available"})
     portrait_path = output / "portrait-index.json"
+    portrait_entries = []
     if portrait_path.is_file():
         portrait_entries = json.loads(portrait_path.read_text())["entries"]
         source_spines = {"Spines/" + path.relative_to(folder).with_suffix("").as_posix() for folder in source.rglob("Spines") if folder.is_dir() for path in folder.rglob("*.dat")}
@@ -215,7 +229,7 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source), "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

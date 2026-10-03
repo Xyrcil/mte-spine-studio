@@ -21,6 +21,8 @@ def extract(task):
     resource, filename, hash_code, output, *options = task
     previous = options[0] if options else None
     result = {"resource": resource, "sprites": [], "errors": []}
+    if len(options) > 1 and options[1]:
+        result["usage"] = options[1]
     try:
         if filename is None:
             raise FileNotFoundError("Portrait bundle is absent from the source archive")
@@ -69,7 +71,10 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--metadata-only", action="store_true")
+    parser.add_argument("--emblems", action="store_true", help="Extract skill badges and emblems while retaining existing portraits")
     args = parser.parse_args()
+    if args.emblems and args.metadata_only:
+        parser.error("Emblem extraction and portrait metadata refresh are separate operations")
     source, output = args.source.resolve(), args.output.resolve()
     if output.is_relative_to(source):
         parser.error("Portrait output must be outside the source archive")
@@ -88,8 +93,10 @@ def main():
         resource = row.get("portraitResource")
         if resource and not resource.endswith("/"):
             candidates.setdefault(resource, None)
-    previous = {row["resource"]: row for row in json.loads((output / "portrait-index.json").read_text())["entries"]} if args.metadata_only else {}
-    tasks = [(resource, filename, metadata.get(resource), str(output), previous.get(resource)) for resource, filename in sorted(candidates.items()) if not args.metadata_only or previous.get(resource, {}).get("sprites")]
+    previous = {row["resource"]: row for row in json.loads((output / "portrait-index.json").read_text())["entries"]} if args.metadata_only or args.emblems else {}
+    if args.emblems:
+        candidates = {name: next((str(root / (name + ".dat")) for root in reversed(roots) if (root / (name + ".dat")).is_file()), None) for name in ("UI/Image/Icon/Badge", "UI/Image/wenzhang")}
+    tasks = [(resource, filename, metadata.get(resource), str(output), previous.get(resource) if args.metadata_only else None, "skill-emblem" if args.emblems else previous.get(resource, {}).get("usage")) for resource, filename in sorted(candidates.items()) if not args.metadata_only or previous.get(resource, {}).get("sprites") and previous[resource].get("usage") != "skill-emblem"]
     entries = []
     with ProcessPoolExecutor(max_workers=args.workers, initializer=worker_init, initargs=(str(source),)) as pool:
         futures = [pool.submit(extract, task) for task in tasks]
@@ -102,6 +109,9 @@ def main():
             if row["errors"]:
                 raise ValueError("Portrait metadata refresh failed: " + row["resource"])
             previous[row["resource"]] = row
+        entries = list(previous.values())
+    elif args.emblems:
+        previous.update({row["resource"]: row for row in entries})
         entries = list(previous.values())
     entries.sort(key=lambda row: row["resource"])
     summary = {"bundles": len(entries), "sprites": sum(len(row["sprites"]) for row in entries), "failedBundles": sum(not row["sprites"] for row in entries), "errors": sum(len(row["errors"]) for row in entries)}
