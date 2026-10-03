@@ -269,10 +269,14 @@ class BundleExtractor:
                     for mode, (owner, reference) in mappings.items():
                         material = self.resolve(owner, reference)
                         data = self.tree(material)
+                        shader = self.tree(self.resolve(material, data["m_Shader"]))
                         queue = data.get("m_CustomRenderQueue", -1)
                         if queue < 0:
-                            queue = shader_render_queue(self.tree(self.resolve(material, data["m_Shader"])))
-                        materials[mode] = {"id": str(material.path_id), "renderQueue": queue}
+                            queue = shader_render_queue(shader)
+                        keywords = data.get("m_ValidKeywords", data.get("m_ShaderKeywords", ""))
+                        if isinstance(keywords, str):
+                            keywords = keywords.split()
+                        materials[mode] = {"id": str(material.path_id), "renderQueue": queue, "shader": shader.get("m_Name") or shader.get("m_ParsedForm", {}).get("m_Name") or shader.get("m_ParsedForm", {}).get("name", ""), "keywords": sorted(set(keywords)), "properties": precise_references(data.get("m_SavedProperties", {}))}
                     pages.append({"atlas": atlas_index, "page": f"page-{index}.png", "sourcePage": name, "materials": materials})
             except Exception as error:
                 errors.append({"atlas": atlas_index, "error": str(error)})

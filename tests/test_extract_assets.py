@@ -72,17 +72,22 @@ class ExtractionTests(unittest.TestCase):
             item = SimpleNamespace(path_id=number, assets_file="bundle", read_typetree=lambda: tree, read=lambda: value)
             rows[number] = item
             return item
-        owner = reader(1, {"atlasAssets": [pointer(2)], "blendModeMaterials": {"multiplyMaterials": [{"pageName": "original.png", "material": pointer(5)}]}})
+        owner = reader(1, {"atlasAssets": [pointer(2)], "blendModeMaterials": {"additiveMaterials": [{"pageName": "original.png", "material": pointer(5)}]}})
         reader(2, {"atlasFile": pointer(3), "materials": [pointer(4)]})
         reader(3, {}, SimpleNamespace(m_Script="original.png\nsize: 20,20\nregion\n  xy: 0,0\n"))
-        reader(4, {"m_CustomRenderQueue": 3005})
-        reader(5, {"m_CustomRenderQueue": 3000})
+        reader(4, {"m_CustomRenderQueue": 3005, "m_Shader": pointer(6), "m_ShaderKeywords": "_STRAIGHT_ALPHA_INPUT"})
+        reader(5, {"m_CustomRenderQueue": 3000, "m_Shader": pointer(7), "m_ValidKeywords": ["_STRAIGHT_ALPHA_INPUT"], "m_SavedProperties": {"m_Colors": [("_Color", {"r": 4, "g": 4, "b": 4, "a": 1})], "m_Floats": [("_BloomFacter", 0)]}})
+        reader(6, {"m_ParsedForm": {"m_Name": "Spine/Skeleton"}})
+        reader(7, {"m_ParsedForm": {"m_Name": "Spine/Blend Modes/Skeleton PMA Additive"}})
         with tempfile.TemporaryDirectory() as folder:
             extractor = BundleExtractor(SimpleNamespace(objects=[]), Path(folder))
             extractor.resolve = lambda owner, reference: rows[reference["m_PathID"]]
             result = extractor.skeleton_materials(owner)
             self.assertEqual(result["errors"], [])
-            self.assertEqual(result["pages"], [{"atlas": 0, "page": "page-0.png", "sourcePage": "original.png", "materials": {"normal": {"id": "4", "renderQueue": 3005}, "multiply": {"id": "5", "renderQueue": 3000}}}])
+            page = result["pages"][0]
+            self.assertEqual((page["atlas"], page["page"], page["sourcePage"]), (0, "page-0.png", "original.png"))
+            self.assertEqual(page["materials"]["normal"], {"id": "4", "renderQueue": 3005, "shader": "Spine/Skeleton", "keywords": ["_STRAIGHT_ALPHA_INPUT"], "properties": {}})
+            self.assertEqual(page["materials"]["additive"], {"id": "5", "renderQueue": 3000, "shader": "Spine/Blend Modes/Skeleton PMA Additive", "keywords": ["_STRAIGHT_ALPHA_INPUT"], "properties": {"m_Colors": [["_Color", {"r": 4, "g": 4, "b": 4, "a": 1}]], "m_Floats": [["_BloomFacter", 0]]}})
 
     def test_renderer_queues_resolve_custom_values_and_shader_defaults_without_textures(self):
         pointer = lambda value: {"m_FileID": 0, "m_PathID": value}
