@@ -357,6 +357,8 @@ Interaction details list missing initial animation references as well as absent
 alternate variants. `tools/check_controllers.mjs` explores loaded controller
 states and reports inactive regions, source gaps and its bounded-search limit;
 a limited search is not evidence of complete behavioral coverage.
+Card exploration uses valid random checkpoints for each of the three possible
+reveals. Checks run in an independent scene and do not change the editing scene.
 
 The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,
