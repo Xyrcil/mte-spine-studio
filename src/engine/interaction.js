@@ -33,11 +33,13 @@ export class InteractionRoot {
     this.layers=group.layers.filter(layer=>order.includes(layer.instance.transform)&&layer.active!==false).sort((a,b)=>order.indexOf(a.instance.transform)-order.indexOf(b.instance.transform));
     this.primary=this.layers[0];
     this.hotspots=group.presentation.hotspots.filter(hit=>hit.controller===source.id).sort((a,b)=>order.indexOf(a.transform)-order.indexOf(b.transform));
-    this.bindings=new Map();
-    for(const hit of this.hotspots){
+    this.bindings=new Map();this.transformBindings=new Map();
+    const root=group.nodes.get(group.transforms.get(source.gameObject)?.id),holder=(root?.data.m_Children||[]).map(pointer=>group.nodes.get(String(pointer.m_PathID))).find(node=>group.nodes.get(String(node?.data.m_GameObject?.m_PathID))?.data.m_Name==='SpineClick');
+    const targets=[...this.hotspots,...(holder?.data.m_Children||[]).map(pointer=>{const node=group.nodes.get(String(pointer.m_PathID));return {transform:node?.id,name:group.nodes.get(String(node?.data.m_GameObject?.m_PathID))?.data.m_Name||''};})];
+    for(const hit of targets){
       const dynamic=source.data.openStaticLoadName===0||source.data.openStaticLoadName===false;
       if(!(dynamic?!hit.name.includes('move'):STATIC_BONES.has(hit.name)))continue;
-      for(const layer of this.layers){const bone=layer.skeleton.findBone(hit.name);if(bone)this.bindings.set(hit.id,{layer,bone});}
+      for(const layer of this.layers){const bone=layer.skeleton.findBone(hit.name);if(bone){const binding={layer,bone};if(hit.id)this.bindings.set(hit.id,binding);this.transformBindings.set(hit.transform,binding);}}
     }
   }
   initializeBackgrounds(){const {source}=this;
@@ -52,11 +54,14 @@ export class InteractionRoot {
   snapshot(){return structuredClone(this.value);}
   restore(value){this.value=structuredClone(value);}
   matrix(hit){
-    const {group}=this,binding=this.bindings.get(hit.id);
-    if(!binding)return multiply(objectTransform(group),group.world(hit.transform));
+    return this.matrixForTransform(hit.transform);
+  }
+  matrixForTransform(transform){
+    const {group}=this,binding=this.transformBindings.get(transform);
+    if(!binding)return multiply(objectTransform(group),group.world(transform));
     const native=inversePoint(multiply(objectTransform(group),binding.layer.transform),binding.bone.worldX,binding.bone.worldY);
     if(!native)return null;
-    const node=group.nodes.get(hit.transform),parent=String(node?.data.m_Father?.m_PathID||'0');
+    const node=group.nodes.get(transform),parent=String(node?.data.m_Father?.m_PathID||'0');
     return multiply(multiply(objectTransform(group),group.world(parent)),unityTransform({...node.data,m_LocalPosition:native}));
   }
   hitAt(x,y){

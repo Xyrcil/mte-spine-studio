@@ -363,6 +363,9 @@ states and reports inactive regions, source gaps and its bounded-search limit;
 a limited search is not evidence of complete behavioral coverage.
 Card exploration uses valid random checkpoints for each of the three possible
 reveals. Checks run in an independent scene and do not change the editing scene.
+Drag-bone receiver data and non-click bone-bound range markers are retained.
+The range and return-motion model preserves strict source bounds and the default
+OutQuad return; pointer handling and full drag playback remain pending.
 
 The interaction sequence engine records accepted clicks against a captured
 initial scene using simulation time. Replay targets the original object,

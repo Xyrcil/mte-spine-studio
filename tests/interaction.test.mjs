@@ -19,6 +19,13 @@ test('controller rebinding follows explicit skeleton visibility without changing
   const {root,group}=fixture();root.value.clock=4;const before=root.snapshot();group.layers.find(layer=>layer.instance.id==='front').active=false;root.rebind();assert.equal(root.primary.instance.id,'body');assert.deepEqual(root.snapshot(),before);
   group.isActiveTransform=()=>false;group.layers.find(layer=>layer.instance.id==='front').active=true;root.rebind();assert.equal(root.primary.instance.id,'front');assert.deepEqual(root.layers.map(layer=>layer.instance.id),['front','body']);
 });
+test('dynamic bone binding includes non-click helper transforms such as drag range markers',()=>{
+  const {root,group}=fixture();group.scale=1;group.x=0;group.y=0;group.world=()=>[1,0,0,1,0,0];root.source.data.openStaticLoadName=0;
+  group.nodes.get('root').data.m_Children.push({m_PathID:'clickT'});group.nodes.set('clickT',{id:'clickT',data:{m_GameObject:{m_PathID:'clickGO'},m_Children:[{m_PathID:'scopeT'}]}});group.nodes.set('clickGO',{data:{m_Name:'SpineClick'}});
+  group.nodes.set('scopeT',{id:'scopeT',data:{m_GameObject:{m_PathID:'scopeGO'},m_Father:{m_PathID:'clickT'},m_LocalPosition:{x:100,y:100},m_LocalScale:{x:1,y:1}}});group.nodes.set('scopeGO',{data:{m_Name:'HitArea_scope1'}});
+  for(const layer of group.layers){layer.transform=[1,0,0,1,0,0];layer.skeleton.findBone=name=>name==='HitArea_scope1'?{worldX:5,worldY:7}:null;}
+  root.rebind();assert.equal(root.hotspots.length,0);assert.equal(root.transformBindings.has('scopeT'),true);assert.deepEqual(point(root.matrixForTransform('scopeT'),0,0),{x:5,y:7});
+});
 test('stage changes coordinate skeletons, lock clicks, and use exact event target',()=>{
   const {root,group}=fixture(),hit={id:'hit',event:100,track:0,animation:'transition'};
   assert.equal(root.click(hit).accepted,true);assert.ok(group.layers.every(layer=>layer.state.getCurrent(0).animation.name==='transition'));
