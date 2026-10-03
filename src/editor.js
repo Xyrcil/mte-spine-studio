@@ -15,28 +15,35 @@ export function createEditor(stage,message,onSelection){
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
   const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
   const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
+  const controlKey=node=>node?.dataset.editorKey||node?.id||node?.getAttribute('aria-label');
   function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
     const field=document.createElement('input');field.type=type;if(type==='checkbox')field.checked=value;else field.value=value;
-    Object.assign(field,options);field.onchange=()=>{const result=type==='checkbox'?field.checked:type==='number'?Number(field.value):field.value;if(type==='number'&&(!Number.isFinite(result)||!field.checkValidity())){refresh();return;}mutate(()=>change(result));};
+    field.dataset.editorKey=label;field.dataset.editorValue=field.value;
+    Object.assign(field,options);field.onchange=()=>{const result=type==='checkbox'?field.checked:type==='number'?Number(field.value):field.value;if(type==='number'&&(!Number.isFinite(result)||!field.checkValidity())){field.value=field.dataset.editorValue;refresh();return;}mutate(()=>change(result));};
+    field.onblur=()=>{if(field.isConnected&&type!=='checkbox'&&field.value!==field.dataset.editorValue)field.onchange?.();};
     wrapper.append(field);return wrapper;
   };
-  const button=(title,action)=>{const node=document.createElement('button');node.textContent=title;node.onclick=()=>mutate(action);return node;};
+  const button=(title,action)=>{const node=document.createElement('button');node.textContent=title;node.dataset.editorKey=title;node.onclick=()=>mutate(action);return node;};
   function choose(group){selectedId=group?.id;refresh();onSelection?.(group);}
   function refresh(){
+    const active=document.activeElement,owner=active?.closest('[data-editor-object]')?.dataset.editorObject,key=controlKey(active);
+    const focus=owner&&key?{owner,key,value:active.value,baseline:active.dataset.editorValue,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection}:null;
     const locked=isBusy();container.inert=locked;
+    if(container.contains(active))active.onchange=null;
     container.replaceChildren();
     for(const group of sceneDrawOrder(stage.groups).reverse()){
       const row=document.createElement('div');row.className=`layer ${group.id===selectedId?'selected':''}`;
-      const title=document.createElement('button');title.textContent=group.name;title.setAttribute('aria-pressed',String(group.id===selectedId));title.onclick=()=>choose(group);
+      row.dataset.editorObject=group.id;
+      const title=document.createElement('button');title.textContent=group.name;title.dataset.editorKey='Select';title.setAttribute('aria-pressed',String(group.id===selectedId));title.onclick=()=>choose(group);
       row.append(title,button('Remove',()=>{stage.remove(group.id);if(!selected()){selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;onSelection?.(selected());}}));container.append(row);
     }
     const group=selected();
-    if(group){const panel=document.createElement('section');panel.className='object-controls';
+    if(group){const panel=document.createElement('section');panel.className='object-controls';panel.dataset.editorObject=group.id;
       panel.append(input('Object name','text',group.name,value=>group.name=value,{maxLength:512}));
-      if(group.kind==='spine'||group.asset){const add=document.createElement('button');add.textContent='Add character background';add.onclick=()=>{if(isBusy())return;backgroundTarget=group.id;document.querySelector('#background-file').click();};panel.append(add);}
+      if(group.kind==='spine'||group.asset){const add=document.createElement('button');add.textContent='Add character background';add.dataset.editorKey=add.textContent;add.onclick=()=>{if(isBusy())return;backgroundTarget=group.id;document.querySelector('#background-file').click();};panel.append(add);}
       if(group.kind==='image'&&!group.asset){const label=document.createElement('label');label.textContent='Background for';const select=document.createElement('select');select.setAttribute('aria-label','Background for');select.append(new Option('Scene (independent)',''));for(const owner of stage.groups.filter(row=>row.kind==='spine'||row.asset))select.append(new Option(owner.name,owner.id));select.value=group.parentId||'';select.onchange=()=>mutate(()=>stage.setBackgroundParent(group,select.value||undefined));label.append(select);panel.append(label);}
       const variants=group.layers.filter(layer=>layer.skeleton?.data.skins.length>1);
       if(variants.length){const title=document.createElement('h3');title.textContent='Artwork variants';panel.append(title);for(const layer of variants){const match=/^(fg|bg|role)(\d+)$/.exec(layer.instance.name),name=match?`${{fg:'Foreground',bg:'Background',role:'Character'}[match[1]]} ${match[2]}`:layer.instance.name,label=document.createElement('label'),select=document.createElement('select');label.textContent=`${name} variant`;select.setAttribute('aria-label',label.textContent);select.dataset.variantLayer=layer.instance.id;select.append(new Option('Source default',''));for(const skin of layer.skeleton.data.skins)select.append(new Option(skin.name,skin.name));select.value=layer.skeleton.skin?.name||'';select.onchange=()=>mutate(()=>stage.setLayerSkin(group,layer.instance.id,select.value||layer.instance.skin||null));label.append(select);panel.append(label);}}
@@ -61,12 +68,13 @@ export function createEditor(stage,message,onSelection){
         if(isBusy())return;const previous=snapshot(),{scene,copy}=duplicateSceneObject(previous,group.id);
         for(const effect of copy.effects||[])if(group.effects?.find(layer=>layer.source.id===effect.id)?.source.data.moveWithTransform===0)for(const particle of effect.state.particles)particle.position[0]+=1;
         try{await restore(scene);history.push(previous);choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
-      };panel.append(duplicate);container.append(panel);
+      };duplicate.dataset.editorKey='Duplicate';panel.append(duplicate);container.append(panel);
     }
     document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
     for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
     const preview=document.querySelector('#source-preview');if(preview)preview.disabled=locked||!selected()?.presentation?.previewView;
-    document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';document.querySelector('#scene-name').value=name;
+    document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';const sceneName=document.querySelector('#scene-name');if(locked||active!==sceneName)sceneName.value=name;sceneName.disabled=locked;
+    if(!locked&&focus){const field=[...container.querySelectorAll('input,select,button')].find(node=>controlKey(node)===focus.key&&node.closest('[data-editor-object]')?.dataset.editorObject===focus.owner);if(field){if(['text','number'].includes(field.type)&&field.value===focus.baseline)field.value=focus.value;field.focus({preventScroll:true});if(field.type==='text'&&focus.start!==null)field.setSelectionRange(focus.start,focus.end,focus.direction);}}
   }
   async function restore(scene,signal){
     if(stage.assetLoadBusy)throw new Error('Finish or cancel asset loading before loading a scene');
