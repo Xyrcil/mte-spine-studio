@@ -313,7 +313,7 @@ export class Stage extends EventTarget {
     const hit=root?.hotspots.find(hit=>hit.id===hitId&&hit.enabled!==0&&hit.enabled!==false&&group.isActiveTransform(hit.transform));
     if(!hit)return {accepted:false,reason:'Interaction target is unavailable'};
     const result={...root.click(hit),group:groupId,controller:controllerId,hit:hitId};
-    if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));
+    if((result.accepted||result.unavailable)&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));
     return result;
   }
   hitTest(clientX,clientY){

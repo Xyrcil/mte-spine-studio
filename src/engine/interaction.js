@@ -91,9 +91,10 @@ export class InteractionRoot {
     if(v.state===1){const variant=v.names[6]==='click_01_down_02'?2:1;if(event===8){name=`stand_down${variant}`;track=0;}else if(/^game_down/.test(name))name=`game_down${variant}`;else if(/^stand_up/.test(name))name=`stand_up${variant}`;}
     if(v.state===2&&name==='kaoji_04')name='kaoji_01';
     if(name==='rope_up'){this.clear(track);v.names[12]='rope_down';return {accepted:true,animation:name};}
-    if([5,102].includes(event)&&hit.animation)v.variants[hit.animation]=!v.variants[hit.animation];
+    const toggled=[5,102].includes(event)&&Boolean(hit.animation);
+    if(toggled)v.variants[hit.animation]=!v.variants[hit.animation];
     const dismissCard=v.cardStage&&v.cardClickable;
-    if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name))))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`};
+    if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name))))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`,...(toggled?{unavailable:true,animation:name}:{})};
     const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
     for(const sound of effects)this.sound(sound);
     if(dismissCard){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}

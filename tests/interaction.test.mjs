@@ -16,6 +16,15 @@ test('box and polygon colliders retain offsets and include polygon edges',()=>{
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
+test('missing variants expose their source state change for recording without playing audio or animation',()=>{
+  for(const event of [5,102]){
+    const {root,events}=fixture();for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='overlay'?{name,duration:2}:null;
+    assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);root.unlocked();
+    const saved=root.snapshot(),count=events.length;assert.equal(saved.variants.overlay,true);
+    assert.deepEqual(root.click({event,track:1,animation:'overlay'}),{accepted:false,reason:'Animation unavailable: overlay_02',unavailable:true,animation:'overlay_02'});assert.equal(root.value.variants.overlay,false);assert.equal(events.length,count);assert.equal(root.value.playing,false);
+    assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);
+  }
+});
 test('disabled click receivers do not intercept active regions on the same object',()=>{
   const {root,group}=fixture();group.world=()=>[1,0,0,1,0,0];group.scale=1;group.x=0;group.y=0;const collider={type:'BoxCollider2D',data:{m_Size:{x:2,y:2}}};root.hotspots=[{id:'disabled',event:100,enabled:false,colliders:[collider]},{id:'active',event:100,enabled:1,colliders:[collider]}];assert.equal(root.hitAt(0,0).id,'active');root.hotspots[0].enabled=0;assert.equal(root.hitAt(0,0).id,'active');delete root.hotspots[0].enabled;assert.equal(root.hitAt(0,0).id,'disabled');
 });

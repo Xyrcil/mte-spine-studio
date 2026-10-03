@@ -13,6 +13,7 @@ export function validateSequence(value){
     const group=identifier(action.group,'object'),controller=identifier(action.controller,'controller'),hit=identifier(action.hit,'region');
     const object=initial.objects.find(object=>object.id===group&&object.kind==='spine');
     if(!object?.interactions?.some(root=>root.id===controller))throw new Error('Sequence controller is absent from its initial scene');
+    if(action.unavailable!==undefined&&(typeof action.unavailable!=='boolean'||action.type!==undefined))throw new Error('Invalid unavailable sequence action');
     if(action.type==='bone-drag'){
       if(!['start','move','release'].includes(action.operation)||action.animation!==''||object.interactions.find(root=>root.id===controller)?.state.kind!=='bone-drag')throw new Error('Invalid sequence bone drag');
       let position;if(action.operation!=='release'){if(!Number.isFinite(action.position?.x)||!Number.isFinite(action.position?.y))throw new Error('Invalid sequence drag position');position={x:action.position.x,y:action.position.y};}
@@ -20,7 +21,8 @@ export function validateSequence(value){
     }
     if(action.type!==undefined)throw new Error('Unsupported sequence action');
     if(typeof action.animation!=='string'||action.animation.length>512)throw new Error('Invalid sequence animation');
-    return {at,group,controller,hit,animation:action.animation};
+    if(action.unavailable&&!action.animation)throw new Error('Missing unavailable sequence animation');
+    return {at,group,controller,hit,animation:action.animation,...(action.unavailable?{unavailable:true}:{})};
   });
   return {schema:1,initial,duration,actions};
 }
@@ -57,7 +59,7 @@ export class InteractionRecorder {
   constructor(stage){
     this.stage=stage;this.active=false;this.elapsed=0;this.actions=[];
     this.onStep=event=>{if(this.active){this.elapsed+=event.detail.delta;if(this.elapsed>86400){this.elapsed=86400;this.stop();}}};
-    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000)return;const {group,controller,hit,animation='',type,operation,position}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation,...(type==='bone-drag'?{type,operation,...(position?{position:{...position}}:{})}:{})});if(!this.stopping&&this.actions.length>=10000-this.dragReserve)this.stop();}};
+    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000)return;const {group,controller,hit,animation='',unavailable,type,operation,position}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation,...(unavailable?{unavailable:true}:{}),...(type==='bone-drag'?{type,operation,...(position?{position:{...position}}:{})}:{})});if(!this.stopping&&this.actions.length>=10000-this.dragReserve)this.stop();}};
     this.onLost=()=>{if(this.active)this.stop();};
     stage.addEventListener('simulation-step',this.onStep);stage.addEventListener('interaction-invoked',this.onInteraction);stage.addEventListener('rendering-pausing',this.onLost);stage.addEventListener('rendering-lost',this.onLost);
   }
@@ -85,7 +87,8 @@ export class InteractionPlayer {
     while(this.cursor<this.sequence.actions.length&&this.sequence.actions[this.cursor].at<=end){
       const action=this.sequence.actions[this.cursor];advanceTo(action.at);
       const result=timed(action.at,()=>action.type==='bone-drag'?this.stage.triggerBoneDrag(action,{replay:true}):this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
-      if(!result.accepted||result.animation!==action.animation)throw new Error(`Sequence action ${this.cursor+1} could not be reproduced: ${result.reason||'animation changed'}`);
+      const matched=action.unavailable?result.accepted===false&&result.unavailable===true:result.accepted;
+      if(!matched||result.animation!==action.animation)throw new Error(`Sequence action ${this.cursor+1} could not be reproduced: ${result.reason||'animation changed'}`);
       this.cursor++;
     }
     advanceTo(end);if(delta===0)timed(this.elapsed,()=>evaluate(0));

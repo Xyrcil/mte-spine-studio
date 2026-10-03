@@ -13,6 +13,12 @@ initial.objects[0].interactions=[{id:'root',state:new InteractionRoot(new EventT
 const action=(at,hit='hit')=>({at,group:'actor',controller:'root',hit,animation:'click'});
 const sequence=()=>({schema:1,initial,duration:1,actions:[action(0),action(.35),action(1)]});
 class FakeStage extends EventTarget {snapshot(){return structuredClone(initial);}triggerInteraction(...args){this.calls.push(args);return {accepted:true,animation:'click'};}calls=[];}
+test('recording and replay retain missing-variant state transitions without accepting other rejected clicks',()=>{
+  const stage=new FakeStage(),recorder=new InteractionRecorder(stage);recorder.start();stage.dispatchEvent(new CustomEvent('interaction-invoked',{detail:{...action(0),animation:'missing_02',unavailable:true}}));const value=recorder.stop();recorder.dispose();assert.equal(value.actions[0].unavailable,true);assert.equal(validateSequence(value).actions[0].animation,'missing_02');
+  stage.triggerInteraction=()=>({accepted:false,animation:'missing_02',unavailable:true,reason:'Animation unavailable: missing_02'});const player=new InteractionPlayer(stage,value);player.advance(0,()=>{});assert.equal(player.finished,true);
+  for(const result of [{accepted:true,animation:'missing_02'},{accepted:false,reason:'Locked'},{accepted:false,animation:'other',unavailable:true}]){stage.triggerInteraction=()=>result;assert.throws(()=>new InteractionPlayer(stage,value).advance(0,()=>{}),/could not be reproduced/);}
+  assert.throws(()=>validateSequence({...value,actions:[{...value.actions[0],unavailable:'true'}]}),/unavailable/);assert.throws(()=>validateSequence({...value,actions:[{...value.actions[0],animation:''}]}),/unavailable/);
+});
 const dragInitial=()=>{const scene=structuredClone(initial);scene.objects[0].interactions.push({id:'drag',state:{schema:1,kind:'bone-drag',writing:false,pointer:null,motion:{schema:1,current:{x:0,y:0},from:{x:0,y:0},dragging:false,returning:false,elapsed:0}}});return scene;};
 test('drag sequence validation and replay retain world positions and ordered operations',()=>{
   const actions=['start','move','release'].map((operation,index)=>({at:index/4,group:'actor',controller:'drag',hit:'target',type:'bone-drag',operation,position:{x:index,y:1},animation:''})),value={schema:1,initial:dragInitial(),duration:1,actions},checked=validateSequence(value);

@@ -37,7 +37,7 @@ try{
           if(branch)root.value.random=branch.seed;
           if(!group.isActiveTransform(hit.transform)){inactive.add(hit.id);continue;}
           const result=stage.triggerInteraction(group.id,root.source.id,hit.id);
-          if(!result.accepted){if(result.reason.startsWith('Animation unavailable:'))gaps.set(hit.id,{hit:hit.name,reason:result.reason});else blocked.add(hit.id);continue;}
+          if(!result.accepted){if(result.reason.startsWith('Animation unavailable:'))gaps.set(hit.id,{hit:hit.name,reason:result.reason});else blocked.add(hit.id);if(result.unavailable)enqueue();continue;}
           covered.add(hit.id);transitions++;
           if(!settle()){if(!failures.some(row=>row.hit===hit.name))failures.push({hit:hit.name,animation:result.animation,reason:invalidPose().length?'Non-finite animation pose':'Interaction remained locked after 30 seconds',bones:invalidPose().slice(0,2)});continue;}
           if(branch&&result.animation){cardOutcomes.add(branch.outcome);}

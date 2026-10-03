@@ -436,8 +436,10 @@ positions, including ignored out-of-range input, and closes held drags when
 recording stops. Replay and independent export use the same receiver; original-client
 input ordering and visual comparison remain pending.
 
-The interaction sequence engine records accepted clicks against a captured
-initial scene using simulation time. Replay targets the original object,
+The interaction sequence engine records accepted clicks and state-changing
+requests for missing variants against a captured initial scene using simulation
+time. Missing-variant transitions remain labelled unavailable and preserve the
+source toggle; replay requires the same availability outcome. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports
 state divergence rather than skipping a failed action. Time-zero actions run
 once. Streamed replay and independent export use canonical simulation steps.

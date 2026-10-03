@@ -1,8 +1,8 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
@@ -39,4 +39,21 @@ try{
   for(const state of result.states)state.clock=Math.round(state.clock*1e8)/1e8;
   assert.deepEqual(result.states[0],result.states[1]);assert.equal(result.invoked,0);assert.deepEqual(errors,[]);
   console.log('Real sequence checks passed: two state-changing interactions, time-zero action, frame-rate-independent replay');
-}finally{await browser.close();}
+  const unavailable=await page.evaluate(async()=>{
+    const {Stage}=await import('/src/engine/stage.js'),{InteractionRecorder,InteractionPlayer,validateSequence}=await import('/src/engine/interaction-sequence.js'),{validateInteraction}=await import('/src/engine/interaction.js'),{exportMedia}=await import('/src/engine/export.js');
+    const catalog=(await fetch('/assets/presentations.json').then(response=>response.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(response=>response.json())).entries,canvas=document.createElement('canvas');canvas.width=320;canvas.height=192;
+    const stage=new Stage(canvas,{manual:true});stage.paused=true;
+    try{
+      const presentation=catalog.find(row=>row.id==='Spines/painting/301602201_spine'),group=await stage.add(presentation,entries.filter(row=>row.bundle===presentation.id)),root=group.controllers[0];
+      const settle=()=>{for(let i=0;i<3600&&(root.value.playing||root.primary.state.getCurrent(0)?.animation.name==='start');i++)stage.evaluate(1/120);if(root.value.playing)throw new Error('Interaction did not finish');};settle();
+      const recorder=new InteractionRecorder(stage);recorder.start();const results=[];
+      for(const name of ['wanou_down','caidai_down']){const hit=root.hotspots.find(hit=>hit.name===name);for(let repeat=0;repeat<3;repeat++){results.push(stage.triggerInteraction(group.id,root.source.id,hit.id));settle();for(let step=0;step<12;step++)stage.evaluate(1/120);}}
+      const sequence=validateSequence(JSON.parse(JSON.stringify(recorder.stop())));recorder.dispose();const final=root.snapshot();stage.draw();const pixels=new Uint8Array(320*192*4);stage.gl.readPixels(0,0,320,192,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,pixels);
+      await stage.restore(sequence.initial,catalog,entries);const player=new InteractionPlayer(stage,sequence);player.advance(sequence.duration,delta=>stage.evaluateFrame(delta));if(!player.finished)throw new Error('Replay did not finish');stage.draw();const replayed=new Uint8Array(pixels.length);stage.gl.readPixels(0,0,320,192,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,replayed);let replayError=0;for(let index=0;index<pixels.length;index++)replayError=Math.max(replayError,Math.abs(pixels[index]-replayed[index]));
+      const replayState=stage.groups[0].controllers[0].snapshot();for(const value of [final,replayState])value.clock=Math.round(value.clock*1e8)/1e8;if(JSON.stringify(validateInteraction(final))!==JSON.stringify(validateInteraction(replayState)))throw new Error('Missing-variant replay changed controller state');
+      const scene=stage.snapshot();scene.sequence=sequence;
+      const output=await exportMedia({scene,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:320/192,settings:{format:'png',width:320,height:192,fps:30,start:sequence.duration,end:sequence.duration+.1,speed:1,loops:1,loopMode:'repeat',background:stage.background,fit:'contain',crop:{x:0,y:0,width:1,height:1},useSequence:true}}),bitmap=await createImageBitmap(output.blob),image=document.createElement('canvas');image.width=320;image.height=192;const context=image.getContext('2d');context.drawImage(bitmap,0,0);bitmap.close();const png=context.getImageData(0,0,320,192).data;let exportError=0;for(let y=0;y<192;y++)for(let x=0;x<320;x++)for(let c=0;c<4;c++)exportError=Math.max(exportError,Math.abs(png[(y*320+x)*4+c]-pixels[((191-y)*320+x)*4+c]));
+      return {results:results.map(row=>({accepted:row.accepted,unavailable:row.unavailable===true,animation:row.animation})),actions:sequence.actions.length,missing:sequence.actions.filter(row=>row.unavailable).length,replayError,exportError};
+    }finally{stage.dispose();}
+  });assert.deepEqual(unavailable.results.map(row=>row.accepted),[true,false,true,true,false,true]);assert.equal(unavailable.actions,6);assert.equal(unavailable.missing,2);assert.ok(unavailable.replayError<=1);assert.ok(unavailable.exportError<=1);assert.deepEqual(errors,[]);console.log(engine+': real missing variants retain recovery, recorded state changes, JSON replay and PNG pixels',unavailable);
+}finally{await close();}
