@@ -16,6 +16,7 @@ import {SkillWordsRoot} from './skill-words.js';
 import {prepareSkillArtwork} from './skill-display.js';
 import {SkillDisplayRoot} from './skill-receiver.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialEffectLimitations} from './material-order.js';
+import {hasMaterialDistortion} from './material-distortion.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -32,6 +33,7 @@ export class Stage extends EventTarget {
     this.imageAssets=new Map();
     this.paused = false;
     this.speed = 1;
+    this.materialTime=0;
     this.background = '#191b20';
     this.camera = {x:0,y:0,width:20,height:20};
     this.previous = performance.now();
@@ -161,6 +163,7 @@ export class Stage extends EventTarget {
     if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
   }
   evaluateFrame(delta) {
+    if(delta>0)this.materialTime=(this.materialTime??0)+delta;
     for(const group of this.groups)if(group.visible)for(const native of group.nativeAnimations||[])if(native.model&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject.m_PathID))?.id))native.model.advance(delta);
     if(delta>0)for(const group of this.groups)if(group.visible)for(const effect of group.effects||[])if(effect.model&&group.isActiveTransform(effect.source.transform))effect.model.advance(delta);
     for(const group of this.groups)for(const root of group.controllers||[])root.advance(delta);
@@ -215,7 +218,7 @@ export class Stage extends EventTarget {
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
-    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
+    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.groups.some(group=>group.layers?.some(layer=>hasMaterialDistortion(layer.entry)))?{materialTime:this.materialTime??0}:{}),...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.parentId!==undefined)row.parentId=group.parentId;
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
@@ -227,7 +230,7 @@ export class Stage extends EventTarget {
     if(this.contextLost||this.disposed)throw new Error('Rendering context is unavailable');
     const contextEpoch=this.contextEpoch;
     scene=validateScene(scene);
-    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused;this.paused=true;
+    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused,previousMaterialTime=this.materialTime;this.paused=true;
     this.loadingRestorePaused=previousPaused;
     const created=[];
     try {
@@ -263,9 +266,10 @@ export class Stage extends EventTarget {
       scene.objects.forEach((row,index)=>{for(const native of created[index].nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(saved=>saved.id===native.source.id)||{...native.model.snapshot(),time:0,playing:Boolean(native.source.data.m_PlayAutomatically)};native.model.restore(saved);}});
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
+      this.materialTime=scene.materialTime??0;
       for(const group of created)for(const layer of group.layers)this.transformLayer(group,layer);
       if(this.camera.sourcePreview&&!this.options?.manual)this.resize();this.draw();
-    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
     this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }

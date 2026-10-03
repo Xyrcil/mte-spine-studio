@@ -57,7 +57,8 @@ export function validateScene(value) {
   validateBackgroundLinks(objects);
   if(value.camera.sourcePreview!==undefined){const preview=value.camera.sourcePreview,group=text(preview?.group,'preview object'),aspect=finite(preview?.aspect,'preview aspect');if(aspect<=0||!objects.some(object=>object.id===group&&object.kind==='spine'))throw new Error('Invalid source preview reference');camera.sourcePreview={group,aspect,view:sourcePreviewSettings(preview.view)};}
   const speed=finite(value.speed,'playback speed');if(speed<=0)throw new Error('Playback speed must be positive');
-  return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
+  if(value.materialTime!==undefined&&finite(value.materialTime,'material time')<0)throw new Error('Invalid material time');
+  return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.materialTime!==undefined?{materialTime:value.materialTime}:{}),...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
 }
 
 export class History {

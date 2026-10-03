@@ -157,6 +157,8 @@ Rebuild the indexes and resource ZIP afterward. Texture filtering, wrap modes,
 scale and offset remain in the material profile and offline preparation includes
 these files. Ordinary metadata refresh retains existing texture records only
 when their material and texture references still match.
+Scenes retain a separate material clock for distortion playback, independent
+of Spine tracks. Restoring a legacy scene without this clock starts it at zero.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI sprites retain their original canvas rectangle and trimmed
 content bounds, including atlas offsets and unpacked rotation. The native image
