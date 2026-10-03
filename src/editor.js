@@ -72,7 +72,7 @@ export function createEditor(stage,message,onSelection){
         skeleton.onchange=()=>mutate(()=>{for(const layer of group.layers)layer.active=layer.instance.id===skeleton.value;stage.evaluate(0);stage.fit();});skeletonLabel.append(skeleton);panel.append(skeletonLabel);
         const animationLabel=document.createElement('label');animationLabel.textContent='Animation preview';const animation=document.createElement('select');animation.id='animation-preview';
         for(const item of active.skeleton.data.animations)animation.append(new Option(item.name,item.name));animation.value=active.state.getCurrent(0)?.animation.name||'';
-        animation.onchange=()=>mutate(()=>active.state.setAnimation(0,animation.value,true));animationLabel.append(animation);panel.append(animationLabel);
+        animation.onchange=()=>mutate(()=>{if(stage.paused){active.state.clearTracks();active.skeleton.setToSetupPose();}active.state.setAnimation(0,animation.value,true);stage.evaluate(0);});animationLabel.append(animation);panel.append(animationLabel);
       }
       for(const [key,label,step,min,max] of [['x','X','.1'],['y','Y','.1'],['scale','Scale','.05','.01'],['rotation','Rotation','1'],['opacity','Opacity','.05','0','1']])panel.append(input(group.parentId!==undefined&&['x','y'].includes(key)?`Offset ${label}`:label,'number',group[key],value=>group[key]=value,{step,...(min?{min}:{}),...(max?{max}:{})}));
       for(const [key,label] of [['visible','Visible'],['locked','Locked'],['flipX','Mirror horizontally'],['flipY','Mirror vertically']])panel.append(input(label,'checkbox',group[key],value=>group[key]=value));

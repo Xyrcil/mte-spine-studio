@@ -340,7 +340,9 @@ remain independent of artwork. Completed speech does not restart on resume.
 The Clarissa skin has browser checks for 13 reachable idle states and 38 click
 regions. Its absent `caidan_jqr_02` animation is reported rather than replaced.
 Standalone Spine bundles expose skeleton and animation previews, including
-story portraits without prefab components. Extracted static portraits can be
+story portraits without prefab components. Selecting an animation while paused
+resets the preview to its initial pose without retaining a frozen mix chain.
+Selections during playback keep the source mixing settings. Extracted static portraits can be
 viewed, played alongside voices and composed with animated artwork. Scenes
 reference catalog portraits rather than embedding copies of game images.
 Missing Spine bundles remain marked even when a static preview is available.
