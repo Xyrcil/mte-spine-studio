@@ -4,12 +4,13 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
 import sys
-from extract_assets import load_decoder, safe_name, write_json
+from extract_assets import load_decoder, safe_name, write_json, sprite_content_rect
 
 
 def worker_init(source):
     global UnityPy, decoder
     source = Path(source)
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(source / "tools/python-libs"))
     import UnityPy as unity
     UnityPy = unity
@@ -17,7 +18,8 @@ def worker_init(source):
 
 
 def extract(task):
-    resource, filename, hash_code, output = task
+    resource, filename, hash_code, output, *options = task
+    previous = options[0] if options else None
     result = {"resource": resource, "sprites": [], "errors": []}
     try:
         if filename is None:
@@ -34,6 +36,14 @@ def extract(task):
         for reader in sprites:
             try:
                 sprite = reader.read()
+                old = next((row for row in previous.get("sprites", []) if row["id"] == str(reader.path_id)), None) if previous is not None else None
+                if previous is not None and old is None:
+                    raise ValueError("Metadata refresh requires an existing portrait image")
+                rect = {key: getattr(sprite.m_Rect, key) for key in ("x", "y", "width", "height")}
+                content = sprite_content_rect(sprite, reader.read_typetree())
+                if old is not None:
+                    result["sprites"].append({**old, "rect": rect, "contentRect": content})
+                    continue
                 image = sprite.image.convert("RGBA")
                 relative = Path("portraits") / safe_name(resource.split("/")[-1]) / (str(reader.path_id) + ".png")
                 destination = Path(output) / relative
@@ -45,7 +55,7 @@ def extract(task):
                 thumb.thumbnail((240, 320))
                 thumbnail = relative.with_suffix(".webp")
                 thumb.save(Path(output) / thumbnail, format="WEBP", quality=85)
-                result["sprites"].append({"id": str(reader.path_id), "name": sprite.m_Name, "path": relative.as_posix(), "thumbnail": thumbnail.as_posix(), "width": image.width, "height": image.height, "pixelsPerUnit": sprite.m_PixelsToUnits, "pivot": {"x": sprite.m_Pivot.x, "y": sprite.m_Pivot.y}})
+                result["sprites"].append({"id": str(reader.path_id), "name": sprite.m_Name, "path": relative.as_posix(), "thumbnail": thumbnail.as_posix(), "width": image.width, "height": image.height, "rect": rect, "contentRect": content, "pixelsPerUnit": sprite.m_PixelsToUnits, "pivot": {"x": sprite.m_Pivot.x, "y": sprite.m_Pivot.y}})
             except Exception as exc:
                 result["errors"].append({"id": str(reader.path_id), "error": str(exc)})
     except Exception as exc:
@@ -58,8 +68,12 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--metadata-only", action="store_true")
     args = parser.parse_args()
     source, output = args.source.resolve(), args.output.resolve()
+    if output.is_relative_to(source):
+        parser.error("Portrait output must be outside the source archive")
+    sys.dont_write_bytecode = True
     decoder = load_decoder(source)
     roots = [source / "full-files/files", source / "qnzl-2.0-poc/overlay"]
     metadata, candidates = {}, {}
@@ -74,7 +88,8 @@ def main():
         resource = row.get("portraitResource")
         if resource and not resource.endswith("/"):
             candidates.setdefault(resource, None)
-    tasks = [(resource, filename, metadata.get(resource), str(output)) for resource, filename in sorted(candidates.items())]
+    previous = {row["resource"]: row for row in json.loads((output / "portrait-index.json").read_text())["entries"]} if args.metadata_only else {}
+    tasks = [(resource, filename, metadata.get(resource), str(output), previous.get(resource)) for resource, filename in sorted(candidates.items()) if not args.metadata_only or previous.get(resource, {}).get("sprites")]
     entries = []
     with ProcessPoolExecutor(max_workers=args.workers, initializer=worker_init, initargs=(str(source),)) as pool:
         futures = [pool.submit(extract, task) for task in tasks]
@@ -82,6 +97,12 @@ def main():
             entry = future.result()
             entries.append(entry)
             print(entry["resource"], "sprites", len(entry["sprites"]), "errors", len(entry["errors"]), flush=True)
+    if args.metadata_only:
+        for row in entries:
+            if row["errors"]:
+                raise ValueError("Portrait metadata refresh failed: " + row["resource"])
+            previous[row["resource"]] = row
+        entries = list(previous.values())
     entries.sort(key=lambda row: row["resource"])
     summary = {"bundles": len(entries), "sprites": sum(len(row["sprites"]) for row in entries), "failedBundles": sum(not row["sprites"] for row in entries), "errors": sum(len(row["errors"]) for row in entries)}
     write_json(output / "portrait-index.json", {"schema": 1, "complete": True, "entries": entries, "summary": summary})

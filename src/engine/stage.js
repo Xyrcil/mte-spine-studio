@@ -10,6 +10,7 @@ import {MaskedParticleRenderer} from './masked-particles.js';
 import {DialogueTextLayer} from './dialogue-text.js';
 import {NativeTextLayer} from './native-text.js';
 import {SkillWordsRoot} from './skill-words.js';
+import {prepareSkillArtwork} from './skill-display.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots} from './material-order.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
@@ -49,6 +50,7 @@ export class Stage extends EventTarget {
   }
   async add(presentation, entries, signal,detached=false) {
     if(this.contextLost||this.disposed)throw new DOMException('Rendering context is unavailable','AbortError');
+    presentation=prepareSkillArtwork(presentation);
     const contextEpoch=this.contextEpoch;
     const manager = new (s().webgl.AssetManager)(this.gl);
     this.activeLoads=(this.activeLoads||0)+1;

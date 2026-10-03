@@ -161,7 +161,11 @@ and the source 0.33-second divided wait, advancing once per eligible frame rathe
 than catching up multiple letters. Checkpoints retain count, progress and the next
 wait; scene restore and independent export rebuild their derived letters without
 copying game text into scene files. The complete skill display remains unavailable
-until its event receiver and dynamic artwork are connected.
+until its complete event receiver and emblem assignment are connected.
+Dynamic role artwork can now bind both original Image components using the
+sprite's logical rectangle, trimmed content bounds and explicit canvas pixel
+ratio. The upper layer retains its authored opacity and local transform.
+This binding does not enable the unresolved emblem or complete skill receiver.
 Native Legacy event timelines now dispatch only through explicit, scene-local
 receiver maps. They retain source parameters, same-time ordering and loop-boundary
 events. Checkpoints keep the next event cursor; restoring a pose or drawing a
