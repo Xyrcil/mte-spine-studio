@@ -1,5 +1,5 @@
 import {validateScene} from './scene.js';
-import {identity,multiply,unityTransform,objectTransform,point,sourcePreviewCamera} from './geometry.js';
+import {identity,multiply,unityTransform,objectTransform,point,sourcePreviewCamera,sourcePreviewSettings} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {BoneDragRoot} from './bone-drag-root.js';
 import {switchLayerSkin} from './artwork-variant.js';
@@ -51,6 +51,7 @@ export class Stage extends EventTarget {
     const ratio = Math.min(devicePixelRatio || 1, 2);
     this.canvas.width = Math.max(1, Math.round(this.canvas.clientWidth * ratio));
     this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
+    if(this.camera.sourcePreview&&this.previewResponsive!==false&&!this.options?.manual&&!this.recoveryPending&&!this.assetLoadBusy&&this.checkPreview()){const preview=this.camera.sourcePreview,group=this.groups.find(group=>group.id===preview.group),previous=this.camera;this.fitPreview(group,preview.view);if(JSON.stringify(previous)!==JSON.stringify(this.camera))this.dispatchEvent(new CustomEvent('preview-resized'));}
   }
   async add(presentation, entries, signal,detached=false) {
     if(this.contextLost||this.disposed)throw new DOMException('Rendering context is unavailable','AbortError');
@@ -213,7 +214,7 @@ export class Stage extends EventTarget {
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
-    return {schema:1,name,background:this.background,camera:{...this.camera},speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
+    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.parentId!==undefined)row.parentId=group.parentId;
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
@@ -262,8 +263,8 @@ export class Stage extends EventTarget {
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
       for(const group of created)for(const layer of group.layers)this.transformLayer(group,layer);
-      this.draw();
-    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;throw error;}finally{delete this.loadingRestorePaused;}
+      if(this.camera.sourcePreview&&!this.options?.manual)this.resize();this.draw();
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
     this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }
@@ -278,7 +279,7 @@ export class Stage extends EventTarget {
       for(const group of this.groups)this.release(group);this.groups=[];this.renderer.dispose();this.renderer=new (s().webgl.SceneRenderer)(this.canvas,this.gl);
       await this.restore(this.recoverySnapshot,this.recoveryInputs.presentations,this.recoveryInputs.entries);
       if(this.disposed||this.contextLost||epoch!==this.contextEpoch)throw new Error('Rendering was interrupted during recovery');
-      this.previous=performance.now();this.recoveryPending=false;this.recoverySnapshot=null;this.recoveryInputs=null;this.dispatchEvent(new CustomEvent('rendering-recovered'));
+      this.previous=performance.now();this.recoveryPending=false;this.recoverySnapshot=null;this.recoveryInputs=null;if(this.camera.sourcePreview)this.resize();this.draw();this.dispatchEvent(new CustomEvent('rendering-recovered'));
     })().catch(error=>{if(!this.contextLost&&!this.disposed)this.dispatchEvent(new CustomEvent('rendering-recovery-error',{detail:error.message}));throw error;}).finally(()=>this.recoveryPromise=null);
     return this.recoveryPromise;
   }
@@ -349,15 +350,22 @@ export class Stage extends EventTarget {
     }
     if (Number.isFinite(minX)) this.camera={x:(minX+maxX)/2,y:(minY+maxY)/2,width:Math.max(1,maxX-minX)*1.15,height:Math.max(1,maxY-minY)*1.15};
   }
-  fitPreview(group){
-    if(!group?.presentation?.previewView)return false;
+  previewFrame(group,view,aspect){const frame=sourcePreviewCamera(view,aspect),matrix=objectTransform(group),center=point(matrix,frame.x,frame.y);return {x:center.x,y:center.y,width:Math.abs(matrix[0])*frame.width+Math.abs(matrix[2])*frame.height,height:Math.abs(matrix[1])*frame.width+Math.abs(matrix[3])*frame.height};}
+  checkPreview(){
+    const preview=this.camera.sourcePreview;if(!preview)return false;const group=this.groups.find(group=>group.id===preview.group);let expected;
+    try{if(group)expected=this.previewFrame(group,preview.view,preview.aspect);}catch{}
+    if(!expected||!['x','y','width','height'].every(key=>Math.abs(expected[key]-this.camera[key])<=1e-8*Math.max(1,Math.abs(expected[key])))){delete this.camera.sourcePreview;return false;}return true;
+  }
+  fitPreview(group,settings=group?.presentation?.previewView){
+    if(!settings)return false;
     try{
-      const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,frame=sourcePreviewCamera(group.presentation.previewView,aspect),matrix=objectTransform(group),center=point(matrix,frame.x,frame.y);
-      this.camera={x:center.x,y:center.y,width:Math.abs(matrix[0])*frame.width+Math.abs(matrix[2])*frame.height,height:Math.abs(matrix[1])*frame.width+Math.abs(matrix[3])*frame.height};delete group.previewReason;return true;
+      const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,view=sourcePreviewSettings(settings),frame=this.previewFrame(group,view,aspect);
+      this.camera={...frame,sourcePreview:{group:group.id,aspect,view}};delete group.previewReason;return true;
     }catch(error){group.previewReason=error.message;return false;}
   }
   draw() {
     if(this.contextLost||this.disposed)return;
+    if(this.camera.sourcePreview)this.checkPreview();
     const {gl,renderer,canvas}=this;
     gl.viewport(0,0,canvas.width,canvas.height);
     const hex=this.background.replace('#','');
@@ -391,6 +399,7 @@ export class Stage extends EventTarget {
     this.frame=requestAnimationFrame(next => this.tick(next));
   }
   remove(id) {
+    if(this.camera?.sourcePreview?.group===id)delete this.camera.sourcePreview;
     for(let index=this.groups.length-1;index>=0;index--){const group=this.groups[index];if(group.id===id||group.parentId===id){this.release(group);this.groups.splice(index,1);}}
   }
   setBackgroundParent(group,parentId){if(!this.groups.includes(group))throw new Error('Background is unavailable');const order=sceneDrawOrder(this.groups);setBackgroundParent(group,parentId,this.groups);if(parentId===undefined)this.groups.splice(0,this.groups.length,...order);}

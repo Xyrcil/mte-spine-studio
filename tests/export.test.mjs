@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {exportPlan,frameSources,exportCamera,clipSample} from '../src/engine/export-plan.js';
 import {omittedVisualWarnings} from '../src/engine/export-source.js';
 const settings=()=>({format:'mp4',width:320,height:240,scale:1,fps:10,speed:1,start:0,end:1,loops:2,loopMode:'repeat',fade:.2,background:'#191b20',transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}});
+test('source preview exports preserve the captured viewport after host layout changes',()=>{
+  const camera={x:1,y:2,width:12,height:8,sourcePreview:{aspect:1.5}},plan=exportPlan(settings());
+  assert.deepEqual(exportCamera(camera,2.5,plan),exportCamera({...camera,sourcePreview:undefined},1.5,plan));
+});
 test('exports identify omitted active visuals without warning about hidden or disabled ones',()=>{
   const group={visible:true,isActiveTransform:id=>id!=='inactive',transforms:new Map([['go',{id:'active'}]]),effects:[{reason:'Unsupported shader',source:{transform:'active',renderer:{m_Enabled:1}}}],nativeAnimations:[{reason:'Unsupported events',source:{data:{m_PlayAutomatically:true,m_GameObject:{m_PathID:'go'}}}}]};
   assert.deepEqual(omittedVisualWarnings([group],{}),['Some source particle effects are not rendered','Some source native animation clips are not rendered']);

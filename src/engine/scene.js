@@ -9,6 +9,7 @@ import {validateSkillWordsState} from './skill-words.js';
 import {validateSkillDisplayState} from './skill-receiver.js';
 import {validateBoneDragState} from './bone-drag-root.js';
 import {validateBackgroundLinks} from './background-layers.js';
+import {sourcePreviewSettings} from './geometry.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
@@ -54,6 +55,7 @@ export function validateScene(value) {
     return result;
   });
   validateBackgroundLinks(objects);
+  if(value.camera.sourcePreview!==undefined){const preview=value.camera.sourcePreview,group=text(preview?.group,'preview object'),aspect=finite(preview?.aspect,'preview aspect');if(aspect<=0||!objects.some(object=>object.id===group&&object.kind==='spine'))throw new Error('Invalid source preview reference');camera.sourcePreview={group,aspect,view:sourcePreviewSettings(preview.view)};}
   const speed=finite(value.speed,'playback speed');if(speed<=0)throw new Error('Playback speed must be positive');
   return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
 }

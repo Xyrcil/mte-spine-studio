@@ -11,6 +11,10 @@ export function sourcePreviewCamera(view,aspect){
   const height=2*camera.halfHeight*Math.max(1,camera.referenceAspect/aspect)/scale.y;
   const result={x:(camera.x-position.x*offset)/scale.x,y:(camera.y-position.y)/scale.y,width:height*aspect,height};if(!Object.values(result).every(Number.isFinite))throw new Error('Source preview dimensions are not finite');return result;
 }
+export function sourcePreviewSettings(view){
+  const result={camera:{x:view?.camera?.x,y:view?.camera?.y,halfHeight:view?.camera?.halfHeight,referenceAspect:view?.camera?.referenceAspect},position:{x:view?.position?.x,y:view?.position?.y},scale:{x:view?.scale?.x,y:view?.scale?.y},offset:view?.offset};
+  sourcePreviewCamera(result,16/9);return result;
+}
 export function unityTransform(data){const q=data.m_LocalRotation||{x:0,y:0,z:0,w:1},scale=data.m_LocalScale||{x:1,y:1},p=data.m_LocalPosition||{x:0,y:0};return [(1-2*(q.y*q.y+q.z*q.z))*scale.x,2*(q.x*q.y+q.w*q.z)*scale.x,2*(q.x*q.y-q.w*q.z)*scale.y,(1-2*(q.x*q.x+q.z*q.z))*scale.y,p.x,p.y];}
 export function polygonContains(points,x,y){
   let inside=false;

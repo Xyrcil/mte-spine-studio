@@ -12,8 +12,10 @@ test('source preview expands narrow viewports instead of fitting offstage geomet
   assert.throws(()=>sourcePreviewCamera({...view,camera:{...view.camera,referenceAspect:2340/1080}},1.6),/preview/);assert.throws(()=>sourcePreviewCamera(view,1e-309),/finite/);
 });
 test('source preview follows scene transforms and preserves the camera when unavailable',()=>{
-  const view={camera:{x:0,y:0,halfHeight:1,referenceAspect:16/9},position:{x:0,y:0},scale:{x:1,y:1},offset:1},group={presentation:{previewView:view},x:3,y:4,scale:2,rotation:90,flipX:true},stage={canvas:{getBoundingClientRect:()=>({width:160,height:90})},camera:{x:0,y:0,width:1,height:1}};
+  const view={camera:{x:0,y:0,halfHeight:1,referenceAspect:16/9},position:{x:0,y:0},scale:{x:1,y:1},offset:1},group={id:'actor',presentation:{previewView:view},x:3,y:4,scale:2,rotation:90,flipX:true},stage=Object.assign(Object.create(Stage.prototype),{groups:[group],canvas:{getBoundingClientRect:()=>({width:160,height:90})},camera:{x:0,y:0,width:1,height:1}});
   assert.equal(Stage.prototype.fitPreview.call(stage,group),true);assert.equal(stage.camera.x,3);assert.equal(stage.camera.y,4);assert.ok(Math.abs(stage.camera.width-4)<1e-10);assert.ok(Math.abs(stage.camera.height-64/9)<1e-10);
+  assert.equal(stage.checkPreview(),true);const activeCamera=structuredClone(stage.camera);group.x++;assert.equal(stage.checkPreview(),false);assert.equal(stage.camera.sourcePreview,undefined);assert.equal(stage.camera.x,activeCamera.x);group.x--;
+  assert.equal(stage.fitPreview(group),true);stage.camera.x++;assert.equal(stage.checkPreview(),false);assert.equal(stage.camera.sourcePreview,undefined);stage.fitPreview(group);
   const previous={...stage.camera};assert.equal(Stage.prototype.fitPreview.call(stage,{presentation:{}}),false);assert.deepEqual(stage.camera,previous);
   group.presentation.previewView={};assert.equal(Stage.prototype.fitPreview.call(stage,group),false);assert.deepEqual(stage.camera,previous);assert.match(group.previewReason,/configuration/);
 });

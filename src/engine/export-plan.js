@@ -34,6 +34,7 @@ export function frameSources(plan,index){
   return [{frame:i,weight:1}];
 }
 export function exportCamera(camera,sourceAspect,plan){
+  if(camera.sourcePreview)sourceAspect=camera.sourcePreview.aspect;
   number(sourceAspect,'viewport aspect',.001,1000);
   const sourceWidth=Math.max(camera.width,camera.height*sourceAspect),sourceHeight=sourceWidth/sourceAspect,cropWidth=sourceWidth*plan.crop.width,cropHeight=sourceHeight*plan.crop.height,aspect=plan.width/plan.height;
   const width=plan.fit==='contain'?Math.max(cropWidth,cropHeight*aspect):Math.min(cropWidth,cropHeight*aspect);

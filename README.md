@@ -248,6 +248,9 @@ artwork at the current viewport ratio; **Fit scene** includes every active layer
 including offstage variants. The source framing does not remove those layers.
 Details distinguish legacy-client settings from modified archive-client settings.
 Resources without a matching configuration keep the general scene fit.
+Source preview follows viewport changes in Gallery and keeps its parameters in
+scene files. Panning, zooming, changing object placement or entering Studio leaves
+that mode. Export retains the captured viewport, even after a host layout change.
 Artwork loads without replacing the current scene until its resources are ready.
 Use **Cancel loading** to keep the current scene. Choosing another entry replaces
 the pending request; switching workspaces cancels it. Scene edits and imports

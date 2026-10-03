@@ -24,6 +24,10 @@ test('Gallery clicks occur on release; dragging pans without invoking interactio
   f.send('pointerdown');f.send('pointermove',{clientX:350});f.send('pointerup',{clientX:350});
   assert.equal(f.counts.clicks,1);assert.equal(f.counts.before,1);assert.equal(f.counts.changed,1);assert.notEqual(f.stage.camera.x,camera.x);f.input.dispose();
 });
+test('manual pan and zoom leave source preview mode without changing the source settings',()=>{
+  const original={...camera,sourcePreview:{group:'actor',aspect:2,view:{offset:1.1}}},before=structuredClone(original);
+  assert.equal(panCamera(original,bounds,20,10).sourcePreview,undefined);assert.equal(zoomCameraAt(original,bounds,200,100,.8).sourcePreview,undefined);assert.deepEqual(original,before);
+});
 test('Studio drags objects, supports explicit panning, and respects locked objects',()=>{
   const f=fixture();f.state.view='studio';f.stage.hitTest=()=>f.group;
   f.send('pointerdown');f.send('pointermove',{clientX:350});f.send('pointerup',{clientX:350});assert.equal(f.group.x,2.5);assert.equal(f.stage.camera.x,3);

@@ -1,9 +1,9 @@
 export function worldAt(camera,rect,x,y){const width=Math.max(camera.width,camera.height*rect.width/rect.height),height=width*rect.height/rect.width;return {x:camera.x+((x-rect.left)/rect.width-.5)*width,y:camera.y+(.5-(y-rect.top)/rect.height)*height};}
-export function panCamera(camera,rect,dx,dy){const width=Math.max(camera.width,camera.height*rect.width/rect.height);return {...camera,x:camera.x-dx*width/rect.width,y:camera.y+dy*width/rect.width};}
+export function panCamera(camera,rect,dx,dy){const width=Math.max(camera.width,camera.height*rect.width/rect.height),{sourcePreview,...manual}=camera;return {...manual,x:camera.x-dx*width/rect.width,y:camera.y+dy*width/rect.width};}
 export function zoomCameraAt(camera,rect,x,y,factor){
   if(!Number.isFinite(factor)||factor<=0)throw new Error('Invalid camera zoom');
   factor=Math.max(.01/Math.min(camera.width,camera.height),Math.min(1e6/Math.max(camera.width,camera.height),factor));
-  const before=worldAt(camera,rect,x,y),next={...camera,width:camera.width*factor,height:camera.height*factor},after=worldAt(next,rect,x,y);next.x+=before.x-after.x;next.y+=before.y-after.y;return next;
+  const before=worldAt(camera,rect,x,y),{sourcePreview,...manual}=camera,next={...manual,width:camera.width*factor,height:camera.height*factor},after=worldAt(next,rect,x,y);next.x+=before.x-after.x;next.y+=before.y-after.y;return next;
 }
 
 export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto'}){

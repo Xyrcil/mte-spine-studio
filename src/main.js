@@ -69,7 +69,7 @@ function describe(group){
 }
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}
 const cancelAsset=document.createElement('button');cancelAsset.id='cancel-asset-load';cancelAsset.textContent='Cancel loading';cancelAsset.hidden=true;document.querySelector('.workspace').append(cancelAsset);
-function finishAssetLoading(){stage.assetLoadBusy=false;cancelAsset.hidden=true;stage.canvas.setAttribute('aria-busy','false');editor.refresh();}
+function finishAssetLoading(){stage.assetLoadBusy=false;cancelAsset.hidden=true;stage.canvas.setAttribute('aria-busy','false');if(!stage.recoveryPending)stage.resize();editor.refresh();}
 function cancelAssetLoading(){if(!request)return;const pending=request;request=null;pending.abort();finishAssetLoading();message('Asset loading cancelled');}
 cancelAsset.onclick=cancelAssetLoading;
 async function loadAsset(label,create,loadedMessage=label){
@@ -99,12 +99,14 @@ document.querySelector('#background').onchange=event=>{const value=event.target.
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
-sourcePreview.onclick=()=>editor.mutate(()=>{const group=editor.selected();if(!stage.fitPreview(group))message(`Source preview unavailable: ${group?.previewReason||'No matching configuration'}`);});
+sourcePreview.onclick=()=>editor.mutate(()=>{const group=editor.selected();if(!stage.fitPreview(group))message(`Source preview unavailable: ${group?.previewReason||'No matching configuration'}`);if(view==='studio')delete stage.camera.sourcePreview;});
+stage.addEventListener('preview-resized',()=>{if(!editor.busy)editor.changed({cameraOnly:true});});
 for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
   if(button.dataset.view!==view)cancelAssetLoading();
   canvasInput.clear();
   closeLibrary();
   view=button.dataset.view;
+  stage.previewResponsive=view==='gallery';if(view==='studio')delete stage.camera.sourcePreview;
   document.querySelector('#library-toggle').disabled=view==='export';
   for(const tab of document.querySelectorAll('[data-view]'))tab.classList.toggle('selected',tab===button);
   exporter.setOpen(view==='export');

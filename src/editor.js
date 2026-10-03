@@ -15,7 +15,7 @@ export function createEditor(stage,message,onSelection){
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
   const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
   const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
-  function changed(detail){stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
