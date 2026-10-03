@@ -4,7 +4,7 @@ import {createSceneFile,readSceneFile} from './engine/scene-file.js';
 
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
-  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing;
+  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing,refreshFrame;
   const snapshot=()=>stage.snapshot(name);
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
@@ -16,26 +16,36 @@ export function createEditor(stage,message,onSelection){
   const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
   const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
   const controlKey=node=>node?.dataset.editorKey||node?.id||node?.getAttribute('aria-label');
-  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));refresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function requestRefresh(){if(refreshFrame===undefined)refreshFrame=requestAnimationFrame(()=>{refreshFrame=undefined;refresh();});}
+  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));requestRefresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
     const field=document.createElement('input');field.type=type;if(type==='checkbox')field.checked=value;else field.value=value;
     field.dataset.editorKey=label;field.dataset.editorValue=field.value;
-    Object.assign(field,options);field.onchange=()=>{const result=type==='checkbox'?field.checked:type==='number'?Number(field.value):field.value;if(type==='number'&&(!Number.isFinite(result)||!field.checkValidity())){field.value=field.dataset.editorValue;refresh();return;}mutate(()=>change(result));};
-    field.onblur=()=>{if(field.isConnected&&type!=='checkbox'&&field.value!==field.dataset.editorValue)field.onchange?.();};
+    Object.assign(field,options);field.onchange=()=>{const result=type==='checkbox'?field.checked:type==='number'?Number(field.value):field.value;if(type==='number'&&(!Number.isFinite(result)||!field.checkValidity())){field.value=field.dataset.editorValue;requestRefresh();return;}mutate(()=>{change(result);field.dataset.editorValue=field.value;});};
+    field.onblur=()=>{if(field.isConnected&&type!=='checkbox'&&field.value!==field.dataset.editorValue)field.onchange?.();requestRefresh();};
     wrapper.append(field);return wrapper;
   };
   const button=(title,action)=>{const node=document.createElement('button');node.textContent=title;node.dataset.editorKey=title;node.onclick=()=>mutate(action);return node;};
   function choose(group){selectedId=group?.id;refresh();onSelection?.(group);}
   container.addEventListener('compositionstart',event=>{composing=event.target;});
-  container.addEventListener('compositionend',event=>{if(composing===event.target)composing=null;requestAnimationFrame(()=>refresh());});
+  container.addEventListener('compositionend',event=>{if(composing===event.target)composing=null;requestRefresh();});
+  function refreshControls(locked,active){
+    document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
+    for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
+    const preview=document.querySelector('#source-preview');if(preview)preview.disabled=locked||!selected()?.presentation?.previewView;
+    document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';const sceneName=document.querySelector('#scene-name');if(locked||active!==sceneName)sceneName.value=name;sceneName.disabled=locked;
+  }
   function refresh(){
     const active=document.activeElement,owner=active?.closest('[data-editor-object]')?.dataset.editorObject,key=controlKey(active);
     if(composing===active&&owner===selectedId&&!isBusy())return;
     composing=null;
     const focus=owner&&key?{owner,key,value:active.value,baseline:active.dataset.editorValue,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection}:null;
     const locked=isBusy();container.inert=locked;
+    refreshControls(locked,active);
+    const current=selected();
+    if(!locked&&current&&['text','number','checkbox'].includes(active?.type)&&owner===current.id){const row=[...container.querySelectorAll('.layer')].find(row=>row.dataset.editorObject===owner);if(row)row.querySelector('[data-editor-key="Select"]').textContent=current.name;return;}
     if(container.contains(active))active.onchange=null;
     container.replaceChildren();
     for(const group of sceneDrawOrder(stage.groups).reverse()){
@@ -74,10 +84,6 @@ export function createEditor(stage,message,onSelection){
         try{await restore(scene);history.push(previous);choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
       };duplicate.dataset.editorKey='Duplicate';panel.append(duplicate);container.append(panel);
     }
-    document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
-    for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
-    const preview=document.querySelector('#source-preview');if(preview)preview.disabled=locked||!selected()?.presentation?.previewView;
-    document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';const sceneName=document.querySelector('#scene-name');if(locked||active!==sceneName)sceneName.value=name;sceneName.disabled=locked;
     if(!locked&&focus){const field=[...container.querySelectorAll('input,select,button')].find(node=>controlKey(node)===focus.key&&node.closest('[data-editor-object]')?.dataset.editorObject===focus.owner);if(field){if(['text','number'].includes(field.type)&&field.value===focus.baseline)field.value=focus.value;field.focus({preventScroll:true});if(field.type==='text'&&focus.start!==null)field.setSelectionRange(focus.start,focus.end,focus.direction);}}
   }
   async function restore(scene,signal){

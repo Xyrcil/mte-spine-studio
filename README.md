@@ -285,6 +285,8 @@ import/export. Scene files embed background images and retain animation times.
 Playback refreshes retain field focus, text selection and uncommitted object,
 scene-name and numeric drafts. Leaving a field commits its draft; object switches
 and scene restores do not transfer a draft to another object.
+Focused text, numeric and checkbox controls stay attached during ordinary refreshes;
+Tab navigation and one-step undo are retained while toolbar status stays current.
 Input-method composition keeps the same field attached until composition ends,
 so playback refreshes do not duplicate partially composed text.
 Characters and static portraits can own multiple custom background layers.
