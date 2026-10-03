@@ -115,3 +115,11 @@ test('missing interaction diagnostics include unavailable initial and alternate 
   for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='missing'||name==='overlay_02'?null:{name,duration:2};
   assert.deepEqual(root.missingAnimations(),[{hit:'first',animation:'missing'},{hit:'toggle',animation:'overlay_02'}]);
 });
+test('missing diagnostics resolve controller defaults and current state without changing playback',()=>{
+  const {root,group}=fixture();root.hotspots=[{name:'hand',event:2,animation:'click2_1'},{name:'head',event:2,animation:'animation3to2'},{name:'approach',event:8},{name:'rope',event:12},{name:'inactive',event:1,transform:'inactive'},{name:'disabled',event:3,enabled:false}];group.isActiveTransform=id=>id!=='inactive';
+  for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>['click_02','kaoji_04','stand_down2','rope_up','click_01','click_03'].includes(name)?null:{name,duration:2};
+  const before=root.snapshot();assert.deepEqual(root.missingAnimations(),[{hit:'hand',animation:'click_02'}]);assert.deepEqual(root.snapshot(),before);assert.equal(root.click(root.hotspots[0]).reason,'Animation unavailable: click_02');
+  root.value.names[8]='kaoji_04';root.value.names[12]='rope_up';assert.deepEqual(root.missingAnimations(),[{hit:'hand',animation:'click_02'},{hit:'approach',animation:'kaoji_04'}]);
+  root.value.state=2;assert.deepEqual(root.missingAnimations(),[{hit:'hand',animation:'click_02'}]);root.value.state=1;root.value.names[6]='click_01_down_02';assert.deepEqual(root.animationRequest(root.hotspots[2]),{name:'stand_down2',track:0});assert.deepEqual(root.missingAnimations(),[{hit:'hand',animation:'click_02'},{hit:'approach',animation:'stand_down2'}]);
+  root.value.cardStage=true;assert.deepEqual(root.missingAnimations(),[]);
+});

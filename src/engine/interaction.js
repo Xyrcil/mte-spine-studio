@@ -48,7 +48,8 @@ export class InteractionRoot {
   reset(){this.value={schema:1,playing:false,event:0,track:0,animation:'',names:{...DEFAULT_ANIMATIONS},variants:{},isBig:false,state:this.source.data.aniState||0,stockingDown:false,cardStage:false,cardClickable:true,selectedCard:-1,wins:0,rounds:0,clock:0,random:0x12345678,tasks:[]};}
   missingVariants(){return this.hotspots.filter(hit=>[5,102].includes(hit.event)&&hit.animation&&!this.source.data.rolePetType&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(`${hit.animation}_02`))).map(hit=>({hit:hit.name,animation:`${hit.animation}_02`}));}
   missingAnimations(){
-    const rows=[...this.hotspots.filter(hit=>hit.animation&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(hit.animation))).map(hit=>({hit:hit.name,animation:hit.animation})),...this.missingVariants()];
+    const current=this.value.cardStage&&this.value.cardClickable?[]:this.hotspots.filter(hit=>hit.event&&hit.enabled!==0&&hit.enabled!==false&&this.group.isActiveTransform(hit.transform)).map(hit=>({hit:hit.name,animation:this.animationRequest(hit).name})).filter(row=>row.animation&&row.animation!=='rope_up'&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(row.animation)));
+    const rows=[...this.hotspots.filter(hit=>hit.animation&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(hit.animation))).map(hit=>({hit:hit.name,animation:hit.animation})),...this.missingVariants(),...current];
     return rows.filter((row,index)=>rows.findIndex(other=>other.animation===row.animation)===index);
   }
   snapshot(){return structuredClone(this.value);}
@@ -81,15 +82,19 @@ export class InteractionRoot {
   clear(track){if(track>0)for(const layer of this.layers)layer.state.clearTrack(track);}
   schedule(kind,delay,extra={}){this.value.tasks.push({kind,due:this.value.clock+delay,...extra});}
   unlocked(){Object.assign(this.value,{playing:false,event:0,animation:''});}
+  animationRequest(hit){
+    const v=this.value,event=hit.event;let name=v.names[event]||hit.animation,track=hit.track||0;
+    if([5,102].includes(event)&&hit.animation)name=v.variants[hit.animation]&&!this.source.data.rolePetType?`${hit.animation}_02`:hit.animation;
+    if(v.state===1){const variant=v.names[6]==='click_01_down_02'?2:1;if(event===8){name=`stand_down${variant}`;track=0;}else if(/^game_down/.test(name))name=`game_down${variant}`;else if(/^stand_up/.test(name))name=`stand_up${variant}`;}
+    if(v.state===2&&name==='kaoji_04')name='kaoji_01';
+    return {name,track};
+  }
   click(hit){
     const v=this.value,event=hit.event;
     if(v.playing||!v.cardClickable||this.primary?.state.getCurrent(0)?.animation.name==='start')return {accepted:false,reason:'Animation is still playing'};
     if((v.isBig&&[6,7,8,9,10,11,12,17,18,19,20,21].includes(event))||(!v.isBig&&[13,14,15,16].includes(event))||(v.state===2&&event===17)||(v.state!==3&&[18,19,20].includes(event))||(hit.animation==='click_03'&&v.names[50]==='click_03_2'))return {accepted:false,reason:'Interaction is unavailable in this state'};
-    let name=v.names[event]||hit.animation,track=hit.track||0;
     if(![...Object.keys(DEFAULT_ANIMATIONS).map(Number),5,100,101,102].includes(event))return {accepted:false,reason:`Unsupported interaction ${event}`};
-    if([5,102].includes(event)&&hit.animation){name=v.variants[hit.animation]&&!this.source.data.rolePetType?`${hit.animation}_02`:hit.animation;}
-    if(v.state===1){const variant=v.names[6]==='click_01_down_02'?2:1;if(event===8){name=`stand_down${variant}`;track=0;}else if(/^game_down/.test(name))name=`game_down${variant}`;else if(/^stand_up/.test(name))name=`stand_up${variant}`;}
-    if(v.state===2&&name==='kaoji_04')name='kaoji_01';
+    const {name,track}=this.animationRequest(hit);
     if(name==='rope_up'){this.clear(track);v.names[12]='rope_down';return {accepted:true,animation:name};}
     const toggled=[5,102].includes(event)&&Boolean(hit.animation);
     if(toggled)v.variants[hit.animation]=!v.variants[hit.animation];

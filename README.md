@@ -467,7 +467,10 @@ input ordering and visual comparison remain pending.
 
 The interaction sequence engine records accepted clicks and state-changing
 requests for missing variants against a captured initial scene using simulation
-time. Missing-variant transitions remain labelled unavailable and preserve the
+time. Missing-animation notices include controller defaults and current state
+overrides, not just names declared on click regions. Notices update with scene
+and interaction changes; an unavailable clip is not replaced with another animation.
+Missing-variant transitions remain labelled unavailable and preserve the
 source toggle; replay requires the same availability outcome. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports
 state divergence rather than skipping a failed action. Time-zero actions run

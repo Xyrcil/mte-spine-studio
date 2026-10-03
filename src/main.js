@@ -117,6 +117,7 @@ window.mteHost=createHostApi({stage,editor,getAudio:()=>audio,getReady:()=>appRe
 document.querySelector('#notice').textContent='Click to interact in Gallery; drag objects in Studio. Drag empty space to pan, or hold Space to pan anywhere. Scroll or pinch to zoom. With the canvas focused, use arrow keys to pan, +/− to zoom, and Home to fit.';
 stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(error=>message(error.message));});
 stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
+stage.addEventListener('scene-change',()=>{const group=editor.selected();if(group?.kind==='spine')describe(group);});
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
