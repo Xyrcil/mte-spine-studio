@@ -64,6 +64,8 @@ function describe(group){
   if(group.effects?.some(effect=>effect.verification))parts.push('Effect visual verification pending');
   const ordering=group.layers.filter(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason)).length;
   if(ordering)parts.push(`Material ordering unavailable: ${ordering}`);
+  const bindingErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('bindings')).length;if(bindingErrors)parts.push(`Material bindings unavailable: ${bindingErrors}`);
+  const tintErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('tint')).length;if(tintErrors)parts.push(`Material tint unavailable: ${tintErrors}`);
   if(group.layers.some(layer=>layer.materialMapping?.pages))parts.push('Material segment visual verification pending');
   document.querySelector('#details').textContent=parts.join(' · ');
 }

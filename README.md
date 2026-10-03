@@ -141,6 +141,10 @@ Their current attachments and draw order are regrouped into material segments
 each frame. Slot filtering traverses the original clipping attachments even
 when they sit outside the selected segment. Unresolved mappings remain marked;
 resolved segments still carry an original-client visual-verification notice.
+Supported PMA blend-material colors retain their original HDR RGB and alpha
+instead of assuming a white material. Draw-time tinting restores slot colors
+after each segment; unsupported tint settings are reported. Older converted
+resources need a metadata refresh and rebuilt resource ZIP to include these settings.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI sprites retain their original canvas rectangle and trimmed
 content bounds, including atlas offsets and unpacked rotation. The native image

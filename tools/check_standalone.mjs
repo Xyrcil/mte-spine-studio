@@ -65,7 +65,7 @@ try{
                     layer.skeleton.setToSetupPose();state.update(time-previous);state.apply(layer.skeleton);previous=time;
                     stage.transformLayer(group,layer);
                     if(layer.skeleton.bones.some(bone=>![bone.a,bone.b,bone.c,bone.d,bone.worldX,bone.worldY].every(Number.isFinite)))throw new Error('Non-finite pose: '+layer.entry.id+' / '+animation.name);
-                    for(const slot of layer.skeleton.slots){const attachment=slot.attachment;if(slot.bone.active&&(attachment instanceof window.spine.RegionAttachment||attachment instanceof window.spine.MeshAttachment)){drawableSamples++;maxAlpha=Math.max(maxAlpha,slot.color.a*attachment.color.a*layer.skeleton.color.a);}}
+                    for(const slot of layer.skeleton.slots){const attachment=slot.attachment;if(slot.bone.active&&(attachment instanceof window.spine.RegionAttachment||attachment instanceof window.spine.MeshAttachment)){const materials=layer.materialMapping?.pages?.get(attachment.region?.page?.name),material=materials?.[['normal','additive','multiply','screen'][slot.data.blendMode]]||materials?.normal;drawableSamples++;maxAlpha=Math.max(maxAlpha,slot.color.a*attachment.color.a*layer.skeleton.color.a*(material?.tint?.a??1));}}
                     draw();poses++;return pixels.some((value,index)=>index%4===3&&value!==0);
                   };
                   for(const time of [0,animation.duration/2,Math.max(0,animation.duration-1e-5)]){
