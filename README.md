@@ -72,6 +72,10 @@ python3 tools/build_library.py --source /path/to/archive
 
 Use `--match <bundle-name> --merge` to refresh selected Spine bundles without
 dropping other catalogue entries.
+Unassigned source skeleton components are listed but do not prevent available
+layers from loading. Templates with no assigned artwork remain unavailable.
+Additional extracted skeletons without a source component appear as optional
+layers, disabled by default when the original composition has assigned layers.
 For interface resources outside the Spine directory, use repeated
 `--bundle UI/Prefab/Onsen` arguments with a separate local output folder.
 Explicit bundle selection does not scan the rest of the library. The extractor

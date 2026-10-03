@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {standaloneInstances,materialOrdering,skeletonDisplaySettings} from '../tools/presentation_helpers.mjs';
+import {standaloneInstances,completeSkeletonInstances,materialOrdering,skeletonDisplaySettings} from '../tools/presentation_helpers.mjs';
+test('unassigned source components do not block available artwork and unbound assets remain selectable',()=>{
+  const entries=[{id:'one',name:'Bound',status:'parsed',skins:['default'],animations:[{name:'animation'}]},{id:'two',name:'Alternative',status:'parsed',skins:['default'],animations:[{name:'idle'}]}];
+  const bound={id:'component',skeletonId:'one',status:'parsed',active:true},empty={id:'empty',skeletonId:null,status:'unassigned',name:'role2'};
+  const result=completeSkeletonInstances([bound,empty],entries);assert.deepEqual(result.unassignedInstances,[empty]);assert.equal(result.instances[0],bound);assert.equal(result.instances[1].skeletonId,'two');assert.equal(result.instances[1].active,false);
+  assert.deepEqual(completeSkeletonInstances([empty],[]),{instances:[],unassignedInstances:[empty]});
+  const missing={id:'external',skeletonId:null,status:'missing-reference'};assert.equal(completeSkeletonInstances([missing],[]).instances[0],missing);
+  assert.equal(completeSkeletonInstances([],entries).instances.filter(instance=>instance.active).length,1);
+});
 test('UI skeletons preserve Canvas pixel units and their own starting animation settings',()=>{
   assert.deepEqual(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'source-start',startingLoop:false,loop:true}),{renderType:'SkeletonGraphic',canvasPixelsPerUnit:100,animation:'source-start',loop:false});
   assert.equal(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'animation'},80).canvasPixelsPerUnit,80);

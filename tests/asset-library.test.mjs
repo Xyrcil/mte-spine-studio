@@ -12,6 +12,11 @@ test('library keeps all appearances, standalone bundles and explicit display sta
 test('derived skill presentations stay in their selector rather than duplicating artwork cards',()=>{
   const expanded={presentations:[...catalog.presentations,{id:'base/skill/1',category:'ui',skillDisplay:{receiverId:'receiver'},instances:[{}]}]};assert.deepEqual(buildAssetLibrary(expanded,library),buildAssetLibrary(catalog,library));
 });
+test('empty source templates stay visible as unavailable rather than animated artwork',()=>{
+  const empty={id:'template',category:'storyCG',instances:[],unassignedInstances:[{name:'role'}]},partial={id:'partial',category:'storyCG',instances:[{}],unassignedInstances:[{name:'role2'}]};
+  const rows=buildAssetLibrary({presentations:[empty,partial]},library);
+  assert.equal(rows.find(row=>row.presentation===empty).status,'missing');assert.equal(rows.find(row=>row.presentation===partial).status,'animated');
+});
 test('character, category, source searches, favorites and recent order compose',()=>{
   const rows=buildAssetLibrary(catalog,library);assert.equal(queryAssetLibrary(rows,{character:'1'}).length,3);assert.equal(queryAssetLibrary(rows,{category:'painting'}).length,4);assert.equal(queryAssetLibrary(rows,{category:'skin',search:'alice summer'}).length,1);assert.equal(queryAssetLibrary(rows,{category:'portrait'}).length,3);assert.equal(queryAssetLibrary(rows,{character:'unassigned'}).length,3);
   assert.deepEqual(queryAssetLibrary(rows,{collection:'favorites',favorites:['appearance:2']}).map(r=>r.name),['Summer']);assert.deepEqual(queryAssetLibrary(rows,{collection:'recent',recent:['appearance:3','appearance:1']}).map(r=>r.name),['Story','Original']);assert.equal(queryAssetLibrary(rows,{search:'does not exist'}).length,0);

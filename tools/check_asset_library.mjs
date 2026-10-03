@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteLibrary&&window.mteStudio?.groups.length);
@@ -19,10 +19,17 @@ try{
   await page.locator('.asset-favorite').click();assert.equal(await page.locator('.asset').count(),0);assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('mte-library-favorites'))),[]);
   await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>!window.mteEditor.busy);await page.locator('#category').selectOption('portrait');assert.match(await page.locator('.asset').first().textContent(),/Static portrait.*Animated version/);await page.locator('.asset').first().click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.kind==='image');
   await selectAsset(page,'appearance:3013010');assert.match(await page.locator('#status').textContent(),/Display unavailable/);assert.match(await page.locator('[data-library-key="appearance:3013010"]').textContent(),/Display missing/);
+  for(const id of ['Spines/storyCG/WQ_1_KESN/WQ_1_KESN','Spines/storyCG/WQ_1_KESN_bg/WQ_1_KESN_bg','Spines/drawing']){
+    const before=await page.evaluate(()=>window.mteStudio.groups[0].id);await selectAsset(page,id);assert.match(await page.locator('#status').textContent(),/Display unavailable/);assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].id),before);assert.match(await page.locator('.asset').first().textContent(),/Display missing.*Unassigned source components/);
+  }
+  await selectAsset(page,'Spines/storyCG/WQ_1_SLSDN/WQ_1_SLSDN');await page.waitForFunction(()=>!window.mteEditor.busy&&window.mteStudio.groups[0]?.presentation?.id==='Spines/storyCG/WQ_1_SLSDN/WQ_1_SLSDN');assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].layers.length),2);assert.match(await page.locator('#details').textContent(),/Unassigned source skeleton components: role2, fg2, fg1, bg2/);
+  await selectAsset(page,'Spines/ui/MailSpine');await page.waitForFunction(()=>!window.mteEditor.busy&&window.mteStudio.groups[0]?.presentation.id==='Spines/ui/MailSpine');
+  const alternative=page.getByLabel('effect_email_1998601_SkeletonData (asset--493172638989694372)',{exact:true});assert.equal(await alternative.isChecked(),false);await alternative.check();await page.getByRole('button',{name:'Undo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.equal(await alternative.isChecked(),false);await page.getByRole('button',{name:'Redo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.equal(await alternative.isChecked(),true);
+  await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/MailSpine'&&!window.mteEditor.busy);assert.equal(await alternative.isChecked(),true);await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');await page.locator('#export-width').fill('160');await page.locator('#export-height').fill('120');assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));await page.getByRole('button',{name:'Gallery',exact:true}).click();
   await page.locator('#search').fill('');await page.locator('#library-character').selectOption('unassigned');assert.ok(await page.locator('.asset').count()>0);
   await page.screenshot({path:'private/browser-library.png'});
   await page.setViewportSize({width:390,height:844});assert.ok((await page.locator('.workspace').boundingBox()).width>=390);assert.equal(await page.locator('.library').isVisible(),false);
   await page.getByRole('button',{name:'Library',exact:true}).click();assert.equal(await page.locator('.library').isVisible(),true);assert.equal(await page.locator('#search').evaluate(node=>node===document.activeElement),true);await page.screenshot({path:'private/browser-library-mobile.png'});
   await page.keyboard.press('Escape');assert.equal(await page.locator('.library').isVisible(),false);await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>!document.body.classList.contains('library-open')&&window.mteStudio.groups[0]?.presentation.id==='Spines/painting/3014027_spine');assert.equal(await page.locator('#library-toggle').getAttribute('aria-expanded'),'false');
-  assert.deepEqual(errors,[]);console.log(`Library browser checks passed: all ${total} entries reachable, canonical character grouping, skins, favorites, recent, reload, static alternative, missing source and narrow layout`);
-}finally{await browser.close();}
+  assert.deepEqual(errors,[]);console.log(`${engine}: library browser checks passed: all ${total} entries reachable, character grouping, skins, favorites, recent, static alternative, unassigned templates, recovered layers, undo/redo, reload, PNG and narrow layout`);
+}finally{await close();}

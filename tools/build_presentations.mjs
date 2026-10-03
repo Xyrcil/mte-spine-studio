@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {standaloneInstances,materialOrdering,skeletonDisplaySettings} from './presentation_helpers.mjs';
+import {completeSkeletonInstances,materialOrdering,skeletonDisplaySettings} from './presentation_helpers.mjs';
 
 const root = path.resolve(process.argv[2] || 'public/assets');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, 'runtime-index.json')));
@@ -36,7 +36,7 @@ for (const bundle of extraction.bundles) {
       const skeleton = skeletons.get(idOf(node.data.skeletonDataAsset));
       const renderer = components.get(owner)?.find(item => item.type === 'MeshRenderer');
       const ordering=materialOrdering(bundle.renderers?.find(row=>row.id===renderer?.id));
-      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null,...skeletonDisplaySettings(className(node),node.data,canvasPixelsPerUnit(owner)), skin: node.data.initialSkinName,timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || 'missing-reference'});
+      instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null,...skeletonDisplaySettings(className(node),node.data,canvasPixelsPerUnit(owner)), skin: node.data.initialSkinName,timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || (String(node.data.skeletonDataAsset.m_PathID)==='0'?'unassigned':'missing-reference')});
     }
     if ('cur_clickEvent' in node.data) {
       hotspots.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, class: className(node), enabled:node.data.m_Enabled, event: node.data.cur_clickEvent, track: node.data.trackIndex, animation: node.data.ani_name, audio: node.data.audio_name, controller: idOf(node.data.ani_root), colliders: (components.get(owner) || []).filter(item => item.type.endsWith('Collider2D')).map(item => ({id: item.id, type: item.type, data: item.data})), transform: transforms.get(owner)?.id});
@@ -46,7 +46,8 @@ for (const bundle of extraction.bundles) {
     }
   }
   const standalone=instances.length===0&&skeletons.size>0;
-  if(standalone)instances.push(...standaloneInstances([...skeletons.values()]));
+  const completed=completeSkeletonInstances(instances,[...skeletons.values()]);
+  instances.splice(0,instances.length,...completed.instances);
   const effects=(bundle.effects||[]).map(effect=>({...effect,transform:transforms.get(effect.gameObject)?.id}));
   const visualAnimations=nodes.filter(node=>['Animation','AnimationClip','Animator','AnimatorController','AnimatorOverrideController'].includes(node.type));
   const canvasScalers=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='CanvasScaler').map(node=>node.data);
@@ -60,7 +61,7 @@ for (const bundle of extraction.bundles) {
   const typewriters=nodes.filter(node=>node.type==='MonoBehaviour'&&className(node)==='TextMeshProTypewriterEffect').map(node=>({id:node.id,gameObject:idOf(node.data.m_GameObject),data:node.data}));
   for(const receiver of nativeBehaviours.filter(row=>row.class==='SpineAniDragBone')){const target=byId.get(idOf(receiver.data.dragBoneTra)),owner=idOf(target?.data.m_GameObject);receiver.dragColliders=(components.get(owner)||[]).filter(node=>node.type.endsWith('Collider2D')).map(node=>({id:node.id,type:node.type,data:node.data}));}
   const fontAssets=fontIndex.filter(font=>uiText.some(row=>String(row.data.m_fontAsset?.m_PathID)===font.assetId));
-  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, nativeText, nativeFontAssets, nativeBehaviours, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
+  result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, ...(completed.unassignedInstances.length?{unassignedInstances:completed.unassignedInstances}:{}), hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, nativeText, nativeFontAssets, nativeBehaviours, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});
