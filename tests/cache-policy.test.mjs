@@ -4,6 +4,10 @@ import {cacheKind,rangeBounds,evictionCandidates,sceneCacheUrls,validCatalogue} 
 test('original font files belong to scene cache preparation and stay inside its resource scope',()=>{
   const base='https://example.test/mte/',path='spines/interfaces/fonts/SOURCE.otf';assert.equal(cacheKind(base+'assets/'+path,base),'asset');assert.deepEqual(sceneCacheUrls([{presentation:{hotSpringHouse:{dialoguePanel:{fonts:[{path}]}}}}],base),[base+'assets/'+path]);
 });
+test('native skill fonts are prepared once alongside their scene images',()=>{
+  const path='spines/interfaces/fonts/PER.ttf',url=scope+'assets/'+path;
+  assert.deepEqual(sceneCacheUrls([{presentation:{nativeFontAssets:[{path},{path}]},nativeImages:[{used:true,texture:scope+'assets/portraits/badge.png'}]}],scope),[scope+'assets/portraits/badge.png',url]);
+});
 const scope='https://example.test/studio/';
 test('cache scope rejects other sites, private files, credentials and query strings',()=>{assert.equal(cacheKind(scope+'assets/library.json',scope),'catalog');assert.equal(cacheKind(scope+'assets/spines/role/a.skel',scope),'asset');assert.equal(cacheKind(scope+'assets/index-abc.js',scope),'shell');for(const url of ['https://other.test/studio/assets/a.png','https://example.test/private/test.png','https://example.test/studio/private/test.mp4','https://user:pass@example.test/studio/assets/a.png',scope+'assets/a.png?token=secret',scope+'assets/a.png#secret'])assert.equal(cacheKind(url,scope),null);});
 test('cached audio supports single byte, suffix and open ranges without treating partial files as complete',()=>{assert.deepEqual(rangeBounds('bytes=2-5',10),{start:2,end:5});assert.deepEqual(rangeBounds('bytes=4-',10),{start:4,end:9});assert.deepEqual(rangeBounds('bytes=-3',10),{start:7,end:9});assert.deepEqual(rangeBounds('bytes=0-100',10),{start:0,end:9});for(const value of ['bytes=10-','bytes=4-2','bytes=-0','bytes=-'])assert.equal(rangeBounds(value,10),null);assert.equal(rangeBounds('bytes=0-1,4-5',10),undefined);});

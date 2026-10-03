@@ -6,7 +6,7 @@ export function bindSkillDisplay(presentation,value,referencePixelsPerUnit){
   const result={...presentation,nativeText:structuredClone(presentation.nativeText),hierarchy:presentation.hierarchy.map(row=>row.id===receiver.gameObject?structuredClone(row):row)};
   result.resourceBundle=presentation.resourceBundle||presentation.id;result.id=`${result.resourceBundle}/skill/${value.roleId}/${value.skillId}/${value.appearanceId}`;
   result.label=value.firstCharacter+value.remainingName;result.skillDisplay={receiverId:receiver.id};result.skillWords={receiverId:receiver.id,text:value.englishName};result.skillArtwork={receiverId:receiver.id,portrait:structuredClone(value.portrait),transform:structuredClone(value.transform),emblem:structuredClone(value.emblem),referencePixelsPerUnit};
-  result.appearanceId=value.appearanceId;
+  if(value.catalogueAppearanceId!==undefined)result.appearanceId=value.catalogueAppearanceId;
   for(const [field,text] of [['txtSingle',value.firstCharacter],['txtName',value.remainingName]]){const pointer=receiver.data[field],slot=result.nativeText?.find(row=>row.id===String(pointer?.m_PathID));if(pointer?.m_FileID!==0||!slot)throw new Error('Original skill text reference is unavailable');slot.data.m_Text=text;}
   const owner=result.hierarchy.find(row=>row.id===receiver.gameObject);if(owner?.type!=='GameObject')throw new Error('Original skill display hierarchy is unavailable');owner.data.m_IsActive=true;
   return result;
@@ -82,5 +82,6 @@ export function resolveSkillDisplay(library,roleId,skillId,appearanceId=roleId){
     transform={position:{x:stand.position.x*538,y:(stand.position.y-.09)*538,z:0},scale:Object.fromEntries(['x','y','z'].map(key=>[key,stand.scale[key]*5.4]))};
   }
   const {emblem,warning}=resolveSkillEmblem(source,roleId,appearanceId);if(warning)warnings.push(warning);
-  return {roleId,skillId,appearanceId,firstCharacter:skill.name.slice(0,1),remainingName:skill.name.slice(1),englishName:skill.englishName,portrait:portraits.size===1?structuredClone([...portraits.values()][0]):null,transform,emblem,warnings};
+  const appearance=library.appearances.find(row=>row.id===appearanceId)||(appearanceId===roleId&&matches.length===1?matches[0]:null);
+  return {roleId,skillId,appearanceId,...(appearance?.id?{catalogueAppearanceId:appearance.id}:{}),firstCharacter:skill.name.slice(0,1),remainingName:skill.name.slice(1),englishName:skill.englishName,portrait:portraits.size===1?structuredClone([...portraits.values()][0]):null,transform,emblem,warnings};
 }

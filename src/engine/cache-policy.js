@@ -25,6 +25,7 @@ export function sceneCacheUrls(groups,base,audio,includeVoices=[],language='a_so
   const urls=new Set(),add=path=>{if(path&&!path.startsWith('data:'))urls.add(new URL(path,base).href);};
   for(const group of groups){if(group.asset)add('assets/'+group.asset);for(const layer of group.layers||[]){add(layer.source);add(layer.atlas);const atlas=new URL(layer.atlas,base).href,directory=atlas.slice(0,atlas.lastIndexOf('/')+1);for(const page of layer.entry.atlases[0].pages)add(new URL(page,directory).href);}for(const effect of group.effects||[])for(const url of effect.textures)add(url);for(const image of group.nativeImages||[])if(image.used&&!image.reason)add(image.texture);}
   for(const group of groups)for(const font of group.presentation?.hotSpringHouse?.dialoguePanel?.fonts||[])add('assets/'+font.path);
+  for(const group of groups)for(const font of group.presentation?.nativeFontAssets||[])add('assets/'+font.path);
   if(audio){const snapshot=audio.snapshot(),tracks=[...(snapshot.voiceTrack?[snapshot.voiceTrack]:[]),...snapshot.effectTracks,...snapshot.ambientTracks.filter(track=>track.enabled)];for(const track of tracks){const clip=audio.resolve(track.name,track.category);if(clip)add('assets/'+clip.path);}for(const voice of includeVoices){const clip=audio.resolve(voice.resourceName,language);if(clip)add('assets/'+clip.path);}}
   return [...urls];
 }

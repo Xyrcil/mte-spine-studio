@@ -199,7 +199,7 @@ export class Stage extends EventTarget {
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
-      return {...row,bundle:group.presentation.id,...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
+      return {...row,bundle:group.presentation.id,...(group.presentation.appearanceId!==undefined?{appearanceId:group.presentation.appearanceId}:{}),...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
     })};
   }
   async restore(scene,presentations,entries,signal) {
@@ -225,6 +225,7 @@ export class Stage extends EventTarget {
       scene.objects.forEach((row,index)=>{
         const group=created[index];
         if(group.kind==='image')return;
+        if(row.appearanceId!==undefined&&row.appearanceId!==group.presentation.appearanceId)throw new Error('Scene appearance does not match asset');
         preflightParticles(group,row.effects);
         preflightNativeAnimations(group,row.nativeAnimations);
         if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');

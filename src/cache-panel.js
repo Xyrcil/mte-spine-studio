@@ -35,7 +35,7 @@ export function createCachePanel(stage,editor,getData,message){
     busy=true;job=crypto.randomUUID();controller=new AbortController();field('cancel').disabled=false;field('scene').disabled=true;
     try{
       if(!await ready)throw new Error('Offline preparation is unavailable');
-      const {audio,library,catalog,runtime}=getData(),group=editor.selected(),base=new URL(import.meta.env.BASE_URL,location.origin).href,voices=field('voices').checked&&library&&group?voiceCatalog(library,[group.kind==='spine'?{id:group.presentation.id}:{appearanceId:group.appearanceId}]):[],urls=new Set(sceneCacheUrls(stage.groups,base,audio,voices,audio?.language));let warnings=[];
+      const {audio,library,catalog,runtime}=getData(),group=editor.selected(),base=new URL(import.meta.env.BASE_URL,location.origin).href,voices=field('voices').checked&&library&&group?voiceCatalog(library,[group.kind==='spine'?group.presentation:{appearanceId:group.appearanceId}]):[],urls=new Set(sceneCacheUrls(stage.groups,base,audio,voices,audio?.language));let warnings=[];
       if(field('sequence').checked&&stage.sequence){
         status('Checking recorded sequence resources…');
         const result=await sequenceCacheResources(stage.sequence,{catalog:catalog.presentations,entries:runtime.entries,imageAssets:stage.imageAssets,audio,library,base,sourceAspect:stage.canvas.width/stage.canvas.height,signal:controller.signal,onProgress:(at,total)=>status(`Checking sequence · ${at.toFixed(2)} / ${total.toFixed(2)} s`)});
