@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {SkillDisplayRoot,validateSkillDisplayState} from '../src/engine/skill-receiver.js';
-import {bindSkillDisplay,resolveSkillDisplay,prepareSkillArtwork} from '../src/engine/skill-display.js';
+import {bindSkillDisplay,resolveSkillDisplay,prepareSkillArtwork,skillDisplayOptions} from '../src/engine/skill-display.js';
 
 function fixture(){
   const calls=[],stage={dispatchEvent:event=>calls.push(event.type)},words={source:{id:'skill-words'},play:()=>calls.push('words'),reset:()=>calls.push('reset-words')},model={play:()=>calls.push('play-native')},group={id:'group',presentation:{skillDisplay:{receiverId:'receiver'},nativeBehaviours:[{id:'receiver',class:'FightSkillUIShow',gameObject:'owner',data:{spine:{m_FileID:0,m_PathID:'spine'}}}],visualAnimations:[{id:'animation',type:'Animation',data:{m_GameObject:{m_PathID:'owner'}}}]},layers:[{instance:{id:'spine'},skeleton:{data:{findAnimation:name=>name==='animation'}},state:{setAnimation:(...args)=>calls.push(args)}}],nativeAnimations:[{source:{id:'animation'},model}],controllers:[words]};
@@ -23,4 +23,12 @@ test('real skill binding keeps source curves and events unchanged and assigns al
   assert.deepEqual(source,before);assert.equal(bound.resourceBundle,source.id);assert.notEqual(bound.id,source.id);assert.deepEqual(bound.visualAnimations,source.visualAnimations);assert.equal(bound.skillWords.text,value.englishName);
   for(const [field,text] of [['txtSingle',value.firstCharacter],['txtName',value.remainingName]])assert.equal(bound.nativeText.find(row=>row.id===receiver.data[field].m_PathID).data.m_Text,text);
   const prepared=prepareSkillArtwork(bound);assert.equal(prepared.images.find(row=>row.id===receiver.data.imgRole.m_PathID).sprite.id,value.portrait.id);assert.throws(()=>bindSkillDisplay(source,{...value,emblem:null},100),/incomplete/);
+});
+test('skill selector retains every configured entry and deterministic scene identifiers',t=>{
+  assert.deepEqual(skillDisplayOptions([],{skillDisplay:{sourceVersion:'legacy'}}),[]);
+  if(!fs.existsSync('public/assets/library.json')){t.skip('Local game resources are not installed');return;}
+  const library=JSON.parse(fs.readFileSync('public/assets/library.json')),presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations,before=JSON.stringify(presentations),options=skillDisplayOptions(presentations,library),available=options.filter(row=>row.presentation);
+  assert.equal(options.length,library.skillDisplay.roles.reduce((sum,row)=>sum+row.skillIds.length,0));assert.ok(available.length>300);assert.equal(new Set(available.map(row=>row.presentation.id)).size,available.length);assert.ok(options.filter(row=>!row.presentation).every(row=>row.warnings.length));assert.equal(JSON.stringify(presentations),before);
+  for(const row of available){assert.equal(row.presentation.appearanceId,row.roleId);assert.equal(row.presentation.resourceBundle,'Spines/ui/fight');}
+  assert.deepEqual(skillDisplayOptions(presentations,library).flatMap(row=>row.presentation?[row.presentation.id]:[]),available.map(row=>row.presentation.id));
 });

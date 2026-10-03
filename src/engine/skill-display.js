@@ -2,12 +2,23 @@ import {nativeImageBounds} from './native-visuals.js';
 
 export function bindSkillDisplay(presentation,value,referencePixelsPerUnit){
   if(value.warnings?.length||!value.portrait||!value.transform||!value.emblem)throw new Error('Original skill display resources are incomplete');
-  const result=structuredClone(presentation),receiver=result.nativeBehaviours?.find(row=>row.class==='FightSkillUIShow');if(!receiver)throw new Error('Original skill display receiver is unavailable');
+  const receiver=presentation.nativeBehaviours?.find(row=>row.class==='FightSkillUIShow');if(!receiver)throw new Error('Original skill display receiver is unavailable');
+  const result={...presentation,nativeText:structuredClone(presentation.nativeText),hierarchy:presentation.hierarchy.map(row=>row.id===receiver.gameObject?structuredClone(row):row)};
   result.resourceBundle=presentation.resourceBundle||presentation.id;result.id=`${result.resourceBundle}/skill/${value.roleId}/${value.skillId}/${value.appearanceId}`;
   result.label=value.firstCharacter+value.remainingName;result.skillDisplay={receiverId:receiver.id};result.skillWords={receiverId:receiver.id,text:value.englishName};result.skillArtwork={receiverId:receiver.id,portrait:structuredClone(value.portrait),transform:structuredClone(value.transform),emblem:structuredClone(value.emblem),referencePixelsPerUnit};
+  result.appearanceId=value.appearanceId;
   for(const [field,text] of [['txtSingle',value.firstCharacter],['txtName',value.remainingName]]){const pointer=receiver.data[field],slot=result.nativeText?.find(row=>row.id===String(pointer?.m_PathID));if(pointer?.m_FileID!==0||!slot)throw new Error('Original skill text reference is unavailable');slot.data.m_Text=text;}
   const owner=result.hierarchy.find(row=>row.id===receiver.gameObject);if(owner?.type!=='GameObject')throw new Error('Original skill display hierarchy is unavailable');owner.data.m_IsActive=true;
   return result;
+}
+
+export function skillDisplayOptions(presentations,library){
+  const source=presentations.find(row=>row.id==='Spines/ui/fight');if(!source||library.skillDisplay?.sourceVersion!=='legacy')return [];
+  const names=new Map(library.characters.map(row=>[row.id,row.name])),appearances=new Map(library.appearances.map(row=>[row.id,row])),skills=new Map(library.skillDisplay.skills.map(row=>[row.id,row]));
+  return library.skillDisplay.roles.flatMap(role=>role.skillIds.map(skillId=>{
+    const appearance=appearances.get(role.id),roleName=[appearance?.characterName||names.get(role.id)||names.get(role.parentId),appearance?.name].filter(Boolean).join(' · ')||role.id,skill=skills.get(skillId),row={roleId:role.id,skillId,roleName,bundle:appearance?.bundle,name:skill?.name||skillId,presentation:null,warnings:[]};
+    try{const value=resolveSkillDisplay(library,role.id,skillId);row.warnings=value.warnings;if(!row.warnings.length)row.presentation=bindSkillDisplay(source,value,100);}catch(error){row.warnings=[error.message];}return row;
+  }));
 }
 
 export function skillPortraitSize(portrait,referencePixelsPerUnit){

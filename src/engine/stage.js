@@ -5,7 +5,7 @@ import {HotSpringRoot} from './hot-spring.js';
 import {captureAnimation,capturePose,assertCheckpoint,restoreAnimation,restorePose} from './animation-state.js';
 import {initializeAnimation} from './initial-animation.js';
 import {createParticleLayers,drawParticleLayer,particleOrder,preflightParticles,hierarchyOrder,compareDraws,particleQueue} from './particle-layer.js';
-import {createNativeVisuals,drawNativeImage,preflightNativeAnimations} from './native-visuals.js';
+import {createNativeVisuals,drawNativeImage,preflightNativeAnimations,nativeImageBounds} from './native-visuals.js';
 import {MaskedParticleRenderer} from './masked-particles.js';
 import {DialogueTextLayer} from './dialogue-text.js';
 import {NativeTextLayer} from './native-text.js';
@@ -295,6 +295,11 @@ export class Stage extends EventTarget {
   }
   fit() {
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const group of this.groups.filter(group=>group.visible))for(const image of group.nativeImages||[]){
+      if(!image.used||image.reason||image.source.viewportRoot||image.source.viewportDecoration||!group.isActiveTransform(image.source.transform))continue;
+      const node=group.nodes.get(image.source.transform),bounds=nativeImageBounds(node.data.m_SizeDelta,node.data.m_Pivot,image.source.sprite),matrix=multiply(objectTransform(group),group.world(node.id));
+      for(const x of [bounds.left,bounds.right])for(const y of [bounds.bottom,bounds.top]){const p=point(matrix,x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
+    }
     for(const group of this.groups.filter(group=>group.visible&&group.kind==='image'))for(const x of [-group.width/2,group.width/2])for(const y of [-group.height/2,group.height/2]){const p=point(objectTransform(group),x,y);minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
     for (const group of this.groups.filter(group=>group.visible&&group.kind==='spine')) for (const layer of group.layers.filter(layer=>layer.active)) {
       const offset=new (s().Vector2)(), size=new (s().Vector2)();

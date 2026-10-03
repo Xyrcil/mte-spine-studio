@@ -29,4 +29,5 @@ export class SkillDisplayRoot {
   restore(value){this.ended=this.check(value).ended;}
   onEvent(){}
   hitAt(){return null;}
+  missingAnimations(){return [];}
 }

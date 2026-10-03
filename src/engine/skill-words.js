@@ -52,4 +52,5 @@ export class SkillWordsRoot {
   restore(value){this.check(value);this.startedThisFrame=false;this.reveal.restore(value);this.apply();}
   onEvent(){}
   hitAt(){return null;}
+  missingAnimations(){return [];}
 }

@@ -1,5 +1,5 @@
 export function buildAssetLibrary(catalog,library){
-  const presentations=new Map(catalog.presentations.filter(p=>p.instances.length).map(p=>[p.id,p]));
+  const presentations=new Map(catalog.presentations.filter(p=>p.instances.length&&!p.skillDisplay).map(p=>[p.id,p]));
   const voices=new Set(library.voices.map(v=>String(v.targetId))),names=new Map(library.characters.map(c=>[String(c.id),c.name]));
   for(const row of library.appearances)if(row.kind==='painting'&&String(row.id)===String(row.characterId)&&row.characterName)names.set(String(row.characterId),row.characterName);
   const rows=library.appearances.map(appearance=>{

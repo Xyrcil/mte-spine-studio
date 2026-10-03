@@ -169,7 +169,10 @@ events. End emits a host notification; scene restore does not invoke it again.
 Restart resets the word reveal and event cursor. The word coroutine keeps its
 own clock after the single-play native clip stops. The standalone Default/Default
 context resolves to Once; other unresolved contexts remain unavailable.
-The skill selector and original-client visual comparison remain pending.
+The Skill display panel lists configured roles, appearances and skills, including
+missing-resource reasons. Assigned displays can be opened, replayed, composed and
+saved; their identifiers rebuild from the resource catalogue after reload.
+Original-client visual comparison remains pending.
 Native Legacy event timelines now dispatch only through explicit, scene-local
 receiver maps. They retain source parameters, same-time ordering and loop-boundary
 events. Checkpoints keep the next event cursor; restoring a pose or drawing a
