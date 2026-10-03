@@ -329,6 +329,9 @@ preview of the production build, not the development server.
 Add `--full` after creating `private/mte-resources.zip` to test the entire local
 library in an isolated browser profile. The isolated test profile is removed after the
 test; original game files and the resource archive are retained.
+Use `--archive /path/to/resources.zip` with `--full` for a different local ZIP.
+Pack activation checks the imported manifest in bounded batches, including file
+sizes and media types, without enumerating a multi-gigabyte cache in one request.
 Interactive rendering preserves a CPU scene checkpoint when WebGL is lost,
 pauses sound and rebuilds textures and draw resources after the browser restores
 the context. Failed recovery keeps the checkpoint available for scene export

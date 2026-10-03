@@ -1,9 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resourceFiles,validatePackCatalogues,packPath,packUrl,resourceType,PACK_CATALOGS,expectedPackPaths} from '../src/engine/resource-pack.js';
+import {resourceFiles,validatePackCatalogues,packPath,packUrl,resourceType,PACK_CATALOGS,expectedPackPaths,verifyPackCache} from '../src/engine/resource-pack.js';
 const catalogue=name=>name==='library.json'?{schema:1,characters:[],appearances:[],voices:[],storyVoices:[],soundResources:[]}:name==='presentations.json'?{schema:1,presentations:[]}:{schema:1,entries:[]};
 function file(path,content=''){const result=new File([content],path.split('/').at(-1));Object.defineProperty(result,'webkitRelativePath',{value:'assets/'+path});return result;}
 const files=()=>PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogue(name))));
+test('large imported packs verify their manifest in bounded batches without enumerating the cache',async()=>{
+  const base='https://example.test/mte/',manifest=[...PACK_CATALOGS.map(path=>({path,size:0})),...Array.from({length:18000},(_,index)=>({path:`portraits/${index}.png`,size:0}))],byUrl=new Map(manifest.map(row=>[packUrl(row.path,base),row]));let active=0,maximum=0,progress;
+  const cache={keys:()=>{throw new Error('Operation too large');},match:async url=>{active++;maximum=Math.max(maximum,active);await Promise.resolve();active--;const row=byUrl.get(url);return new Response(null,{headers:{'content-length':'0','content-type':resourceType(row.path)}});}};
+  assert.deepEqual(await verifyPackCache(cache,manifest,base,(done,total)=>progress={done,total}),{files:18005,bytes:0});assert.ok(maximum<=64);assert.deepEqual(progress,{done:18005,total:18005});
+});
+test('pack verification rejects duplicates, missing resources, wrong sizes and content types',async()=>{
+  const base='https://example.test/mte/',manifest=PACK_CATALOGS.map(path=>({path,size:0})),response=()=>new Response(null,{headers:{'content-length':'0','content-type':'application/json'}});
+  await assert.rejects(verifyPackCache({},[...manifest,manifest[0]],base),/manifest/);await assert.rejects(verifyPackCache({},manifest.slice(1),base),/manifest/);
+  for(const match of [async()=>undefined,async()=>new Response(null,{headers:{'content-length':'1','content-type':'application/json'}}),async()=>new Response(null,{headers:{'content-length':'0','content-type':'text/html'}})])await assert.rejects(verifyPackCache({match},manifest,base),/does not match/);
+  assert.deepEqual(await verifyPackCache({match:async()=>response()},manifest,base),{files:5,bytes:0});
+});
 test('resource folders require one catalogue root and exclude executable content',async()=>{
   const selected=[...files(),file('spines/角色/page.png','image'),file('payload.js','code'),file('client.apk','client')],pack=resourceFiles(selected);assert.equal(pack.excluded,2);assert.equal(pack.rows.length,6);await validatePackCatalogues(pack.rows);assert.equal(resourceType('page.png'),'image/png');
   assert.throws(()=>resourceFiles(selected.filter(file=>file.name!=='library.json')),/catalogue missing/);assert.throws(()=>resourceFiles([...selected,selected[0]]),/Duplicate resource/);assert.throws(()=>resourceFiles([file('other/a.png')]),/Choose one/);

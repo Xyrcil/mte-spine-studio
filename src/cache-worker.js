@@ -1,4 +1,5 @@
 import {cacheKind,rangeBounds,evictionCandidates,validCatalogue} from './engine/cache-policy.js';
+import {verifyPackCache} from './engine/resource-pack.js';
 const scope=self.registration.scope,prefix=`mte-studio:${new URL(scope).pathname}:`,assetName=prefix+'assets:1',shellName=prefix+'shell:'+__MTE_BUILD_ID__,dbName=prefix+'metadata';
 const MAX_ITEM=64*1024*1024,jobs=new Map();let dbPromise,settingsPromise,packPromise,writes=Promise.resolve();
 const queue=action=>writes=writes.catch(()=>{}).then(action);
@@ -52,7 +53,7 @@ self.addEventListener('message',event=>{
     else if(message.type==='PACK_STATUS')port.postMessage({result:await localPack()});
     else if(message.type==='PACK_COMMIT'){
       if(typeof message.name!=='string'||!message.name.startsWith(prefix+'pack:')||!/^[-a-z0-9]+$/.test(message.name.slice((prefix+'pack:').length))||!Number.isSafeInteger(message.files)||message.files<5||message.files>100000||!Number.isSafeInteger(message.bytes)||message.bytes<0)throw new Error('Invalid imported pack');
-      const cache=await caches.open(message.name),keys=await cache.keys();if(keys.length!==message.files||keys.some(key=>!['asset','catalog'].includes(cacheKind(key.url,scope))))throw new Error('Imported pack files do not match');
+      const cache=await caches.open(message.name),verified=await verifyPackCache(cache,message.manifest,scope,(done,total)=>port.postMessage({progress:{done,total}}));if(verified.files!==message.files||verified.bytes!==message.bytes)throw new Error('Imported pack files do not match');
       for(const file of ['presentations.json','runtime-index.json','library.json','audio-index.json','portrait-index.json']){const url=new URL('assets/'+file,scope).href,response=await cache.match(url);if(!response||!await valid(response,url))throw new Error(`Invalid imported catalogue: ${file}`);}
       await queue(async()=>{const previous=await localPack(),pack={key:'pack',name:message.name,files:message.files,bytes:message.bytes};await record('settings','put',pack);packPromise=Promise.resolve(pack);if(previous?.name&&previous.name!==pack.name)await caches.delete(previous.name).catch(()=>notify('The previous pack copy could not be cleaned up'));});port.postMessage({result:true});await packChanged();
     }

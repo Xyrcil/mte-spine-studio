@@ -36,3 +36,15 @@ export function expectedPackPaths(catalogues){
   for(const name of ['presentations.json','portrait-index.json','library.json'])visit(catalogues[name]);return [...result];
 }
 export function resourceType(path){const extension=path.split('.').at(-1).toLowerCase();return {json:'application/json',atlas:'text/plain',png:'image/png',webp:'image/webp',jpg:'image/jpeg',jpeg:'image/jpeg',m4a:'audio/mp4',ogg:'audio/ogg',mp3:'audio/mpeg',wav:'audio/wav',otf:'font/otf',ttf:'font/ttf'}[extension]||'application/octet-stream';}
+
+export async function verifyPackCache(cache,files,base,onProgress=()=>{}){
+  if(!Array.isArray(files)||files.length<5||files.length>100000)throw new Error('Invalid imported file manifest');
+  const seen=new Set();let bytes=0;
+  const rows=files.map(row=>{const path=packPath(row.path);if(seen.has(path)||!extensions.test(path)||!Number.isSafeInteger(row.size)||row.size<0)throw new Error('Invalid imported file manifest');seen.add(path);bytes+=row.size;return {path,size:row.size};});
+  if(!Number.isSafeInteger(bytes)||PACK_CATALOGS.some(name=>!seen.has(name)))throw new Error('Invalid imported file manifest');
+  for(let start=0;start<rows.length;start+=64){await Promise.all(rows.slice(start,start+64).map(async row=>{
+    const response=await cache.match(packUrl(row.path,base));if(!response||response.status!==200||response.headers.get('content-length')!==String(row.size)||response.headers.get('content-type')!==resourceType(row.path))throw new Error('Imported file does not match: '+row.path);
+    await response.body?.cancel().catch(()=>{});
+  }));onProgress(Math.min(rows.length,start+64),rows.length);}
+  return {files:rows.length,bytes};
+}
