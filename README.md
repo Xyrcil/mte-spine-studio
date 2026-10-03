@@ -134,26 +134,23 @@ opacity and GameObject visibility use the same independent native animation
 clock. CanvasGroup values are scene-local and restore from the captured clip
 time without changing catalogue defaults. Transform-only animations load their
 descendant images. Native clips with unresolved events, text or unsupported
-image layouts remain explicitly unavailable; the skill-animation clip is not
-yet played. Its original Unity Text, text-spacing, layout, item-generation and
-event-receiver references are retained for the dynamic role/skill display.
+image layouts remain explicitly unavailable. The unassigned skill template
+does not play with unrelated default artwork.
 The local library also retains the legacy skill names, explicit role/skin skill
 references and combined main/management stand transforms used by that receiver.
 These records remain version-specific rather than taking names from newer
-tables. Missing portraits and stand configuration remain explicit; this data
-binding does not yet enable the complete skill display.
+tables. Missing portraits, emblems and stand configuration remain explicit.
 Unity Text now has a scene-local browser renderer using its resolved original
 font, authored face metrics, rounded glyph advances and alignment. Legacy color
 and text-spacing curves can drive those fields and restore their clip times.
 Unsupported markup, sizing and layout remain explicit. Text fields stay disabled
-when their complete native clip cannot play; the skill display's role assignment
-and event lifecycle remain pending. Browser glyph
-rasterization still needs comparison with the original client. The English
+when their complete native clip cannot play. Browser glyph rasterization
+still needs comparison with the original client. The English
 template's vertex-gradient renderer applies the original Color32 colors to
 each glyph independently, including horizontal/vertical direction and the
 source override of the graphic tint. Glyph textures are isolated so overlapping
 letters do not duplicate their neighbours. Browser glyph bounds and sampling
-still require original-client comparison; this does not enable the skill events.
+still require original-client comparison.
 Paired English letter rows now resolve the original ItemGen templates, horizontal
 layout, preferred-width fitter and ignored foreground row. They reuse the first
 template, create scene-local copies, and keep the gradient row above the dark row.
@@ -161,20 +158,23 @@ The word coroutine preserves UTF-16 character positions, half/full-opacity steps
 and the source 0.33-second divided wait, advancing once per eligible frame rather
 than catching up multiple letters. Checkpoints retain count, progress and the next
 wait; scene restore and independent export rebuild their derived letters without
-copying game text into scene files. The complete skill display remains unavailable
-until its complete event receiver is connected.
+copying game text into scene files.
 Dynamic role artwork can now bind both original Image components using the
 sprite's logical rectangle, trimmed content bounds and explicit canvas pixel
 ratio. The upper layer retains its authored opacity and local transform.
 Badges and skin-configured emblems bind both logo layers with their original
 native size, tint and badge-only 0.7 scale. They stay outside the artwork gallery.
-Missing references remain explicit; the complete skill receiver is still pending.
+Assigned skill presentations now connect the original PlaySpine, PlayWord and End
+events. End emits a host notification; scene restore does not invoke it again.
+Restart resets the word reveal and event cursor. The word coroutine keeps its
+own clock after the single-play native clip stops. The standalone Default/Default
+context resolves to Once; other unresolved contexts remain unavailable.
+The skill selector and original-client visual comparison remain pending.
 Native Legacy event timelines now dispatch only through explicit, scene-local
 receiver maps. They retain source parameters, same-time ordering and loop-boundary
 events. Checkpoints keep the next event cursor; restoring a pose or drawing a
 paused frame does not replay consumed callbacks. Unresolved functions and external
-object parameters keep the clip unavailable. This infrastructure does not yet
-enable the complete skill receiver. Explicit Once clips now stop, reset their
+object parameters keep the clip unavailable. Explicit Once clips now stop, reset their
 time and restore their bound defaults; ClampForever retains the final sample.
 Checkpoints distinguish an enabled paused pose from a stopped clip. Restarting
 clears the old event cursor, including restarts requested inside a callback.

@@ -26,7 +26,7 @@ export class NativeAnimation {
     this.source=source;this.clip=clip;this.time=0;this.playing=Boolean(source.data.m_PlayAutomatically);this.group=group;
     const data=clip?.data;if(!data?.m_Legacy||data.m_Compressed||['m_RotationCurves','m_CompressedRotationCurves','m_PPtrCurves'].some(key=>data[key]?.length))throw new Error('Native animation channels or events are not supported yet');
     if(data.m_Events?.length&&!group.nativeEventHandlers?.has(String(source.data.m_GameObject.m_PathID)))throw new Error('Native animation events are not supported yet');
-    this.wrap=data.m_WrapMode||source.data.m_WrapMode;if(![1,2,8].includes(this.wrap))throw new Error('Native animation wrap mode is not supported yet');this.enabled=this.playing;this.epoch=0;
+    this.wrap=data.m_WrapMode||source.data.m_WrapMode||group.nativeWrapDefaults?.get(source.id);if(![1,2,8].includes(this.wrap))throw new Error('Native animation wrap mode is not supported yet');this.enabled=this.playing;this.epoch=0;
     this.duration=0;
     this.channels=(data.m_FloatCurves||[]).map(row=>{
       const node=resolvePath(group,String(source.data.m_GameObject.m_PathID),row.path);let target,key;

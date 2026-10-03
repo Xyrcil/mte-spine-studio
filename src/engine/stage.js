@@ -11,6 +11,7 @@ import {DialogueTextLayer} from './dialogue-text.js';
 import {NativeTextLayer} from './native-text.js';
 import {SkillWordsRoot} from './skill-words.js';
 import {prepareSkillArtwork} from './skill-display.js';
+import {SkillDisplayRoot} from './skill-receiver.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots} from './material-order.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
@@ -92,6 +93,7 @@ export class Stage extends EventTarget {
       group.effects=createParticleLayers(group,base,manager);
       if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
       if(presentation.nativeText?.length){group.nativeTextLayer=new NativeTextLayer(this,group);await group.nativeTextLayer.initialize(`${import.meta.env.BASE_URL}assets/`,signal);if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');}
+      const skillReceiver=presentation.skillDisplay?new SkillDisplayRoot(this,group):null;
       createNativeVisuals(group,base,manager,`${import.meta.env.BASE_URL}assets/`);
       const deadline = performance.now() + 60000;
       while (!manager.isLoadingComplete()) {
@@ -128,6 +130,7 @@ export class Stage extends EventTarget {
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0).map(source=>new InteractionRoot(this,group,source));
       if(presentation.skillWords)group.controllers.push(new SkillWordsRoot(group));
+      if(skillReceiver){group.controllers.push(skillReceiver);skillReceiver.initialize();}
       if(presentation.hotSpringHouse?.roles?.length&&presentation.hotSpringHouse.roles.every(role=>role.focus))group.controllers.push(new HotSpringRoot(this,group));
       if(presentation.hotSpringHouse?.dialoguePanel){group.dialogueTypography=new DialogueTextLayer(this,group);await group.dialogueTypography.initialize(`${import.meta.env.BASE_URL}assets/`,signal);if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');}
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
@@ -227,7 +230,7 @@ export class Stage extends EventTarget {
         if(row.layers.length!==group.layers.length)throw new Error('Scene layer count does not match asset');
         for(const state of row.layers){const layer=group.layers.find(layer=>layer.instance.id===state.id);if(!layer)throw new Error(`Scene layer unavailable: ${state.id}`);for(const track of state.tracks)if(track.name!=='<empty>'&&!layer.skeleton.data.findAnimation(track.name))throw new Error(`Scene animation unavailable: ${track.name}`);assertCheckpoint(layer,state.animationState,state.pose);}
         for(const state of row.interactions||[])if(!group.controllers?.some(root=>root.source.id===state.id))throw new Error(`Scene interaction unavailable: ${state.id}`);
-        for(const root of group.controllers||[])if(root instanceof HotSpringRoot||root instanceof SkillWordsRoot){const saved=row.interactions?.find(state=>state.id===root.source.id);if(saved)root.check(saved.state);}
+        for(const root of group.controllers||[])if(root instanceof HotSpringRoot||root instanceof SkillWordsRoot||root instanceof SkillDisplayRoot){const saved=row.interactions?.find(state=>state.id===root.source.id);if(saved)root.check(saved.state);}
       });
       scene.objects.forEach((row,index)=>{const group=created[index];for(const key of ['id','name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];if(row.hotSpringLevel===undefined)delete group.hotSpringLevel;else group.hotSpringLevel=row.hotSpringLevel;if(group.kind==='image'){group.width=row.width;group.height=row.height;group.appearanceId=row.appearanceId;}});
       this.suppressEvents=true;

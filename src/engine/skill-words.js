@@ -44,12 +44,12 @@ export class SkillWordsRoot {
   get value(){return {kind:'skill-words',...this.reveal.snapshot()};}
   get model(){return this.group.nativeAnimations.find(row=>row.model)?.model;}
   apply(){const width=this.rows[0].widths.reduce((sum,width)=>sum+width,0)+Math.max(0,this.text.length-1)*this.rows[0].layout.m_Spacing;this.rows[0].parent.data.m_SizeDelta.x=width;for(const row of this.rows){const layout=skillLetterWidths(row.widths,width,row.layout.m_Spacing);for(let index=0;index<row.items.length;index++){const {slot,node,canvas}=row.items[index],item=layout[index];node.data.m_SizeDelta={x:item.width,y:0};node.data.m_AnchoredPosition={x:item.x+width/2,y:0};node.data.m_LocalPosition={...node.data.m_LocalPosition,x:item.x,y:0};canvas.data.m_Alpha=this.reveal.alpha(index);slot.used=Boolean(this.model);}}}
-  play(){this.reveal.play(this.model?.time??this.reveal.clock);this.apply();}
-  advance(delta){if(delta<0||!Number.isFinite(delta))throw new Error('Invalid skill word time');if(!this.group.visible||!this.group.isActiveTransform(this.root)||!this.model)return;this.reveal.advance(Math.max(0,this.model.time-this.reveal.clock));this.apply();}
-  reset(){this.reveal.reset();this.apply();}
+  play(){this.reveal.play(this.model?.time??this.reveal.clock);this.startedThisFrame=Boolean(this.group.presentation.skillDisplay);this.apply();}
+  advance(delta){if(delta<0||!Number.isFinite(delta))throw new Error('Invalid skill word time');if(!this.group.visible||!this.group.isActiveTransform(this.root)||!this.model)return;if(this.startedThisFrame){if(delta>0)this.startedThisFrame=false;}else this.reveal.advance(this.group.presentation.skillDisplay?delta:Math.max(0,this.model.time-this.reveal.clock));this.apply();}
+  reset(){this.startedThisFrame=false;this.reveal.reset();this.apply();}
   snapshot(){return {kind:'skill-words',...this.reveal.snapshot()};}
   check(value){if(value?.kind!=='skill-words')throw new Error('Invalid skill word state');return this.reveal.check(value);}
-  restore(value){this.check(value);this.reveal.restore(value);this.apply();}
+  restore(value){this.check(value);this.startedThisFrame=false;this.reveal.restore(value);this.apply();}
   onEvent(){}
   hitAt(){return null;}
 }

@@ -1,5 +1,15 @@
 import {nativeImageBounds} from './native-visuals.js';
 
+export function bindSkillDisplay(presentation,value,referencePixelsPerUnit){
+  if(value.warnings?.length||!value.portrait||!value.transform||!value.emblem)throw new Error('Original skill display resources are incomplete');
+  const result=structuredClone(presentation),receiver=result.nativeBehaviours?.find(row=>row.class==='FightSkillUIShow');if(!receiver)throw new Error('Original skill display receiver is unavailable');
+  result.resourceBundle=presentation.resourceBundle||presentation.id;result.id=`${result.resourceBundle}/skill/${value.roleId}/${value.skillId}/${value.appearanceId}`;
+  result.label=value.firstCharacter+value.remainingName;result.skillDisplay={receiverId:receiver.id};result.skillWords={receiverId:receiver.id,text:value.englishName};result.skillArtwork={receiverId:receiver.id,portrait:structuredClone(value.portrait),transform:structuredClone(value.transform),emblem:structuredClone(value.emblem),referencePixelsPerUnit};
+  for(const [field,text] of [['txtSingle',value.firstCharacter],['txtName',value.remainingName]]){const pointer=receiver.data[field],slot=result.nativeText?.find(row=>row.id===String(pointer?.m_PathID));if(pointer?.m_FileID!==0||!slot)throw new Error('Original skill text reference is unavailable');slot.data.m_Text=text;}
+  const owner=result.hierarchy.find(row=>row.id===receiver.gameObject);if(owner?.type!=='GameObject')throw new Error('Original skill display hierarchy is unavailable');owner.data.m_IsActive=true;
+  return result;
+}
+
 export function skillPortraitSize(portrait,referencePixelsPerUnit){
   if(!portrait?.path||!portrait.rect||!portrait.contentRect||![portrait.rect.width,portrait.rect.height,portrait.pixelsPerUnit,referencePixelsPerUnit].every(value=>Number.isFinite(value)&&value>0))throw new Error('Original skill portrait size is unavailable; refresh the resource pack');
   nativeImageBounds({x:1,y:1},{x:.5,y:.5},portrait);
