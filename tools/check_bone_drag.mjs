@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async()=>{
@@ -27,4 +27,4 @@ try{
       }finally{input.dispose();recorder.dispose();canvas.remove();}
     }finally{stage.dispose();}
   });assert.deepEqual(errors,[]);console.log('Real source drag: shared pose, dynamic bounds, return and scene restore verified',result);
-}finally{await browser.close();}
+}finally{await close();}

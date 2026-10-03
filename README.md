@@ -363,11 +363,18 @@ Other special controllers still need full behavioral validation. Effect
 rendering for custom materials and remaining native clips, complete voice routing,
 browser fallbacks and public deployment remain in progress.
 Browser-engine checks can be run with
-`node tools/check_browser_compatibility.mjs chromium` or `webkit` after installing
+`node tools/check_browser_compatibility.mjs chromium`, `firefox` or `webkit` after installing
 the corresponding Playwright browser. They exercise real assets, special
 interactions, scene undo, video/audio decoding and audio alignment, PNG and ZIP.
 WebKit automation is not a substitute for testing released Safari and iOS.
-Firefox and Windows verification remain outstanding. Simulated encoder and
+The tested Firefox 155 build supports WebM export but not MP4 encoding on this
+Mac. Artwork variants, character backgrounds, scene ZIP round-trips and cancellation
+also have Firefox checks. This does not establish released Firefox or Windows compatibility.
+On macOS with a shared Firefox application-data startup failure, an independently
+named test application configuration can be supplied with `MTE_FIREFOX_TEST_APP`;
+the harness creates and removes its own temporary profile without using a personal
+profile. See the [upstream launch issue](https://github.com/microsoft/playwright/issues/42768).
+Windows and released Safari/iOS verification remain outstanding. Simulated encoder and
 graphics failures are checked separately by `node tools/check_export_fallback.mjs`.
 
 Interactive presentations with `start` and `animation` play the entrance once

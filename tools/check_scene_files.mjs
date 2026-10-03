@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {zipSync,unzipSync,strFromU8,strToU8} from 'fflate';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type);const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);await page.getByRole('button',{name:'Studio',exact:true}).click();
   const saved=await page.evaluate(async()=>{
@@ -18,4 +18,4 @@ try{
   const beforeCancel=await page.evaluate(()=>window.mteEditor.snapshot());let downloads=0;const count=()=>downloads++;page.on('download',count);await page.getByLabel('Scene file format',{exact:true}).selectOption('zip');await page.getByRole('button',{name:'Export scene',exact:true}).click();await page.getByRole('button',{name:'Cancel file operation',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy&&document.querySelector('#status').textContent==='Scene file export cancelled');assert.equal(downloads,0);page.off('download',count);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),beforeCancel);
   const bigEntries=unzipSync(new Uint8Array(bigZip.bytes)),manifest=JSON.parse(strFromU8(bigEntries['scene.json'])),actor=manifest.scene.objects.find(row=>row.kind==='spine'),template=manifest.scene.objects.find(row=>row.embeddedImage),importEntries={};manifest.scene.objects=[actor];for(let i=0;i<40;i++){const path=`images/${i}.png`;importEntries[path]=bigEntries['images/0.png'];manifest.scene.objects.push({...template,id:`import-${i}`,embeddedImage:path});}importEntries['scene.json']=strToU8(JSON.stringify(manifest));const cancelImport=zipSync(importEntries,{level:0});await page.locator('#scene-file').setInputFiles({name:'cancel-import.zip',mimeType:'application/zip',buffer:Buffer.from(cancelImport)});await page.getByRole('button',{name:'Cancel file operation',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy&&document.querySelector('#status').textContent==='Scene file import cancelled; previous scene retained');assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),beforeCancel);
   assert.deepEqual(errors,[]);console.log(engine+': scene JSON/ZIP, shared images and recorded initial scene, corrupt import rollback, large-scene automatic ZIP and cancelled import/export passed',{jsonBytes:large.jsonBytes,zipBytes:bigZip.bytes.length,images:70});
-}finally{await browser.close();}
+}finally{await close();}

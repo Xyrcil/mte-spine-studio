@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type);const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await selectAsset(page,'Spines/painting/301602402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301602402_spine');await page.evaluate(()=>{window.mteStudio.paused=true;window.mteStudio.evaluate(.6);});
   const result=await page.evaluate(async()=>{
@@ -21,4 +21,4 @@ try{
   });assert.equal(result.length,4);
   await page.getByLabel('Foreground 1 variant',{exact:true}).selectOption('hexie');await page.getByLabel('Foreground 2 variant',{exact:true}).selectOption('hexie');assert.deepEqual(await page.evaluate(()=>window.mteStudio.groups[0].layers.filter(layer=>layer.skeleton.data.skins.length>1).map(layer=>layer.skeleton.skin.name)),['hexie','hexie']);
   await page.getByRole('button',{name:'Undo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.equal(await page.getByLabel('Foreground 2 variant',{exact:true}).inputValue(),'');await page.getByRole('button',{name:'Redo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.equal(await page.getByLabel('Foreground 2 variant',{exact:true}).inputValue(),'hexie');await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups[0]?.presentation.id==='Spines/painting/301602402_spine'&&!window.mteEditor.busy);assert.equal(await page.getByLabel('Foreground 1 variant',{exact:true}).inputValue(),'hexie');assert.equal(await page.getByLabel('Foreground 2 variant',{exact:true}).inputValue(),'hexie');assert.deepEqual(errors,[]);console.log(engine+': all indexed multi-skin combinations, event suppression, saved pose, PNG, UI undo/redo and reload passed',result);
-}finally{await browser.close();}
+}finally{await close();}

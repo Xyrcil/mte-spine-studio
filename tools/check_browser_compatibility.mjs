@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import {chromium,firefox,webkit} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const name=process.argv[2]||'webkit',type={chromium,firefox,webkit}[name];assert.ok(type,'Choose chromium, firefox or webkit');
-const browser=await type.launch({headless:true,...(name==='chromium'?{channel:'chrome'}:{})});
+const name=process.argv[2]||'webkit';
+const {browser,close}=await launchTestBrowser(name);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
@@ -32,4 +32,4 @@ try{
   });
   for(const output of outputs)if(output.unavailable)assert.match(output.unavailable,/encoding is unavailable/);else if(output.format==='png')assert.deepEqual([output.width,output.height],[160,120]);else{assert.equal(output.frames,output.expected);if(output.codec){assert.equal(output.actualCodec,output.codec);assert.equal(output.decoded,true);assert.ok(output.audioRms>.001);assert.ok(output.audioAlignmentError<.3,JSON.stringify(output));}}
   assert.deepEqual(errors,[]);console.log(`${name} real-asset checks passed: scene undo, special interaction, video/audio decoding, PNG and ZIP`,{interaction,outputs});
-}finally{await browser.close();}
+}finally{await close();}
