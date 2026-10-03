@@ -21,7 +21,7 @@ test('missing variants expose their source state change for recording without pl
     const {root,events}=fixture();for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='overlay'?{name,duration:2}:null;
     assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);root.unlocked();
     const saved=root.snapshot(),count=events.length;assert.equal(saved.variants.overlay,true);
-    assert.deepEqual(root.click({event,track:1,animation:'overlay'}),{accepted:false,reason:'Animation unavailable: overlay_02',unavailable:true,animation:'overlay_02'});assert.equal(root.value.variants.overlay,false);assert.equal(events.length,count);assert.equal(root.value.playing,false);
+    assert.deepEqual(root.click({event,track:1,animation:'overlay'}),{accepted:false,reason:'Animation unavailable: overlay_02',unavailable:true,animation:'overlay_02'});assert.equal(root.value.variants.overlay,false);assert.equal(events.length,count+1);assert.equal(events.at(-1).unavailable,true);assert.equal(root.value.playing,false);
     assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);
   }
 });

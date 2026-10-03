@@ -56,4 +56,19 @@ try{
       return {results:results.map(row=>({accepted:row.accepted,unavailable:row.unavailable===true,animation:row.animation})),actions:sequence.actions.length,missing:sequence.actions.filter(row=>row.unavailable).length,replayError,exportError};
     }finally{stage.dispose();}
   });assert.deepEqual(unavailable.results.map(row=>row.accepted),[true,false,true,true,false,true]);assert.equal(unavailable.actions,6);assert.equal(unavailable.missing,2);assert.ok(unavailable.replayError<=1);assert.ok(unavailable.exportError<=1);assert.deepEqual(errors,[]);console.log(engine+': real missing variants retain recovery, recorded state changes, JSON replay and PNG pixels',unavailable);
+  await selectAsset(page,'Spines/painting/301602201_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301602201_spine'&&!window.mteEditor.busy);
+  await page.evaluate(()=>window.mteHost.resume());
+  await page.waitForFunction(()=>{const root=window.mteStudio.groups[0].controllers[0];return !root.value.playing&&root.primary.state.getCurrent(0)?.animation.name!=='start';});
+  const clickVariant=async()=>{
+    const position=await page.evaluate(()=>{
+      const stage=window.mteStudio,root=stage.groups[0].controllers[0],hit=root.hotspots.find(hit=>hit.name==='wanou_down'),matrix=root.matrix(hit),rect=stage.canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;
+      for(const collider of hit.colliders){const size=collider.data.m_Size,offset=collider.data.m_Offset||{x:0,y:0};if(!size)continue;for(let y=0;y<=20;y++)for(let x=0;x<=20;x++){const local={x:offset.x+(x/20-.5)*size.x*.9,y:offset.y+(y/20-.5)*size.y*.9},world={x:matrix[0]*local.x+matrix[2]*local.y+matrix[4],y:matrix[1]*local.x+matrix[3]*local.y+matrix[5]};if(root.hitAt(world.x,world.y)?.id!==hit.id)continue;const point={x:rect.left+((world.x-stage.camera.x)/width+.5)*rect.width,y:rect.top+(.5-(world.y-stage.camera.y)/height)*rect.height};if(point.x>rect.left&&point.x<rect.right&&point.y>rect.top&&point.y<rect.bottom)return point;}}
+      return null;
+    });assert.ok(position,'Missing-variant source region has no reachable canvas point');await page.mouse.click(position.x,position.y);
+  };
+  await clickVariant();await page.waitForFunction(()=>{const root=window.mteStudio.groups[0].controllers[0];return root.value.variants.wanou_down===true&&!root.value.playing;});
+  await clickVariant();await page.waitForFunction(()=>window.mteStudio.groups[0].controllers[0].value.variants.wanou_down===false);assert.match(await page.locator('#status').textContent(),/Animation unavailable: wanou_down_02/);
+  let saved=false;for(let attempt=0;attempt<100;attempt++){saved=await page.evaluate(async()=>{const {loadLocalScene}=await import('/src/engine/scene.js'),scene=await loadLocalScene();return scene?.objects[0]?.bundle==='Spines/painting/301602201_spine'&&scene.objects[0].interactions[0].state.variants.wanou_down===false;});if(saved)break;await page.waitForTimeout(100);}assert.equal(saved,true,'Missing-variant state was not autosaved');
+  await page.reload();await page.waitForFunction(()=>window.mteHost?.getState().ready&&window.mteStudio?.groups[0]?.presentation.id==='Spines/painting/301602201_spine'&&!window.mteEditor.busy);assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].controllers[0].value.variants.wanou_down),false);
+  await clickVariant();await page.waitForFunction(()=>{const root=window.mteStudio.groups[0].controllers[0];return root.value.variants.wanou_down===true&&!root.value.playing;});assert.deepEqual(errors,[]);console.log(engine+': missing-variant physical clicks autosave their state and recover after reload');
 }finally{await close();}

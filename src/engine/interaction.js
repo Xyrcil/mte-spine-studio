@@ -94,7 +94,10 @@ export class InteractionRoot {
     const toggled=[5,102].includes(event)&&Boolean(hit.animation);
     if(toggled)v.variants[hit.animation]=!v.variants[hit.animation];
     const dismissCard=v.cardStage&&v.cardClickable;
-    if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name))))return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`,...(toggled?{unavailable:true,animation:name}:{})};
+    if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name)))){
+      if(toggled)this.emit('interaction-change',{hit:hit.id,event,animation:'',unavailable:true});
+      return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`,...(toggled?{unavailable:true,animation:name}:{})};
+    }
     const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
     for(const sound of effects)this.sound(sound);
     if(dismissCard){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
