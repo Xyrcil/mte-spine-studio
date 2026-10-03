@@ -29,7 +29,7 @@ if(stage){
 window.mteStudio = stage;
 let view = 'gallery', catalog, runtime, request, libraryData, audio,appReady=false;
 const message = value => {status.textContent=value;};
-const closeLibrary=()=>{const open=document.body.classList.contains('library-open');document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');if(open&&matchMedia('(max-width:540px)').matches&&document.activeElement?.closest('.library'))stage.canvas.focus({preventScroll:true});};
+const closeLibrary=()=>{const open=document.body.classList.contains('library-open'),focused=document.activeElement;document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');if(open&&matchMedia('(max-width:540px)').matches&&(!focused||focused===document.body||focused.closest('.library')))stage.canvas.focus({preventScroll:true});};
 const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(group);window.mteSkills?.setActive(group);if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
