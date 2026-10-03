@@ -465,11 +465,16 @@ positions, including ignored out-of-range input, and closes held drags when
 recording stops. Replay and independent export use the same receiver; original-client
 input ordering and visual comparison remain pending.
 
-The interaction sequence engine records accepted clicks and state-changing
-requests for missing variants against a captured initial scene using simulation
+The interaction sequence engine records accepted clicks and requests for missing
+clips against a captured initial scene using simulation
 time. Missing-animation notices include controller defaults and current state
 overrides, not just names declared on click regions. Notices update with scene
 and interaction changes; an unavailable clip is not replaced with another animation.
+Original click sound and voice requests run before animation lookup, so an
+available recording can still play when its animation is missing. These requests
+retain their timestamps in replay, offline preparation, subtitles and video export.
+Clear-and-toggle interactions clear the nonzero target track even when the next
+clip is missing; ordinary toggles do not clear that track.
 Missing-variant transitions remain labelled unavailable and preserve the
 source toggle; replay requires the same availability outcome. Replay targets the original object,
 controller and region, splits evaluation at action timestamps and reports

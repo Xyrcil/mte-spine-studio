@@ -95,24 +95,24 @@ export class InteractionRoot {
     if((v.isBig&&[6,7,8,9,10,11,12,17,18,19,20,21].includes(event))||(!v.isBig&&[13,14,15,16].includes(event))||(v.state===2&&event===17)||(v.state!==3&&[18,19,20].includes(event))||(hit.animation==='click_03'&&v.names[50]==='click_03_2'))return {accepted:false,reason:'Interaction is unavailable in this state'};
     if(![...Object.keys(DEFAULT_ANIMATIONS).map(Number),5,100,101,102].includes(event))return {accepted:false,reason:`Unsupported interaction ${event}`};
     const {name,track}=this.animationRequest(hit);
+    const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
+    for(const sound of effects)this.sound(sound);
+    this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name||'',effects});
     if(name==='rope_up'){this.clear(track);v.names[12]='rope_down';return {accepted:true,animation:name};}
     const toggled=[5,102].includes(event)&&Boolean(hit.animation);
     if(toggled)v.variants[hit.animation]=!v.variants[hit.animation];
     const dismissCard=v.cardStage&&v.cardClickable;
+    if(!dismissCard&&event===102)this.clear(track);
     if(!dismissCard&&(!name||!this.layers.some(layer=>layer.skeleton.data.findAnimation(name)))){
       if(toggled)this.emit('interaction-change',{hit:hit.id,event,animation:'',unavailable:true});
-      return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`,...(toggled?{unavailable:true,animation:name}:{})};
+      return {accepted:false,reason:`Animation unavailable: ${name||'(empty)'}`,...(name?{unavailable:true,animation:name}:{})};
     }
-    const effects=[...new Set([...interactionEffects(event,String(this.source.data.skin_id||''),v),this.sounds.get(hit.animation)].filter(Boolean))];
-    for(const sound of effects)this.sound(sound);
-    if(dismissCard){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
-    if(event===102)this.clear(track);
+    if(dismissCard){v.cardStage=false;for(const track of [2,3,4])this.clear(track);this.emit('interaction-change',{hit:hit.id,animation:''});return {accepted:true,animation:''};}
     if(event===8&&v.state===1){v.isBig=true;v.names[8]='kaoji_01';}
     if(/^caidan_siwa[234]_1$/.test(name))v.stockingDown=true;
     if(/^caidan_siwa[234]_2$/.test(name))v.stockingDown=false;
     Object.assign(v,{playing:true,event,track,animation:name});
     const result=this.play(name,track,false,[1,2,3].includes(event)?.25:name==='animation_game'?1:undefined);
-    this.emit('voice-request',{event,skinId:String(this.source.data.skin_id||''),explicit:hit.audio||'',animation:name,effects});
     if(event===8)this.schedule('approach',result.firstDuration);
     this.emit('interaction-change',{hit:hit.id,event,track,animation:name});return {accepted:true,animation:name};
   }

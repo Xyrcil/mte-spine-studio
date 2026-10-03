@@ -16,14 +16,21 @@ test('box and polygon colliders retain offsets and include polygon edges',()=>{
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
-test('missing variants expose their source state change for recording without playing audio or animation',()=>{
+test('missing variants retain source voice requests and recorded toggles without playing an animation',()=>{
   for(const event of [5,102]){
     const {root,events}=fixture();for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='overlay'?{name,duration:2}:null;
     assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);root.unlocked();
     const saved=root.snapshot(),count=events.length;assert.equal(saved.variants.overlay,true);
-    assert.deepEqual(root.click({event,track:1,animation:'overlay'}),{accepted:false,reason:'Animation unavailable: overlay_02',unavailable:true,animation:'overlay_02'});assert.equal(root.value.variants.overlay,false);assert.equal(events.length,count+1);assert.equal(events.at(-1).unavailable,true);assert.equal(root.value.playing,false);
+    assert.deepEqual(root.click({event,track:1,animation:'overlay',audio:'original_voice'}),{accepted:false,reason:'Animation unavailable: overlay_02',unavailable:true,animation:'overlay_02'});assert.equal(root.value.variants.overlay,false);assert.equal(events.length,count+2);assert.equal(events[count].explicit,'original_voice');assert.equal(events.at(-1).unavailable,true);assert.equal(root.value.playing,false);
+    assert.ok(root.layers.every(layer=>event===102?layer.state.getCurrent(1)===null:layer.state.getCurrent(1)?.animation.name==='overlay'));
     assert.equal(root.click({event,track:1,animation:'overlay'}).accepted,true);
   }
+});
+test('source sound and voice requests precede missing default clips and virtual rope clearing',()=>{
+  const {root,events}=fixture();root.sounds.set('declared_head','original_effect');for(const layer of root.layers)layer.skeleton.data.findAnimation=()=>null;
+  const before=root.snapshot();assert.deepEqual(root.click({event:2,animation:'declared_head',audio:'original_voice'}),{accepted:false,reason:'Animation unavailable: click_02',unavailable:true,animation:'click_02'});assert.deepEqual(root.snapshot(),before);assert.deepEqual(events.map(row=>row.name||row.explicit),['original_effect','original_voice']);
+  root.value.names[12]='rope_up';root.layers.forEach(layer=>layer.state.setAnimation(1,'overlay',true));events.length=0;assert.equal(root.click({event:12,track:1,audio:'rope_voice'}).accepted,true);assert.equal(events[0].explicit,'rope_voice');assert.equal(root.value.names[12],'rope_down');assert.ok(root.layers.every(layer=>layer.state.getCurrent(1)===null));
+  root.value.playing=true;const count=events.length;assert.equal(root.click({event:2}).accepted,false);assert.equal(events.length,count);
 });
 test('disabled click receivers do not intercept active regions on the same object',()=>{
   const {root,group}=fixture();group.world=()=>[1,0,0,1,0,0];group.scale=1;group.x=0;group.y=0;const collider={type:'BoxCollider2D',data:{m_Size:{x:2,y:2}}};root.hotspots=[{id:'disabled',event:100,enabled:false,colliders:[collider]},{id:'active',event:100,enabled:1,colliders:[collider]}];assert.equal(root.hitAt(0,0).id,'active');root.hotspots[0].enabled=0;assert.equal(root.hitAt(0,0).id,'active');delete root.hotspots[0].enabled;assert.equal(root.hitAt(0,0).id,'disabled');
