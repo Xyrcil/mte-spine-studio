@@ -5,8 +5,8 @@ import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await page.locator('#pause').click();
-  await selectAsset(page,'Spines/ui/Onsen');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen');
+  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteHost?.getState().ready&&!window.mteEditor.busy);await page.evaluate(()=>window.mteHost.pause());
+  await selectAsset(page,'Spines/ui/Onsen');try{await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen'&&!window.mteEditor.busy);}catch(error){throw new Error(`${error.message}: ${await page.locator('#status').textContent()}`);}
   assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);
   const result=await page.evaluate(async()=>{
     const stage=window.mteStudio,group=stage.groups[0],catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;

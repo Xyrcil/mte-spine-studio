@@ -193,8 +193,9 @@ native size, tint and badge-only 0.7 scale. They stay outside the artwork galler
 Assigned skill presentations now connect the original PlaySpine, PlayWord and End
 events. End emits a host notification; scene restore does not invoke it again.
 Restart resets the word reveal and event cursor. The word coroutine keeps its
-own clock after the single-play native clip stops. The standalone Default/Default
-context resolves to Once; other unresolved contexts remain unavailable.
+own clock after the single-play native clip stops. Explicit Legacy Default/Default
+settings resolve to Once unless a playback context supplies another default,
+following [Unity's playback rules](https://docs.unity3d.com/ScriptReference/WrapMode.Default.html).
 The Skill display panel lists configured roles, appearances and skills, including
 missing-resource reasons. Assigned displays can be opened, replayed, composed and
 saved; their identifiers rebuild from the resource catalogue after reload.
@@ -209,8 +210,7 @@ object parameters keep the clip unavailable. Explicit Once clips now stop, reset
 time and restore their bound defaults; ClampForever retains the final sample.
 Checkpoints distinguish an enabled paused pose from a stopped clip. Restarting
 clears the old event cursor, including restarts requested inside a callback.
-Unresolved Default wrap modes remain unavailable until their owning playback
-context is known rather than being treated as a loop.
+Missing playback settings remain unavailable rather than being treated as a loop.
 Infinite curve tangents are encoded as explicit strings in valid JSON.
 The renderer plays the recovered Legacy alpha-blended sprite particles.
 The recovered screen-mask additive particle variant has an independent browser

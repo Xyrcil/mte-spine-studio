@@ -36,6 +36,13 @@ test('native float channels follow authored time, loop and preserve anchored-pos
   assert.deepEqual(urls,['/assets/smoke.png']);model.advance(.5);assert.equal(group.nativeImages[0].color.a,.5);assert.equal(group.nodes.get('childT').data.m_LocalPosition.y,10.5);
   model.advance(2);assert.equal(group.nativeImages[0].color.a,.5);for(let i=0;i<100;i++)model.advance(0);assert.equal(group.nodes.get('childT').data.m_LocalPosition.y,10.5);assert.deepEqual(source,original);
 });
+test('explicit Legacy Default/Default resolves to Once and preserves component overrides',()=>{
+  const source=fixture();source.visualAnimations[0].data.m_WrapMode=0;source.visualAnimations[1].data.m_WrapMode=0;const {group}=load(source),model=group.nativeAnimations[0].model;
+  assert.equal(model.wrap,1);model.advance(.5);assert.equal(group.nodes.get('childT').data.m_AnchoredPosition.y,.5);model.advance(2);assert.equal(model.playing,false);assert.equal(model.enabled,false);assert.equal(model.time,0);assert.equal(group.nodes.get('childT').data.m_AnchoredPosition.y,0);
+  source.visualAnimations[0].data.m_WrapMode=2;const loop=load(source).group.nativeAnimations[0].model;assert.equal(loop.wrap,2);loop.advance(2.5);assert.equal(loop.time,2.5);assert.equal(loop.playing,true);
+  source.visualAnimations[1].data.m_WrapMode=8;assert.equal(load(source).group.nativeAnimations[0].model.wrap,8);
+  source.visualAnimations[1].data.m_WrapMode=0;delete source.visualAnimations[0].data.m_WrapMode;assert.match(load(source).group.nativeAnimations[0].reason,/wrap mode/);
+});
 test('native checkpoints restore independently and reject source mismatches before mutation',()=>{
   const {group}=load(fixture()),model=group.nativeAnimations[0].model;model.advance(.7);const saved=model.snapshot(),other=load(fixture()).group.nativeAnimations[0].model;other.restore(saved);assert.deepEqual(other.snapshot(),saved);
   const bad={...saved,clip:'other'};assert.throws(()=>preflightNativeAnimations(group,[bad]),/source/);assert.deepEqual(model.snapshot(),saved);assert.throws(()=>validateNativeAnimation({...saved,time:NaN}),/checkpoint/);preflightNativeAnimations(group,undefined);assert.throws(()=>preflightNativeAnimations(group,[]),/count/);

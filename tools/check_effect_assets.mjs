@@ -1,8 +1,9 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine),expected=JSON.parse(await readFile('public/assets/presentations.json','utf8')).presentations;
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -12,7 +13,7 @@ try{
     for(const presentation of catalog.presentations){
       for(const image of presentation.images||[]){
         if(image.status!=='extracted'||image.errors.length||!image.transform)throw new Error(`Incomplete UI image: ${presentation.id}/${image.id}`);
-        if(image.sprite)images.set(`${presentation.path}/${image.sprite.path}`,image.sprite);
+        if(image.sprite)images.set(image.assetPath||`${presentation.path}/${image.sprite.path}`,image.sprite);
         uiImages++;
       }
       for(const effect of presentation.effects||[]){
@@ -29,14 +30,14 @@ try{
     for(const [path,metadata] of images){const response=await fetch('/assets/'+path);if(!response.ok)throw new Error(`Image unavailable: ${path}`);const bitmap=await createImageBitmap(await response.blob());if(bitmap.width!==metadata.width||bitmap.height!==metadata.height)throw new Error('Effect image dimensions changed');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;if(pixels.some((value,index)=>index%4===3&&value>0))nonempty++;}
     const onsen=catalog.presentations.find(presentation=>presentation.id==='Spines/ui/Onsen');
     if(onsen.images.length!==4||onsen.canvasGroups.length!==2||onsen.images.some(image=>image.sprite?.id!=='5562774842075140937'))throw new Error('Original smoke image or opacity components missing');
-    return {entries,images:images.size,uiImages,nonempty,smoke:onsen.visualAnimations.filter(row=>row.type==='AnimationClip').map(row=>row.data.m_Name),bundles:catalog.presentations.length};
+    return {entries,images:images.size,uiImages,nonempty,smoke:onsen.visualAnimations.filter(row=>row.type==='AnimationClip').map(row=>row.data.m_Name),bundles:catalog.presentations.map(row=>row.id)};
   });
-  assert.equal(result.bundles,464);assert.equal(result.entries.length,5);assert.equal(result.uiImages,19);assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
+  assert.deepEqual(result.bundles,expected.map(row=>row.id));assert.equal(result.entries.length,expected.reduce((total,row)=>total+row.effects.length,0));assert.equal(result.uiImages,expected.reduce((total,row)=>total+row.images.length,0));assert.equal(result.nonempty,result.images);assert.ok(result.smoke.includes('ani_smoke_loop'));
   for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
     await selectAsset(page,bundle);await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     const unavailable=await page.evaluate(()=>window.mteStudio.groups[0].effects.some(effect=>effect.reason));
     if(unavailable)assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
     else assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);
   }
-  assert.deepEqual(errors,[]);console.log('Effect resource checks passed: five native particle systems, resolved dependencies, decoded sprite/texture pixels, preserved smoke clip and explicit rendering status',result);
-}finally{await browser.close();}
+  assert.deepEqual(errors,[]);console.log(engine+': Complete effect resources checked: indexed bundles, native images and particle textures, preserved material settings, smoke clips and explicit rendering status',{...result,bundles:result.bundles.length});
+}finally{await close();}
