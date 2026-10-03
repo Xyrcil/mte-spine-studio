@@ -145,6 +145,12 @@ Supported PMA blend-material colors retain their original HDR RGB and alpha
 instead of assuming a white material. Draw-time tinting restores slot colors
 after each segment; unsupported tint settings are reported. Older converted
 resources need a metadata refresh and rebuilt resource ZIP to include these settings.
+The source vertex-color power keyword applies its saved exponent to combined
+RGB while retaining alpha, including clipped geometry. Slot and attachment
+colors stay unchanged between draws.
+Flow-map and noise-texture distortion remain unimplemented. Active source
+keywords are reported in artwork details and export warnings; the underlying
+Spine animation remains available.
 Native animation bundles load their declared shared dependencies before image
 extraction. UI sprites retain their original canvas rectangle and trimmed
 content bounds, including atlas offsets and unpacked rotation. The native image

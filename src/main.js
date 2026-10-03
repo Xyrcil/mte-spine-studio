@@ -66,6 +66,8 @@ function describe(group){
   if(ordering)parts.push(`Material ordering unavailable: ${ordering}`);
   const bindingErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('bindings')).length;if(bindingErrors)parts.push(`Material bindings unavailable: ${bindingErrors}`);
   const tintErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('tint')).length;if(tintErrors)parts.push(`Material tint unavailable: ${tintErrors}`);
+  const powerErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('color power')).length;if(powerErrors)parts.push(`Material color power unavailable: ${powerErrors}`);
+  const materialEffects=[...new Set(group.layers.filter(layer=>layer.active).flatMap(layer=>layer.materialLimitations||[]))];if(materialEffects.length)parts.push(`Material effects not yet rendered: ${materialEffects.join(', ')}`);
   if(group.layers.some(layer=>layer.materialMapping?.pages))parts.push('Material segment visual verification pending');
   document.querySelector('#details').textContent=parts.join(' · ');
 }

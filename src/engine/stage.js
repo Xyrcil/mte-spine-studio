@@ -15,7 +15,7 @@ import {NativeTextLayer} from './native-text.js';
 import {SkillWordsRoot} from './skill-words.js';
 import {prepareSkillArtwork} from './skill-display.js';
 import {SkillDisplayRoot} from './skill-receiver.js';
-import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots} from './material-order.js';
+import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialEffectLimitations} from './material-order.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -121,6 +121,7 @@ export class Stage extends EventTarget {
         const data = reader.readSkeletonData(layer.entry.skeleton.endsWith('.json') ? JSON.parse(manager.get(layer.source)) : manager.get(layer.source));
         layer.skeleton = new (s().Skeleton)(data);
         layer.materialMapping=compileMaterialMapping(layer);
+        layer.materialLimitations=materialEffectLimitations(layer.entry);
         if (layer.instance.skin) layer.skeleton.setSkinByName(layer.instance.skin);
         layer.skeleton.scaleX = layer.instance.flipX ? -1 : 1;
         layer.skeleton.scaleY = layer.instance.flipY ? -1 : 1;
@@ -384,7 +385,7 @@ export class Stage extends EventTarget {
       }else{
         const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used&&!image.source.viewportDecoration).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
         for(const slot of group.nativeTextLayer?.slots||[])if(slot.used)draws.push({order:0,path:hierarchyOrder(group,slot.source.transform),text:slot});draws.sort(compareDraws);
-        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots,draw.tint);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
+        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots,draw.tint,draw.vertexColorPower);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
       }
     }
     const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};

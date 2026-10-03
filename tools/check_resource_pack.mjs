@@ -14,7 +14,7 @@ const root=resolve('dist'),assets=resolve('public/assets'),catalogues=Object.fro
 const bundle='Spines/painting/3014027_spine',appearance=catalogues['library.json'].appearances.find(row=>row.bundle===bundle),voice=catalogues['library.json'].voices.find(row=>row.targetId===appearance.characterId&&row.resourceName.includes('Login'));
 const skillRole=catalogues['library.json'].skillDisplay.roles.find(row=>row.id==='3000001'),skillIds=new Set(skillRole.skillIds),skillResource=skillRole.emblemResource,skillAppearance=catalogues['library.json'].appearances.find(row=>row.portraitResource===`UI/Image/lihui/${skillRole.id}_lihui`),skillPortrait=skillAppearance?.portrait;
 assert.ok(skillPortrait,'Original skill portrait is unavailable');
-const visualBundles=[bundle,'Spines/ui/Onsen','Spines/painting/301500101_spine','UI/Prefab/Onsen','Spines/ui/fight'];
+const visualBundles=[bundle,'Spines/ui/Onsen','Spines/painting/301500101_spine','UI/Prefab/Onsen','Spines/ui/fight','Spines/painting/3014021_spine','Spines/painting/3014009_spine'];
 const fixture={
   'presentations.json':{schema:1,presentations:catalogues['presentations.json'].presentations.filter(row=>visualBundles.includes(row.id))},
   'runtime-index.json':{schema:1,entries:catalogues['runtime-index.json'].entries.filter(row=>visualBundles.includes(row.bundle))},
@@ -69,6 +69,19 @@ try{
   assert.equal(await page.evaluate(async()=>{try{const response=await fetch(new URL('../uncached-network-probe',location.href),{cache:'no-store'});return !response.ok;}catch{return true;}}),true,'Uncached requests must fail while disconnected');
   const networkBefore=mediaNetworkRequests;await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');for(const [key,value] of [['width','160'],['height','120'],['end','.2']])await page.locator(`#export-${key}`).fill(value);const output=await page.evaluate(async()=>{const result=await window.mteExporter.run();return {ok:Boolean(result),frames:result?.plan.frames,status:document.querySelector('#export-status').textContent};});assert.equal(output.ok,true,output.status);assert.equal(output.frames,1);assert.equal(mediaNetworkRequests,networkBefore);
   await page.getByRole('button',{name:'Gallery',exact:true}).click();
+  const materials=[];
+  for(const [id,field,expected,time] of [['3014021','vertexColorPower',2.5,7.6],['3014009','tint',4,2.9]]){
+    const source=`Spines/painting/${id}_spine`;await selectAsset(page,source);await page.waitForFunction(source=>window.mteStudio.groups[0]?.presentation.id===source&&!window.mteEditor.busy,source);
+    const importedMaterial=await page.evaluate(({field,time})=>{
+      const stage=window.mteStudio,group=stage.groups[0];stage.evaluate(time);
+      const profiles=group.layers.flatMap(layer=>[...(layer.materialMapping?.pages?.values()||[])].flatMap(page=>Object.values(page))).filter(material=>material[field]);
+      const pixels=()=>{stage.draw();const values=new Uint8Array(stage.canvas.width*stage.canvas.height*4);stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,values);return values;},original=pixels(),saved=profiles.map(material=>({material,value:material[field]}));for(const row of saved)delete row.material[field];const plain=pixels();for(const row of saved)row.material[field]=row.value;stage.draw();
+      return {values:saved.map(row=>row.value),changed:plain.reduce((count,value,index)=>count+Number(value!==original[index]),0)};
+    },{field,time});assert.ok(importedMaterial.values.some(value=>field==='tint'?value.r===expected&&value.g===expected&&value.b===expected&&value.a===1:value===expected));assert.ok(importedMaterial.changed>100,JSON.stringify(importedMaterial));materials.push({source,...importedMaterial});
+    if(id==='3014009')assert.match(await page.locator('#details').textContent(),/Noise-texture distortion/);
+    await page.getByRole('button',{name:'Export',exact:true}).click();assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));await page.getByRole('button',{name:'Gallery',exact:true}).click();assert.equal(mediaNetworkRequests,networkBefore);
+  }
+  console.log(engine+': Imported source material tint and vertex-color power render and export offline',materials);
   await selectAsset(page,'Spines/ui/Onsen');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/ui/Onsen');
   const native=await page.evaluate(()=>{const stage=window.mteStudio,group=stage.groups[0];stage.evaluate(1.25);const pixels=()=>{stage.draw();const data=new Uint8Array(stage.canvas.width*stage.canvas.height*4);stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,data);return data;},before=pixels(),images=group.nativeImages.filter(image=>image.used);for(const image of images)image.used=false;const after=pixels();for(const image of images)image.used=true;return {models:group.nativeAnimations.filter(row=>row.model).length,changed:before.reduce((n,v,i)=>n+Number(v!==after[i]),0)};});assert.equal(native.models,2);assert.ok(native.changed>100,JSON.stringify(native));
   const localMedia=paths.filter(path=>path.includes('/effects/'));assert.ok(localMedia.length>1);const media=await page.evaluate(async paths=>Promise.all(paths.map(async path=>({path,status:(await fetch('assets/'+path)).status}))),localMedia);assert.ok(media.every(row=>row.status===200),JSON.stringify(media));assert.equal(mediaNetworkRequests,networkBefore);

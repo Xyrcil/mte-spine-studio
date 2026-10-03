@@ -91,6 +91,8 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.pages)))warnings.push('Material segment ordering still needs original-client visual verification');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('tint'))))warnings.push('Some source material tints are unavailable');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('bindings'))))warnings.push('Some source material bindings are unavailable');
+    if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('color power'))))warnings.push('Some source material color powers are unavailable');
+    const materialEffects=[...new Set(session.stage.groups.filter(group=>group.visible).flatMap(group=>group.layers.filter(layer=>layer.active).flatMap(layer=>layer.materialLimitations||[])))];if(materialEffects.length)warnings.push(`Source material effects not yet rendered: ${materialEffects.join(', ')}`);
     if(plan.transparent&&effects.some(effect=>effect.maskedProfile))warnings.push('Transparent output cannot retain additive blending on every background; use an opaque background for matching composition');
     const maxDimension=session.stage.gl.getParameter(session.stage.gl.MAX_RENDERBUFFER_SIZE);if(plan.width>maxDimension||plan.height>maxDimension)throw new Error('Export dimensions exceed this device’s rendering limit');
     const video=['mp4','webm'].includes(plan.format);
