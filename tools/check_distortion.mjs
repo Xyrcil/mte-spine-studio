@@ -38,4 +38,34 @@ try{
   }
   await selectAsset(page,'Spines/painting/253016013_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/253016013_spine'&&!window.mteEditor.busy);assert.match(await page.locator('#details').textContent(),/Material texture unavailable: _NoiseTex/);
   assert.deepEqual(errors,[]);console.log(engine+': Original flow, noise and combined materials animate, pause, restore and export consistently; missing source texture stays explicit',results);
+  await selectAsset(page,'Spines/painting/3013012_spine');
+  await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/3013012_spine'&&!window.mteEditor.busy);
+  const exports=await page.evaluate(async engine=>{
+    const {exportMedia,RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js'),{unzipSync}=await import('/node_modules/fflate/esm/browser.js'),{Input,BlobSource,ALL_FORMATS,VideoSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs');
+    const stage=window.mteStudio,scene=stage.snapshot(),before=JSON.stringify(scene),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,sourceAspect=stage.canvas.width/stage.canvas.height,args={scene,catalog,entries,imageAssets:stage.imageAssets,sourceAspect},rows=[];
+    const raster=document.createElement('canvas');raster.width=400;raster.height=300;const context=raster.getContext('2d'),read=()=>new Uint8Array(context.getImageData(0,0,400,300).data),difference=(a,b)=>{let maximum=0,squared=0;for(let i=0;i<a.length;i++){const delta=Math.abs(a[i]-b[i]);maximum=Math.max(maximum,delta);squared+=delta*delta;}return {maximum,rms:Math.sqrt(squared/a.length)};};
+    for(const loopMode of ['repeat','ping-pong','crossfade']){
+      const settings={format:'sequence',width:320,height:240,scale:1.25,fps:8,speed:1.5,start:.2,end:1.7,loops:2,loopMode,fade:.25,background:'#234567',transparent:false,fit:'cover',crop:{x:.1,y:.15,width:.8,height:.7}},plan=exportPlan(settings,scene.speed),session=new RenderSession(scene,catalog,entries,stage.imageAssets,sourceAspect,plan),head=new RenderSession(scene,catalog,entries,stage.imageAssets,sourceAspect,plan),expected=[];
+      try{
+        await session.initialize();await head.initialize();
+        for(let i=0;i<plan.frames;i++){
+          const index=i%plan.cycleFrames;let frame=index,weight=1,other=null;
+          if(loopMode==='ping-pong')frame=index<plan.segmentFrames?index:2*plan.segmentFrames-2-index;
+          if(loopMode==='crossfade'){frame=index+plan.fadeFrames;if(frame>=plan.segmentFrames-plan.fadeFrames){other=frame-plan.segmentFrames+plan.fadeFrames;weight=1-(other+1)/plan.fadeFrames;}}
+          await session.seek(plan.start+frame/plan.fps*plan.speed);context.clearRect(0,0,400,300);context.globalCompositeOperation='source-over';context.globalAlpha=weight;context.drawImage(session.canvas,0,0);
+          if(other!==null){await head.seek(plan.start+other/plan.fps*plan.speed);context.globalCompositeOperation='lighter';context.globalAlpha=1-weight;context.drawImage(head.canvas,0,0);}context.globalCompositeOperation='source-over';context.globalAlpha=1;expected.push(read());
+        }
+      }finally{session.dispose();head.dispose();}
+      const sequence=await exportMedia({...args,settings}),files=Object.entries(unzipSync(new Uint8Array(await sequence.blob.arrayBuffer()))).sort(([a],[b])=>a.localeCompare(b));let sequenceError=0,loopError=0;
+      if(files.length!==plan.frames)throw new Error('Unexpected sequence frame count');
+      for(let i=0;i<files.length;i++){const bitmap=await createImageBitmap(new Blob([files[i][1]],{type:'image/png'}));if(bitmap.width!==400||bitmap.height!==300)throw new Error('Pixel multiplier was not applied');context.clearRect(0,0,400,300);context.drawImage(bitmap,0,0);bitmap.close();sequenceError=Math.max(sequenceError,difference(read(),expected[i]).maximum);if(i>=plan.cycleFrames)loopError=Math.max(loopError,difference(expected[i],expected[i-plan.cycleFrames]).maximum);}
+      const video=await exportMedia({...args,settings:{...settings,format:engine==='firefox'?'webm':'mp4'}}),input=new Input({source:new BlobSource(video.blob),formats:ALL_FORMATS});let videoRms=0,decoded=0;
+      try{const track=await input.getPrimaryVideoTrack(),sink=new VideoSampleSink(track),count=(await track.computePacketStats()).packetCount,duration=await track.computeDuration();if(count!==plan.frames||Math.abs(duration-plan.duration)>.002)throw new Error('Video timing differs from sequence');if(await track.getDisplayWidth()!==400||await track.getDisplayHeight()!==300)throw new Error('Video dimensions differ from sequence');for(let i=0;i<plan.frames;i++){const sample=await sink.getSample((i+.25)/plan.fps);if(!sample)throw new Error('Video frame unavailable');context.clearRect(0,0,400,300);sample.draw(context,0,0);sample.close();videoRms=Math.max(videoRms,difference(read(),expected[i]).rms);decoded++;}}finally{input.dispose();}
+      rows.push({loopMode,frames:plan.frames,sequenceError,loopError,videoRms,decoded,sceneUnchanged:JSON.stringify(stage.snapshot())===before});
+    }
+    const controller=new AbortController();let cancelled=false;
+    try{await exportMedia({...args,settings:{format:'sequence',width:320,height:240,scale:1,fps:8,speed:1,start:0,end:60,loops:1,loopMode:'repeat',background:'#234567',fit:'contain',crop:{x:0,y:0,width:1,height:1}},signal:controller.signal,onProgress:info=>{if(info.frame===2)controller.abort();}});}catch(error){if(error.name!=='AbortError')throw error;cancelled=true;}
+    return {rows,cancelled,sceneUnchanged:JSON.stringify(stage.snapshot())===before};
+  },engine);
+  for(const row of exports.rows){assert.equal(row.sequenceError,0,JSON.stringify(row));assert.equal(row.loopError,0,JSON.stringify(row));assert.ok(row.videoRms<12,JSON.stringify(row));assert.equal(row.decoded,row.frames);assert.equal(row.sceneUnchanged,true);}assert.equal(exports.cancelled,true);assert.equal(exports.sceneUnchanged,true);assert.deepEqual(errors,[]);console.log(engine+': Distorted sequence and decoded video preserve loops, speed, crop, multiplier, background and live scene',exports);
 }finally{await close();}
