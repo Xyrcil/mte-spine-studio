@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForSelector('#voice-panel');await page.getByRole('button',{name:'Pause',exact:true}).click();
@@ -9,6 +9,6 @@ try{
   await page.locator('#scene-file').setInputFiles({name:'voice.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))});await page.waitForFunction(()=>!window.mteEditor.busy);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),saved);assert.equal(await page.locator('#subtitle').textContent(),text);
   await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteEditor&&!window.mteEditor.busy&&window.mteAudio?.currentVoice);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),saved);assert.equal(await page.locator('#subtitle').textContent(),text);
   await page.getByRole('button',{name:'Play',exact:true}).click();await page.waitForFunction(time=>window.mteAudio.element.currentTime>time+.1,saved.audio.voiceTrack.time);await page.getByRole('button',{name:'Pause',exact:true}).click();const paused=await page.evaluate(()=>window.mteAudio.element.currentTime);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.mteAudio.element.currentTime),paused);
-  await page.getByRole('button',{name:'Studio',exact:true}).click();await page.locator('#layers .layer').filter({has:page.locator('[aria-pressed="true"]')}).getByRole('button',{name:'Remove',exact:true}).click();assert.equal(await page.evaluate(()=>window.mteAudio.currentVoice),null);assert.equal(await page.locator('#subtitle').textContent(),'');assert.deepEqual(errors,[]);
-  console.log('Voice state checks passed: paused-scene preview, actual position, subtitle lookup, JSON import, reload, resume and removal');
-}finally{await browser.close();}
+  await page.getByRole('button',{name:'Studio',exact:true}).click();await page.locator('#layers .layer').filter({has:page.locator('[aria-pressed="true"]')}).getByRole('button',{name:'Remove',exact:true}).click();assert.equal(await page.evaluate(()=>window.mteAudio.currentVoice),null);assert.equal(await page.evaluate(()=>window.mteAudio.currentSubtitle),null);assert.equal(await page.locator('#voice-panel').count(),0);assert.equal(await page.evaluate(()=>window.mteAudio.element.hasAttribute('src')),false);assert.deepEqual(errors,[]);
+  console.log(engine+': Voice state checks passed: paused-scene preview, actual position, subtitle lookup, JSON import, reload, resume and removal');
+}finally{await close();}

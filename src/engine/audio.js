@@ -16,7 +16,7 @@ export class AudioBus extends EventTarget {
     }
     this.element=new Audio();this.element.preload='none';
     this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
-    this.element.addEventListener('error',()=>this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'})));
+    this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop();this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
   }
   resolve(name,category='a_sound_voiceeff') {
     if(typeof name!=='string'||!name)return null;
@@ -40,11 +40,13 @@ export class AudioBus extends EventTarget {
     this.voiceMetadataAbort=new AbortController();
     this.element.addEventListener('loadedmetadata',()=>{if(token===this.token&&time>0)this.element.currentTime=Math.min(time,this.element.duration);},{once:true,signal:this.voiceMetadataAbort.signal});
     this.element.src=this.base+clip.path;this.element.volume=this.volume;this.element.muted=this.muted;
-    try {
-      if(autoplay){this.unlocked=true;await this.element.play();}
-      if(token!==this.token)return;
-      this.setSubtitle({title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
-    }catch(error){if(token===this.token&&!(this.paused&&error.name==='AbortError'))throw error;}
+    if(autoplay){this.unlocked=true;if(!await this.startVoice(token))return;}
+    if(token!==this.token)return;
+    this.setSubtitle({title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
+  }
+  async startVoice(token){
+    try{await this.element.play();return token===this.token;}
+    catch(error){if(token!==this.token||this.paused&&error.name==='AbortError')return false;if(error.name!=='NotAllowedError')this.stop();throw error;}
   }
   stop() {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}
   async playEffect(name,category='a_sound_ui',time=0,autoplay=true,group=''){
@@ -60,7 +62,7 @@ export class AudioBus extends EventTarget {
   releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
   pause() {const voiceWasPlaying=this.currentVoice&&!this.element.paused;this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();if(voiceWasPlaying)this.dispatchEvent(new CustomEvent('voice-state'));}
-  async resume() {this.paused=false;this.unlocked=true;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.element.play()]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);if(this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
+  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}
