@@ -484,6 +484,12 @@ Interaction details list missing initial animation references as well as absent
 alternate variants. `tools/check_controllers.mjs` explores loaded controller
 states and reports inactive regions, source gaps and its bounded-search limit;
 a limited search is not evidence of complete behavioral coverage.
+Long checks can use `--checkpoint private/controller-audit.jsonl --steps 64`.
+Repeating the command resumes the pending queue; omit `--steps` to run until
+the queue is exhausted or the state limit is reached. Increasing
+`MTE_CONTROLLER_STATE_LIMIT` resumes the unfinished boundary state rather than
+dropping its remaining transitions. Run only one process per checkpoint and
+use a new file after changing the runtime or converted resources.
 `node tools/check_interaction_regions.mjs` separately samples the source collider
 interiors after entrance playback and checks object-transform invariance across
 all interactive presentations. Regions not hit by its samples may overlap other
