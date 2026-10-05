@@ -13,6 +13,17 @@ try{
       await stage.restore(saved,[presentation],entries);stage.evaluate(.1);if(JSON.stringify(root.snapshot())!==JSON.stringify(expected))throw new Error('Return motion changed after restore');stage.evaluate(.2);
       if(root.motion.returning||root.motion.current.x!==center.x||root.motion.current.y!==center.y)throw new Error('Return did not reach the source center');stage.draw();
       const bad=structuredClone(saved),state=bad.objects[0].interactions.find(row=>row.id===root.source.id);state.state.motion.elapsed=2;let rejected=false;try{await stage.restore(bad,[presentation],entries);}catch{rejected=true;}if(!rejected)throw new Error('Source-specific duration not validated');
+      let transformedRanges=0;
+      const {objectTransform,inversePoint}=await import('/src/engine/geometry.js');
+      for(const pose of [{rotation:37,scale:.6,flipX:false,flipY:false},{rotation:0,scale:1.3,flipX:true,flipY:false},{rotation:-53,scale:1.6,flipX:true,flipY:true}]){
+        await stage.restore(baseline,[presentation],entries);Object.assign(group,pose,{x:2,y:-3});stage.evaluate(0);
+        const frame=objectTransform(group),left=root.rangePosition(root.left),right=root.rangePosition(root.right),a=inversePoint(frame,left.x,left.y),b=inversePoint(frame,right.x,right.y),target=point(frame,(a.x+b.x)/2,(a.y+b.y)/2),expected=inversePoint(root.parentMatrix(),target.x,target.y);
+        if(!root.contains(point(root.targetMatrix(),0,0).x,point(root.targetMatrix(),0,0).y))throw new Error('Transformed drag collider lost its center');
+        root.begin();if(!root.move(target))throw new Error('Editor transform rejected an interior source drag');stage.evaluate(0);
+        if(!root.members.every(({bone})=>Math.abs(bone.x-expected.x)<1e-8&&Math.abs(bone.y-expected.y)<1e-8))throw new Error('Transformed shared drag pose differs');
+        const outside=point(frame,b.x+Math.abs(b.x-a.x),(a.y+b.y)/2);if(root.move(outside))throw new Error('Editor transform widened the source drag range');
+        root.release();stage.evaluate(root.motion.duration);if(root.motion.returning||root.motion.current.x!==root.motion.center.x||root.motion.current.y!==root.motion.center.y)throw new Error('Transformed drag did not return');transformedRanges++;
+      }
       await stage.restore(baseline,[presentation],entries);document.body.append(canvas);canvas.style.cssText='position:fixed;left:0;top:0;width:320px;height:192px;z-index:10000';
       const recorder=new InteractionRecorder(stage),editor={busy:true,changed(){},before(){throw new Error('Recording changed camera history');}},input=createCanvasInput(stage,editor,{getView:()=> 'gallery',isRecording:()=>recorder.active});
       const send=(type,world)=>{const rect=canvas.getBoundingClientRect(),width=Math.max(stage.camera.width,stage.camera.height*rect.width/rect.height),height=width*rect.height/rect.width;canvas.dispatchEvent(new PointerEvent(type,{pointerId:1,button:0,clientX:rect.left+(world.x-stage.camera.x+width/2)/width*rect.width,clientY:rect.top+(stage.camera.y+height/2-world.y)/height*rect.height}));};
@@ -23,7 +34,7 @@ try{
         const output=await exportMedia({scene:{...baseline,sequence},catalog:[presentation],entries,imageAssets:stage.imageAssets,sourceAspect:320/192,settings:{useSequence:true,format:'sequence',width:160,height:96,fps:10,start:0,end:sequence.duration,speed:1,loops:2,loopMode:'repeat',background:stage.background,fit:'contain',crop:{x:0,y:0,width:1,height:1}}}),files=Object.values(unzipSync(new Uint8Array(await output.blob.arrayBuffer()))),cycle=output.plan.cycleFrames;if(files.length!==cycle*2||!files.slice(0,cycle).every((bytes,i)=>bytes.length===files[i+cycle].length&&bytes.every((value,j)=>value===files[i+cycle][j])))throw new Error('Exported drag loops changed');
         if(files.slice(1,cycle).every(bytes=>bytes.length===files[0].length&&bytes.every((value,j)=>value===files[0][j])))throw new Error('Exported drag is a static image');
         const {Input,BlobSource,ALL_FORMATS}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs'),video=await exportMedia({scene:{...baseline,sequence},catalog:[presentation],entries,imageAssets:stage.imageAssets,sourceAspect:320/192,settings:{useSequence:true,format:'webm',width:160,height:96,fps:10,start:0,end:sequence.duration,speed:1,loops:2,loopMode:'repeat',background:stage.background,fit:'contain',crop:{x:0,y:0,width:1,height:1}}}),media=new Input({source:new BlobSource(video.blob),formats:ALL_FORMATS});let videoFrames;try{const track=await media.getPrimaryVideoTrack();videoFrames=(await track.computePacketStats()).packetCount;if(videoFrames!==video.plan.frames)throw new Error('Drag video frame count differs');}finally{media.dispose();}
-        return {members:root.members.length,colliders:root.source.dragColliders.length,center,left,right,recorded:sequence.actions.length,exportedFrames:files.length,videoFrames};
+        return {members:root.members.length,colliders:root.source.dragColliders.length,center,left,right,transformedRanges,recorded:sequence.actions.length,exportedFrames:files.length,videoFrames};
       }finally{input.dispose();recorder.dispose();canvas.remove();}
     }finally{stage.dispose();}
   });assert.deepEqual(errors,[]);console.log('Real source drag: shared pose, dynamic bounds, return and scene restore verified',result);

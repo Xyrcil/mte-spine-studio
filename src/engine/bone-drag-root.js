@@ -29,7 +29,15 @@ export class BoneDragRoot {
   rangePosition(id){const binding=this.group.controllers?.find(root=>root.transformBindings?.has(id)),matrix=binding?binding.matrixForTransform(id):multiply(objectTransform(this.group),this.group.world(id));return matrix&&point(matrix,0,0);}
   contains(x,y){if(!this.enabled()||!this.group.isActiveTransform(this.target))return false;const local=inversePoint(this.targetMatrix(),x,y);return Boolean(local&&(this.source.dragColliders||[]).some(collider=>colliderContains(collider,local.x,local.y)));}
   begin(){if(!this.enabled())return false;this.motion.begin();return true;}
-  move(world){if(!this.enabled()||!this.motion.dragging)return false;if(!Number.isFinite(world?.x)||!Number.isFinite(world?.y))throw new Error('Invalid bone drag pointer');this.pointer={x:world.x,y:world.y};const left=this.rangePosition(this.left),right=this.rangePosition(this.right);if(!left||!right||!inSourceDragRange(world,left,right))return false;const local=inversePoint(this.parentMatrix(),world.x,world.y);if(!local)return false;this.motion.current=local;this.writing=true;this.applyPending=true;return true;}
+  move(world){
+    if(!this.enabled()||!this.motion.dragging)return false;if(!Number.isFinite(world?.x)||!Number.isFinite(world?.y))throw new Error('Invalid bone drag pointer');this.pointer={x:world.x,y:world.y};
+    const left=this.rangePosition(this.left),right=this.rangePosition(this.right);if(!left||!right)return false;
+    const frame=objectTransform(this.group),pointer=inversePoint(frame,world.x,world.y),start=inversePoint(frame,left.x,left.y),end=inversePoint(frame,right.x,right.y);
+    if(!pointer||!start||!end||!inSourceDragRange(pointer,start,end))return false;
+    const epsilon=32*Number.EPSILON*Math.max(1,...[pointer,start,end].flatMap(value=>[Math.abs(value.x),Math.abs(value.y)]));
+    if(Math.min(pointer.x-start.x,end.x-pointer.x,start.y-pointer.y,pointer.y-end.y)<=epsilon)return false;
+    const local=inversePoint(this.parentMatrix(),world.x,world.y);if(!local)return false;this.motion.current=local;this.writing=true;this.applyPending=true;return true;
+  }
   release(){if(!this.enabled())return;this.pointer=null;this.motion.release();this.writing=this.motion.returning;this.applyPending=true;}
   advance(delta){if(!this.enabled()||delta===0)return;this.applyPending=false;this.writing=false;const returning=this.motion.returning;this.motion.advance(delta);if(returning){this.applyPending=true;this.writing=this.motion.returning;}if(this.motion.dragging&&this.pointer)this.move(this.pointer);}
   apply(layer){if(!this.enabled()||!this.writing&&!this.applyPending)return;const member=this.members.find(row=>row.layer===layer);if(member){member.bone.x=this.motion.current.x;member.bone.y=this.motion.current.y;}}

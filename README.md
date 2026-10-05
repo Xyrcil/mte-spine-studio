@@ -487,8 +487,9 @@ raycast or original-client priority comparison.
 Card exploration uses valid random checkpoints for each of the three possible
 reveals. Checks run in an independent scene and do not change the editing scene.
 Drag-bone receiver data and non-click bone-bound range markers are retained.
-The scene-local receiver retains target colliders, strict world-space bounds,
-shared bone writes and the default OutQuad return. Its motion and pointer state
+The scene-local receiver retains target colliders, shared bone writes and the
+default OutQuad return. Strict source-space bounds follow editor rotation,
+scaling and mirroring. Its motion and pointer state
 survive scene restore; disabled source components stay disabled. Check the real
 six-skeleton receiver with `node tools/check_bone_drag.mjs`. Gallery pointer input
 prioritizes the source drag collider over camera panning, with cancellation on

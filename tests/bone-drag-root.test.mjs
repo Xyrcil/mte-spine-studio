@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BoneDragRoot,validateBoneDragState} from '../src/engine/bone-drag-root.js';
+import {objectTransform,point} from '../src/engine/geometry.js';
 
 const ref=id=>({m_FileID:0,m_PathID:id});
 function fixture(){
@@ -27,4 +28,15 @@ test('disabled hierarchy ignores input and pauses the source return',()=>{
 test('held input follows moving bounds and stops overriding bones outside the source range',()=>{
   const {root,layers}=fixture();root.begin();root.move({x:12,y:22});root.advance(.1);root.apply(layers[0]);assert.equal(layers[0].bone.x,1);
   root.move({x:40,y:22});root.advance(.1);layers[0].bone.x=8;root.apply(layers[0]);assert.equal(layers[0].bone.x,8);const saved=root.snapshot(),copy=fixture().root;copy.restore(saved);assert.deepEqual(copy.pointer,{x:40,y:22});assert.equal(copy.motion.dragging,true);
+});
+test('editor rotation and mirroring transport the source drag range without widening it',()=>{
+  for(const pose of [{rotation:37,flipX:false,flipY:false},{rotation:0,flipX:true,flipY:false},{rotation:-53,flipX:true,flipY:true}]){
+    const {root,group}=fixture();Object.assign(group,pose,{x:7,y:-4,scale:.6});
+    group.controllers[0].matrixForTransform=id=>{const p=point(objectTransform(group),id==='left'?-2:2,id==='left'?2:-2);return [1,0,0,1,p.x,p.y];};
+    root.begin();assert.equal(root.move(point(objectTransform(group),1,1)),true,JSON.stringify(pose));
+    assert.ok(Math.abs(root.motion.current.x-1)<1e-10&&Math.abs(root.motion.current.y-1)<1e-10);
+    assert.equal(root.move(point(objectTransform(group),3,0)),false);
+    for(const edge of [{x:2,y:0},{x:-2,y:0},{x:0,y:2},{x:0,y:-2}])assert.equal(root.move(point(objectTransform(group),edge.x,edge.y)),false,'Source edges remain excluded');
+    root.release();root.advance(.5);assert.deepEqual(root.motion.current,root.motion.center);
+  }
 });
