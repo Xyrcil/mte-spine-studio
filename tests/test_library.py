@@ -3,10 +3,21 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_main_view_voice_catalogue_retains_original_type_and_exact_source_without_private_fields(self):
+        def row(identifier, resource, kind):
+            return {"id": identifier, "target_id": 7, "file_name": resource, "type": kind,
+                    "voice_title": "Original title", "voice_text": "Original subtitle", "source": "/private/archive", "hash": "private"}
+        result = main_view_voice_catalogue([row(1, "Voice_7_Touch_Head", 3), row(2, "Voice_7_Greetings_Idel_01", 0), row(3, "Voice_7_Login", 0)])
+        self.assertEqual(result["touchType"], 3)
+        self.assertEqual([voice["id"] for voice in result["voices"]], ["1", "2"])
+        self.assertEqual(result["voices"][0]["type"], 3)
+        self.assertTrue(all(voice["exactResource"] for voice in result["voices"]))
+        self.assertTrue(all("source" not in voice and "hash" not in voice for voice in result["voices"]))
+
     def test_station_drawings_merge_by_id_and_keep_exact_pairs_without_private_metadata(self):
         old = {"id": 1, "drawing": "old", "action_list": "old"}
         row = {"id": 1, "drawing": "new", "people_id": 3, "expression": "smile", "action_list": "touch;sigh", "expression_list": "happy;sad", "voice_list": "12;13", "source": "/private/account", "hash": "private"}

@@ -18,10 +18,10 @@ export class AudioBus extends EventTarget {
     this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
     this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop();this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
   }
-  resolve(name,category='a_sound_voiceeff') {
+  resolve(name,category='a_sound_voiceeff',exactResource=false) {
     if(typeof name!=='string'||!name)return null;
     const basename=name.split('/').at(-1),configured=this.resources.get(name)||this.resources.get(basename);
-    const actual=configured?.resource.split('/').at(-1)||basename;
+    const actual=exactResource?basename:configured?.resource.split('/').at(-1)||basename;
     return this.byName.get(actual)?.find(entry=>entry.category===category)?.clips[0] || null;
   }
   soundInfo(name,category){
@@ -32,8 +32,8 @@ export class AudioBus extends EventTarget {
   setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
   async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
     if(!voice?.resourceName)throw new Error('No voice resource selected');
-    voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{})},this.voiceRows),...voice};
-    const clip=this.resolve(voice.resourceName,category);
+    voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{}),...(voice.exactResource?{exactResource:true}:{})},this.voiceRows),...voice};
+    const clip=this.resolve(voice.resourceName,category,voice.exactResource);
     if(!clip)throw new Error('Audio resource is unavailable for this track');
     this.stop();const token=this.token;
     this.currentVoice={voice,category,time,group,...(!autoplay?{pauseTime:time}:{})};
@@ -113,10 +113,10 @@ export class AudioBus extends EventTarget {
   ambientSnapshot(){
     const tracks=[];for(const group of this.sceneGroups){const setting=this.ambientSetting(group);if(!setting)continue;const channel=this.ambients.get(group.id);tracks.push({...setting,time:channel?.element.currentTime||setting.time,ended:channel?.ended??setting.ended});}return tracks;
   }
-  snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.paused&&current.pauseTime!==undefined?current.pauseTime:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
+  snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.paused&&current.pauseTime!==undefined?current.pauseTime:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.voice.exactResource?{exactResource:true}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
   exportVoice(snapshot,objects){
     const track=snapshot?.voiceTrack;if(!track||track.group&&!objects.some(object=>object.id===track.group&&objectVisible(object,objects)))return null;
-    const clip=this.resolve(track.name,track.category);if(!clip)throw new Error(`Voice unavailable: ${track.name}`);
+    const clip=this.resolve(track.name,track.category,track.exactResource);if(!clip)throw new Error(`Voice unavailable: ${track.name}`);
     const row=savedVoiceRow(track,this.voiceRows);return {url:this.base+clip.path,text:row.text,position:track.time,gain:snapshot.voiceVolume,scene:true,repeat:false};
   }
   exportAmbients(snapshot,objects){

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding} from '../src/engine/voice-catalog.js';
 const library={appearances:[{id:'skin',characterId:'actor',bundle:'Spines/skin'}],voices:[{id:'1',targetId:'actor',title:'Login',resourceName:'Voice_Login',text:'Hello'},{id:'2',targetId:'skin',title:'Costume',resourceName:'Voice_Skin',text:'Hello again'},{id:'3',targetId:'other',title:'Other',resourceName:'Other'}],storyVoices:[{id:'1',resourceName:'Voice_Plot_1',text:'Story text'},{id:'2',resourceName:'',text:'Unvoiced text'}]};
 test('station voice scope uses source skin remapping and exact voice IDs, not resource prefixes',()=>{
@@ -17,6 +18,19 @@ test('station voice scope uses source skin remapping and exact voice IDs, not re
   assert.equal(stationVoiceBinding(source,{appearanceId:'station'}).targetId,'unindexed');
   assert.deepEqual(voiceCatalog(source,[{appearanceId:'skin'}],'station'),[]);
   assert.deepEqual(voiceCatalog(source,[{appearanceId:'station'}],'story').map(row=>row.id),['1','2']);
+});
+test('main-view touch pool uses source type and target rather than the newer application classification',()=>{
+  const source={...structuredClone(library),stationDrawings:{drawings:[{id:'drawing',skinId:'',gospelId:'actor',peopleId:'',voiceIds:[]}]},mainViewVoices:{voices:[{id:'1',targetId:'actor',type:3,resourceName:'original',text:'Original',exactResource:true},{id:'2',targetId:'actor',type:0,resourceName:'idle'},{id:'3',targetId:'other',type:3,resourceName:'other'}]}};
+  source.appearances.push({id:'station',stationDrawingId:'drawing',characterId:'actor'});
+  assert.deepEqual(voiceCatalog(source,[{appearanceId:'station'}],'main-view-touch').map(row=>row.resourceName),['original']);
+  assert.equal(savedVoiceRow({name:'original',id:'1',exactResource:true},[{id:'1',resourceName:'replacement',alias:'original',text:'Replacement'},source.mainViewVoices.voices[0]]).text,'Original');
+});
+test('local source voice catalogue preserves references reassigned by the newer tables',t=>{
+  if(!fs.existsSync('public/assets/library.json')){t.skip('Local game resources are not installed');return;}
+  const library=JSON.parse(fs.readFileSync('public/assets/library.json')),source=library.mainViewVoices;if(!source){t.skip('Local catalogue predates main-view voice metadata');return;}
+  assert.equal(source.voices.length,624);assert.equal(source.voices.filter(row=>row.type===3).length,367);assert.equal(source.voices.filter(row=>row.type!==3).length,257);assert.ok(source.voices.every(row=>row.exactResource));
+  const current=new Map(library.voices.map(row=>[row.id,row])),changed=source.voices.filter(row=>row.type===3&&current.get(row.id)?.resourceName!==row.resourceName),audio=JSON.parse(fs.readFileSync('public/assets/audio-index.json')).entries;
+  assert.equal(changed.length,45);for(const row of changed)assert.ok(audio.some(entry=>entry.name===row.resourceName&&entry.clips.length),'Original clip is missing: '+row.resourceName);
 });
 test('voice selection includes exact character and skin targets, not unrelated rows',()=>{assert.equal(voiceCatalog(library,[{bundle:'Spines/skin'}]).length,2);assert.equal(voiceCatalog(library,[{appearanceId:'skin'}]).length,2);assert.equal(voiceCatalog(library,[{id:'Spines/skin'}]).length,2);assert.deepEqual(voiceCatalog(library,[{id:'unknown'}]),[]);});
 test('story library exposes all source rows without inferring artwork associations',()=>{const rows=voiceCatalog(library,[{appearanceId:'skin'}],'story');assert.equal(rows.length,2);assert.equal(rows[0].title,'Voice_Plot_1');assert.equal(rows[1].title,'Story line 2');assert.notEqual(rows[0].key,voiceCatalog(library,[{appearanceId:'skin'}])[0].key);assert.equal(rows[0].targetId,undefined);});

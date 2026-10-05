@@ -11,6 +11,15 @@ class FakeAudio extends EventTarget{
 }
 const voices=[{id:'1',resourceName:'spoken',title:'Voice',text:'Original source subtitle'}];
 function setup(){const bus=new AudioBus({entries:[{name:'spoken',category:'a_sound_voiceeff_ch',errors:[],clips:[{path:'spoken.m4a'}]}]},[],'/assets/',voices),group={id:'actor',visible:true};bus.syncAmbients([group],[]);return {bus,group};}
+test('exact source voices cannot be redirected by newer sound aliases during capture or restore',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const source={id:'1',resourceName:'original',title:'Source',text:'Source subtitle',exactResource:true},modern={id:'1',resourceName:'replacement',alias:'original',text:'New subtitle'},bus=new AudioBus({entries:['original','replacement'].map(name=>({name,category:'a_sound_voiceeff',errors:[],clips:[{path:name+'.m4a'}]}))},[{name:'original',resource:'SoundRes/a_sound_voiceeff/replacement'}],'/assets/',[modern,source]);
+    assert.equal(bus.resolve('original').path,'replacement.m4a');assert.equal(bus.resolve('original','a_sound_voiceeff',true).path,'original.m4a');
+    await bus.play(source);assert.equal(bus.element.src,'/assets/original.m4a');bus.pause();const saved=validateSoundScene(bus.snapshot(),[]);assert.equal(saved.voiceTrack.exactResource,true);
+    assert.equal(bus.exportVoice(saved,[]).url,'/assets/original.m4a');assert.equal(bus.exportVoice(saved,[]).text,'Source subtitle');bus.restore(saved,[],[],true);assert.equal(bus.element.src,'/assets/original.m4a');assert.equal(bus.currentSubtitle.text,'Source subtitle');
+    assert.throws(()=>validateSoundScene({...saved,voiceTrack:{...saved.voiceTrack,exactResource:'yes'}},[]),/exact voice/);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
 test('paused speech retains its position when the media backend resets its clock',async()=>{
   const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
   try{const {bus}=setup();await bus.play(voices[0],'a_sound_voiceeff_ch');bus.element.readyState=1;bus.element.currentTime=2.3;

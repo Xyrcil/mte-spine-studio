@@ -9,6 +9,7 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   const field=id=>panel.querySelector(`#${id}`),language=field('voice-language'),list=field('voice-list');let rows=[];
   const role=hotSpringRole(library,presentation),selectedGroup=()=>{const group=editor.selected();return group&&(presentation.appearanceId?(group.appearanceId??group.presentation?.appearanceId)===presentation.appearanceId:group.presentation?.id===presentation.id)?group:null;};
   const station=stationVoiceBinding(library,presentation);if(station?.voiceIds.length){field('voice-scope').append(new Option('Station voice pool','station'));const note=document.createElement('p');note.id='station-voice-note';note.textContent='This pool follows the original drawing voice IDs. Playback here is a manual preview, not an animation event.';panel.append(note);}
+  if(station&&library.mainViewVoices){field('voice-scope').append(new Option('Main-view touch pool','main-view-touch'));const note=document.createElement('p');note.textContent='Main-view touch lines follow the original type-3 table and exact audio resources. Their original trigger is a separate UI button, not a Spine animation event.';panel.append(note);}
   if(presentation.hotSpringHouse){
     const controls=document.createElement('section'),title=document.createElement('h3');controls.id='hot-spring-controls';title.textContent='Hot spring conversation';controls.append(title);
     for(const role of presentation.hotSpringHouse.roles||[]){const label=document.createElement('label');label.textContent=library.characters.find(row=>row.id===role.id)?.name||role.id;const level=document.createElement('select');for(const pool of role.levels)level.append(new Option(`Level ${pool.level}`,String(pool.level)));const root=()=>selectedGroup()?.controllers.find(root=>root.source.id==='hot-spring');level.value=String(root()?.value.levels[role.id]||1);level.onchange=()=>editor.mutate(()=>{const controller=root();if(controller)controller.value.levels[role.id]=Number(level.value);});label.append(level);controls.append(label);}
@@ -22,16 +23,16 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   sourceSound.onclick=async()=>{try{await audio.playEffect(role.ambientSound,sound.category,0,true,selectedGroup()?.id);editor.changed({audioOnly:true});}catch(error){message(error.message);}};
   language.value=audio.language;field('voice-volume').value=audio.volume;field('effect-volume').value=audio.effectVolume;
   function selection(){return rows.find(row=>row.id===list.value);}
-  function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value);field('play-voice').disabled=!clip;field('voice-availability').textContent=row?clip?'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices';}
+  function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value,row.exactResource);field('play-voice').disabled=!clip;field('voice-availability').textContent=row?clip?'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices';}
   function refresh(){const previous=list.value;levelLabel.hidden=sourceNote.hidden=sourceSound.hidden=field('voice-scope').value!=='hot-spring';if(selectedGroup()?.hotSpringLevel!==undefined)level.value=String(selectedGroup().hotSpringLevel);rows=voiceCatalog(library,[{...presentation,hotSpringLevel:Number(level.value)||1}],field('voice-scope').value,field('voice-search').value);list.replaceChildren();
-    for(const row of rows){const option=new Option(`${row.label}${audio.resolve(row.resourceName,language.value)?'':' · Missing track'}`,row.id);list.append(option);}
-    if(rows.some(row=>row.id===previous))list.value=previous;else{const first=rows.find(row=>audio.resolve(row.resourceName,language.value));if(first)list.value=first.id;}
+    for(const row of rows){const option=new Option(`${row.label}${audio.resolve(row.resourceName,language.value,row.exactResource)?'':' · Missing track'}`,row.id);list.append(option);}
+    if(rows.some(row=>row.id===previous))list.value=previous;else{const first=rows.find(row=>audio.resolve(row.resourceName,language.value,row.exactResource));if(first)list.value=first.id;}
     field('voice-count').textContent=`Voices (${rows.length})`;status();
   }
   level.onchange=()=>{const group=selectedGroup(),value=Number(level.value);if(group)editor.mutate(()=>group.hotSpringLevel=value);refresh();};
   field('voice-scope').onchange=refresh;field('voice-search').oninput=refresh;list.onchange=status;
   language.onchange=()=>{editor.mutate(()=>audio.language=language.value);refresh();};
-  field('play-voice').onclick=async()=>{try{const group=selectedGroup();await audio.play(selection(),language.value,{group:['scene','hot-spring','station'].includes(field('voice-scope').value)&&group?group.id:''});}catch(error){message(error.message);}};
+  field('play-voice').onclick=async()=>{try{const group=selectedGroup();await audio.play(selection(),language.value,{group:['scene','hot-spring','station','main-view-touch'].includes(field('voice-scope').value)&&group?group.id:''});}catch(error){message(error.message);}};
   field('stop-voice').onclick=()=>audio.stop();
   field('voice-volume').onchange=event=>editor.mutate(()=>audio.setVolume(Number(event.target.value)));
   field('effect-volume').onchange=event=>editor.mutate(()=>audio.setEffectVolume(Number(event.target.value)));

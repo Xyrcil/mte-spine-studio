@@ -14,6 +14,19 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
+def main_view_voice_catalogue(rows):
+    result = []
+    for row in rows:
+        resource = row["file_name"]
+        if row["type"] != 3 and not resource.endswith(("_Greetings_Idel_01", "_Greetings_Idel_02")):
+            continue
+        result.append({"id": str(row["id"]), "targetId": str(row["target_id"]),
+                       "type": row["type"], "resourceName": resource,
+                       "title": row["voice_title"], "text": row["voice_text"],
+                       "exactResource": True})
+    return {"schema": 1, "touchType": 3, "voices": result}
+
+
 def station_drawing_catalogue(sources, entries):
     """Retain exact station drawing references without synthesizing interactions."""
     merged = {}
@@ -330,7 +343,7 @@ def build(source, output):
     characters = [{"id": key, "name": name} for key, name in names.items()]
     runtime_entries = json.loads((output / "runtime-index.json").read_text())["entries"]
     station_drawings = station_drawing_catalogue([(origin, records(root / "a_station_drawing.json")) for origin, root in zip(("legacy", "archive"), roots)], runtime_entries)
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "mainViewVoices": main_view_voice_catalogue(voices.values()), "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 
