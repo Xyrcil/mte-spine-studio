@@ -373,6 +373,9 @@ resets the preview to its initial pose without retaining a frozen mix chain.
 Selections during playback keep the source mixing settings. Extracted static portraits can be
 viewed, played alongside voices and composed with animated artwork. Scenes
 reference catalog portraits rather than embedding copies of game images.
+Story CG previews do not yet reproduce the client's event-driven entrance-to-idle
+transitions, temporary playback-speed changes, or `nextState` and `shake` commands.
+These remain separate from ordinary Spine animation previews.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,

@@ -36,6 +36,7 @@ try{
   for(const bundle of [...new Set(result.entries.map(entry=>entry.bundle))]){
     await selectAsset(page,bundle);await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     const unavailable=await page.evaluate(()=>window.mteStudio.groups[0].effects.some(effect=>effect.reason));
+    if(bundle.startsWith('Spines/painting/'))assert.equal(unavailable,false,`Original character particle effects are not rendered: ${bundle}`);
     if(unavailable)assert.match(await page.locator('#details').textContent(),/Additional effects unavailable:/);
     else assert.doesNotMatch(await page.locator('#details').textContent(),/Additional effects unavailable:/);
   }
