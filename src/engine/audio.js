@@ -56,13 +56,18 @@ export class AudioBus extends EventTarget {
     element.effectName=name;element.effectCategory=category;element.effectTime=time;element.effectGroup=group;element.preload='none';
     element.addEventListener('loadedmetadata',()=>{if(time>0&&this.effects.has(element))element.currentTime=Math.min(time,element.duration);},{once:true});
     element.addEventListener('ended',()=>this.releaseEffect(element),{once:true});
-    try{if(autoplay)await element.play();}catch(error){this.releaseEffect(element);throw error;}
+    element.addEventListener('error',()=>{if(!element.error||!this.effects.has(element))return;this.releaseEffect(element);this.dispatchEvent(new CustomEvent('audio-error',{detail:`Effect playback failed: ${name}`}));});
+    if(autoplay)await this.startEffect(element);
     return element;
   }
-  releaseEffect(element){element.pause();element.removeAttribute('src');element.load();this.effects.delete(element);}
+  async startEffect(element){
+    try{await element.play();return this.effects.has(element);}
+    catch(error){if(!this.effects.has(element)||this.paused&&error.name==='AbortError')return false;if(error.name!=='NotAllowedError')this.releaseEffect(element);throw error;}
+  }
+  releaseEffect(element){if(!this.effects.delete(element))return;element.pause();element.removeAttribute('src');element.load();}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
   pause() {const voiceWasPlaying=this.currentVoice&&!this.element.paused;this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();if(voiceWasPlaying)this.dispatchEvent(new CustomEvent('voice-state'));}
-  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>effect.play()),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
+  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>this.startEffect(effect)),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}
