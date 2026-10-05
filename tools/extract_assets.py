@@ -41,6 +41,22 @@ def precise_references(value):
     return value
 
 
+def astc_mip_layout(width, height, count, texture_format):
+    if not all(isinstance(value, int) and value > 0 for value in (width, height, count)) or count > max(width, height).bit_length():
+        raise ValueError("Invalid source mip dimensions")
+    blocks = {48: 4, 49: 5, 50: 6, 51: 8, 52: 10, 53: 12, 54: 4, 55: 5, 56: 6, 57: 8, 58: 10, 59: 12}
+    block = blocks.get(texture_format)
+    if block is None:
+        raise ValueError("Source mip texture format is not supported")
+    result, offset = [], 0
+    for level in range(count):
+        size = ((width + block - 1) // block) * ((height + block - 1) // block) * 16
+        result.append((level, width, height, offset, size))
+        offset += size
+        width, height = max(1, width // 2), max(1, height // 2)
+    return result
+
+
 def binary_strings(data: bytes):
     offset = 0
     result = []
@@ -150,6 +166,24 @@ class BundleExtractor:
         texture = self.resolve(material, envs["_MainTex"]["m_Texture"])
         return texture.read(), tree
 
+    def texture_mips(self, reader, texture, destination):
+        count = self.tree(reader).get("m_MipCount", 1)
+        if count == 1:
+            return {"mipCount": 1, "mips": []}
+        from UnityPy.export.Texture2DConverter import parse_image_data
+        from UnityPy.enums import BuildTarget
+        layout = astc_mip_layout(texture.m_Width, texture.m_Height, count, texture.m_TextureFormat)
+        data = texture.get_image_data()
+        if len(data) != sum(row[4] for row in layout) or getattr(texture, "m_ImageCount", 1) != 1 or getattr(texture, "m_PlatformBlob", None):
+            raise ValueError("Source mip texture layout is not supported")
+        mips = []
+        for level, width, height, offset, size in layout[1:]:
+            image = parse_image_data(data[offset:offset + size], width, height, texture.m_TextureFormat, getattr(reader, "version", (0, 0, 0, 0)), getattr(reader, "platform", BuildTarget.UnknownPlatform))
+            path = destination.with_name(destination.stem + f".mip-{level}.png")
+            image.save(path)
+            mips.append({"level": level, "width": width, "height": height, "path": path.relative_to(self.output).as_posix()})
+        return {"mipCount": count, "mips": mips}
+
     def effect_texture(self, owner, pointer):
         reader = self.resolve(owner, pointer)
         key = (id(reader.assets_file), reader.path_id)
@@ -160,7 +194,7 @@ class BundleExtractor:
         destination.parent.mkdir(parents=True, exist_ok=True)
         texture.image.save(destination)
         tree = self.tree(reader)
-        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace")}
+        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace"), **self.texture_mips(reader, texture, destination)}
         self.effect_textures[key] = result
         return result
 
@@ -191,7 +225,7 @@ class BundleExtractor:
         destination.parent.mkdir(parents=True, exist_ok=True)
         texture.image.save(destination)
         tree = self.tree(reader)
-        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace")}
+        result = {"id": str(reader.path_id), "path": destination.relative_to(self.output).as_posix(), "width": texture.m_Width, "height": texture.m_Height, "settings": tree.get("m_TextureSettings"), "colorSpace": tree.get("m_ColorSpace"), **self.texture_mips(reader, texture, destination)}
         self.skeleton_textures[key] = result
         return result
 

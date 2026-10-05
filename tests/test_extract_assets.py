@@ -6,11 +6,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import unittest
-from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key, sprite_content_rect
+from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key, sprite_content_rect, astc_mip_layout
 from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_astc_source_mips_use_compressed_block_offsets_not_resized_base_images(self):
+        self.assertEqual(astc_mip_layout(16, 8, 5, 51), [(0, 16, 8, 0, 32), (1, 8, 4, 32, 16), (2, 4, 2, 48, 16), (3, 2, 1, 64, 16), (4, 1, 1, 80, 16)])
+        self.assertEqual(astc_mip_layout(9, 7, 1, 49), [(0, 9, 7, 0, 64)])
+        for args in [(0, 8, 1, 51), (8, 8, 5, 51), (8, 8, 0, 51), (8, 8, 1, 4)]:
+            with self.assertRaises(ValueError):
+                astc_mip_layout(*args)
+
     def test_unity_text_fonts_resolve_external_pointers_before_export(self):
         assets_file = SimpleNamespace(name="text-file")
         reader = SimpleNamespace(path_id=1, assets_file=assets_file, type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: {"m_FontData": {"m_Font": {"m_FileID": 2, "m_PathID": -99}}})
