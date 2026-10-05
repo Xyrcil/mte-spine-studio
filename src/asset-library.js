@@ -20,6 +20,7 @@ export function queryAssetLibrary(rows,{search='',character='',category='',colle
 
 export function createAssetLibrary(catalog,library,{select,selectPortrait,showUnavailable,isBusy,base=''}){
   const rows=buildAssetLibrary(catalog,library),container=document.querySelector('#assets'),search=document.querySelector('#search'),category=document.querySelector('#category');
+  container.addEventListener('mousedown',event=>{if(event.button===0&&matchMedia('(max-width:540px)').matches&&document.activeElement===search&&event.target.closest('.asset,.asset-favorite'))event.preventDefault();});
   const controls=document.createElement('section');controls.className='library-controls';controls.innerHTML='<label>Character<select id="library-character"><option value="">All characters</option><option value="unassigned">Unassigned artwork</option></select></label><label>Collection<select id="library-collection"><option value="">All artwork</option><option value="favorites">Favorites</option><option value="recent">Recently opened</option></select></label><p id="library-count" role="status"></p>';
   category.after(controls);const character=controls.querySelector('#library-character'),collection=controls.querySelector('#library-collection'),count=controls.querySelector('#library-count');
   const characters=new Map();for(const row of rows)if(row.characterId){const group=characters.get(row.characterId)||{name:row.characterName,count:0};group.count++;characters.set(row.characterId,group);}

@@ -98,7 +98,7 @@ function select(presentation){return loadAsset(presentation.id,signal=>stage.add
 function voicePanel(presentation) {
   createVoicePanel(presentation,libraryData,audio,editor,message);
 }
-document.querySelector('#library-toggle').onclick=event=>{if(editor.busy||view==='export')return;const open=document.body.classList.toggle('library-open');event.target.setAttribute('aria-expanded',String(open));if(open){document.body.classList.remove('inspector-open');document.querySelector('#editor-toggle').setAttribute('aria-expanded','false');document.querySelector('#search').focus();}};
+document.querySelector('#library-toggle').onclick=event=>{if(editor.busy||view==='export')return;const open=document.body.classList.toggle('library-open');event.target.setAttribute('aria-expanded',String(open));if(open){document.body.classList.remove('inspector-open');document.querySelector('#editor-toggle').setAttribute('aria-expanded','false');if(!matchMedia('(max-width:540px)').matches||event.detail===0)document.querySelector('#search').focus();}};
 document.querySelector('#editor-toggle').onclick=event=>{closeLibrary();event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('library-open')){closeLibrary();document.querySelector('#library-toggle').focus();}});
 document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};

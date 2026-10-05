@@ -3,7 +3,7 @@ import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
 const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
-  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const page=await browser.newPage({viewport:{width:1440,height:1000},hasTouch:true}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteLibrary&&window.mteStudio?.groups.length);
   const total=await page.evaluate(()=>window.mteLibrary.rows.length);assert.equal(await page.locator('#library-count').textContent(),`${total} artwork entries`);assert.equal(await page.locator('.asset').count(),24);
   const seen=new Set();while(true){for(const key of await page.locator('.asset').evaluateAll(nodes=>nodes.map(n=>n.dataset.libraryKey)))seen.add(key);if(await page.getByRole('button',{name:'Next',exact:true}).isDisabled())break;await page.getByRole('button',{name:'Next',exact:true}).click();}assert.equal(seen.size,total);
@@ -35,7 +35,9 @@ try{
   await page.locator('#search').fill('');await page.locator('#library-character').selectOption('unassigned');assert.ok(await page.locator('.asset').count()>0);
   await page.screenshot({path:'private/browser-library.png'});
   await page.setViewportSize({width:390,height:844});assert.ok((await page.locator('.workspace').boundingBox()).width>=390);assert.equal(await page.locator('.library').isVisible(),false);
-  await page.getByRole('button',{name:'Library',exact:true}).click();assert.equal(await page.locator('.library').isVisible(),true);assert.equal(await page.locator('#search').evaluate(node=>node===document.activeElement),true);await page.screenshot({path:'private/browser-library-mobile.png'});
+  await page.getByRole('button',{name:'Library',exact:true}).click();assert.equal(await page.locator('.library').isVisible(),true);assert.equal(await page.locator('#search').evaluate(node=>node===document.activeElement),false);await page.screenshot({path:'private/browser-library-mobile.png'});
+  await page.keyboard.press('Escape');await page.locator('#library-toggle').focus();await page.keyboard.press('Enter');assert.equal(await page.locator('#search').evaluate(node=>node===document.activeElement),true);
+  const touchKey=await page.evaluate(()=>window.mteLibrary.reveal('Spines/painting/3014027_spine'));await page.locator(`[data-library-key="${touchKey}"]`).tap();await page.waitForFunction(()=>!document.body.classList.contains('library-open')&&window.mteStudio.groups[0]?.presentation.id==='Spines/painting/3014027_spine');
   await page.keyboard.press('Escape');assert.equal(await page.locator('.library').isVisible(),false);await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>!document.body.classList.contains('library-open')&&window.mteStudio.groups[0]?.presentation.id==='Spines/painting/3014027_spine');assert.equal(await page.locator('#library-toggle').getAttribute('aria-expanded'),'false');assert.equal(await page.evaluate(()=>document.activeElement.id),'stage');
   await page.setViewportSize({width:1440,height:1000});await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>!window.mteEditor.busy&&window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');await page.evaluate(()=>window.mteHost.pause());
   const sourceCamera=await page.evaluate(()=>({...window.mteStudio.camera}));assert.ok(sourceCamera.width<25&&sourceCamera.height<25,'Gallery fit includes offstage geometry');assert.equal(await page.locator('#source-preview').isEnabled(),true);assert.match(await page.locator('#details').textContent(),/Archive-client preview configuration/);
