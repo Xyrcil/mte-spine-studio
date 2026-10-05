@@ -2,17 +2,21 @@ import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
 const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
+const webgl2Only=process.argv.includes('--webgl2');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  if(webgl2Only)await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return ['webgl','experimental-webgl'].includes(type)?null:original.call(this,type,...args);};});
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteHost?.getState().ready);
+  if(webgl2Only)assert.match(await page.evaluate(()=>window.mteStudio.gl.getParameter(window.mteStudio.gl.VERSION)),/WebGL 2/);
   await page.screenshot({path:'private/browser-first.png'});await page.getByRole('button',{name:'Studio',exact:true}).click();
   await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups.length===2&&!window.mteEditor.busy);
   await page.screenshot({path:'private/browser-multi.png'});await page.evaluate(()=>window.mteHost.pause());
   const original=await page.evaluate(()=>window.mteHost.getScene()),target='Spines/painting/301301101_spine',pattern='**/assets/spines/painting/301301101_spine/**';
-  await page.evaluate(()=>{const gl=window.mteStudio.gl,create=gl.createTexture.bind(gl),remove=gl.deleteTexture.bind(gl);window.loadingTextures=new Set();gl.createTexture=()=>{const texture=create();window.loadingTextures.add(texture);return texture;};gl.deleteTexture=texture=>{window.loadingTextures.delete(texture);remove(texture);};});
-  for(const mode of ['cancel','workspace','replace']){
+  await page.evaluate(()=>{const gl=window.mteStudio.gl,create=gl.createTexture.bind(gl),remove=gl.deleteTexture.bind(gl);window.loadingTextures=new Set();gl.canvas.addEventListener('webglcontextlost',()=>window.loadingTextures.clear());gl.createTexture=()=>{const texture=create();window.loadingTextures.add(texture);return texture;};gl.deleteTexture=texture=>{window.loadingTextures.delete(texture);remove(texture);};});
+  for(const mode of ['cancel','workspace','context-loss','replace']){
     let release;const waiting=new Promise(resolve=>release=resolve);
-    await page.route(pattern,async route=>{await waiting;await route.continue();});
+    const requestPattern=mode==='context-loss'?pattern.replace('/**','/**/skeleton.skel'):pattern;
+    await page.route(requestPattern,async route=>{await waiting;await route.continue().catch(()=>{});});
     try{
       await selectAsset(page,target);await page.waitForFunction(()=>window.mteStudio.assetLoadBusy&&window.mteStudio.activeLoads>0);
       assert.equal(await page.evaluate(()=>window.mteHost.getState().busy),true);assert.equal(await page.locator('#cancel-asset-load').isVisible(),true);assert.equal(await page.locator('#layers').evaluate(node=>node.inert),true);
@@ -20,16 +24,26 @@ try{
       assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),original);
       if(mode==='cancel')await page.locator('#cancel-asset-load').click();
       if(mode==='workspace')await page.getByRole('button',{name:'Export',exact:true}).click();
+      if(mode==='context-loss'){
+        await page.waitForFunction(()=>window.loadingTextures.size>0);
+        await page.evaluate(()=>{window.loadingLossExtension=window.mteStudio.gl.getExtension('WEBGL_lose_context');if(!window.loadingLossExtension)throw new Error('Context loss test extension unavailable');window.loadingLossExtension.loseContext();});
+        await page.waitForFunction(()=>window.mteStudio.contextLost&&window.mteStudio.activeLoads===0);
+        assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),original);
+        await page.evaluate(()=>window.loadingLossExtension.restoreContext());
+        await page.waitForFunction(()=>!window.mteStudio.recoveryPending&&!window.mteStudio.assetLoadBusy);
+        assert.equal(await page.evaluate(()=>window.mteStudio.gl.getError()),0);
+      }
       if(mode==='replace'){
         await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>!window.mteStudio.assetLoadBusy&&window.mteStudio.groups.length===3);
       }
       release();await page.waitForFunction(()=>window.mteStudio.activeLoads===0&&!window.mteStudio.assetLoadBusy);
-      if(mode!=='replace'){await page.waitForTimeout(500);assert.equal(await page.evaluate(()=>window.loadingTextures.size),0,'Cancelled loading left a live texture');}
+      if(mode==='context-loss'){const count=await page.evaluate(()=>window.loadingTextures.size);await page.waitForTimeout(500);assert.equal(await page.evaluate(()=>window.loadingTextures.size),count,'Obsolete request allocated a late texture after recovery');assert.equal(await page.evaluate(()=>window.mteStudio.gl.getError()),0);}
+      else if(mode!=='replace'){await page.waitForTimeout(500);assert.equal(await page.evaluate(()=>window.loadingTextures.size),0,'Cancelled loading left a live texture');}
       assert.equal(await page.locator('#cancel-asset-load').isVisible(),false);
       if(mode!=='replace')assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),original);
       else{assert.equal(await page.evaluate(()=>window.mteStudio.groups.at(-1).presentation.id),'Spines/painting/3014027_spine');assert.equal(await page.evaluate(()=>window.mteStudio.groups.some(group=>group.presentation.id==='Spines/painting/301301101_spine')),false);}
       if(mode==='workspace')await page.getByRole('button',{name:'Studio',exact:true}).click();
-    }finally{release();await page.unroute(pattern);}
+    }finally{release();await page.unroute(requestPattern);}
   }
   const beforeFailure=await page.evaluate(()=>window.mteHost.getScene());await page.route(pattern,route=>route.abort());
   await selectAsset(page,target);await page.waitForFunction(()=>!window.mteStudio.assetLoadBusy&&window.mteStudio.activeLoads===0);assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),beforeFailure);assert.equal(await page.evaluate(()=>window.mteHost.getState().busy),false);assert.equal(await page.locator('#cancel-asset-load').isVisible(),false);
@@ -48,5 +62,5 @@ try{
   }finally{releasePortrait();await page.unroute(portraitPattern);}
   await selectAsset(page,portrait);await page.waitForFunction(()=>window.mteStudio.groups.at(-1)?.appearanceId==='3013001'&&!window.mteStudio.assetLoadBusy);
   assert.deepEqual(errors,[]);
-  console.log(engine+': real asset loading checks passed: Gallery/Studio, busy host, detached preparation, cancellation, workspace switch, replacement, failed request, portrait cancellation and retry');
+  console.log(engine+': real asset loading checks passed: Gallery/Studio, busy host, detached preparation, cancellation, workspace switch, context loss during partial loading, replacement, failed request, portrait cancellation and retry');
 }finally{await close();}
