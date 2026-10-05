@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
 const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
+const webgl2Only=process.argv.includes('--webgl2');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000},hasTouch:true}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
+  if(webgl2Only)await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return ['webgl','experimental-webgl'].includes(type)?null:original.call(this,type,...args);};});
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
+  if(webgl2Only)assert.match(await page.evaluate(()=>window.mteStudio.gl.getParameter(window.mteStudio.gl.VERSION)),/WebGL 2/);
   await page.evaluate(()=>{window.gestureClicks=0;window.mteStudio.addEventListener('interaction-invoked',()=>window.gestureClicks++);window.mteStudio.paused=true;});
   const box=await page.locator('#stage').boundingBox(),point={x:box.x+box.width*.7,y:box.y+box.height*.4};
   const camera=()=>page.evaluate(()=>({...window.mteStudio.camera}));

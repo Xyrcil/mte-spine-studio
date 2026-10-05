@@ -386,6 +386,9 @@ VP9 and uses VP8 when only that encoder is available. Unsupported video or
 audio configurations explain the alternatives; image sequences do not require
 video encoders. A failed initial WebGL setup leaves a visible graphics error
 instead of an indefinitely loading canvas.
+Rendering uses WebGL 1 when available and falls back to WebGL 2 on browsers
+that expose only that context. This keeps the same artwork renderer and export
+features; it does not substitute a static preview.
 Character and story voices can be selected for export. Optional burned-in
 subtitles retain the source line, wrap to fit the output and follow the selected
 voice's offset, duration, speed and repeat settings. They use whole-line timing,

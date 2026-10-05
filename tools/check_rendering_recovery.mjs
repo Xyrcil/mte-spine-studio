@@ -2,9 +2,12 @@ import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from '@playwright/test';
 const browser=await chromium.launch({channel:'chrome',headless:true});
+const webgl2Only=process.argv.includes('--webgl2');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  if(webgl2Only)await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return ['webgl','experimental-webgl'].includes(type)?null:original.call(this,type,...args);};});
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
+  if(webgl2Only)assert.match(await page.evaluate(()=>window.mteStudio.gl.getParameter(window.mteStudio.gl.VERSION)),/WebGL 2/);
   await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619402_spine');await page.getByRole('button',{name:'Pause',exact:true}).click();
   await page.getByRole('button',{name:'Studio',exact:true}).click();await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>window.mteStudio.groups.length===2);
   await page.evaluate(async()=>{const stage=window.mteStudio,canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;const ctx=canvas.getContext('2d');ctx.fillStyle='#28384c';ctx.fillRect(0,0,16,16);await stage.addImage(canvas.toDataURL(),'Recovery background');const root=stage.groups.find(group=>group.presentation?.id==='Spines/painting/301619402_spine').controllers[0];root.click(root.hotspots.find(hit=>hit.name==='HitArea_anim_anim2'));stage.evaluate(.15);stage.fit();window.mteEditor.changed();await window.mteAudio.play({resourceName:'Voice_3014027_Login'},'a_sound_voiceeff_ch',{group:stage.groups.at(-1).id});});

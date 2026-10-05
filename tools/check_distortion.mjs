@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
 const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
+const webgl2Only=process.argv.includes('--webgl2');
 try{
   const page=await browser.newPage({viewport:{width:1200,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  if(webgl2Only)await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return ['webgl','experimental-webgl'].includes(type)?null:original.call(this,type,...args);};});
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);await page.evaluate(()=>window.mteHost.pause());
-  const sampling=await page.evaluate(async()=>{
+  if(webgl2Only)assert.match(await page.evaluate(()=>window.mteStudio.gl.getParameter(window.mteStudio.gl.VERSION)),/WebGL 2/);
+  const sampling=await page.evaluate(async webgl2Only=>{
     const {DistortionRenderer}=await import('/src/engine/distortion-renderer.js'),{sampleDistortedTexel}=await import('/src/engine/material-distortion.js');
-    const canvas=document.createElement('canvas');canvas.width=8;canvas.height=8;const gl=canvas.getContext('webgl',{antialias:false,preserveDrawingBuffer:true}),renderer=new window.spine.webgl.SceneRenderer(canvas,gl,false),effect=new DistortionRenderer(gl),textures=new Map(),pixels=new Map(),results=[];
+    const canvas=document.createElement('canvas');canvas.width=8;canvas.height=8;const gl=canvas.getContext(webgl2Only?'webgl2':'webgl',{antialias:false,preserveDrawingBuffer:true}),renderer=new window.spine.webgl.SceneRenderer(canvas,gl,false),effect=new DistortionRenderer(gl),textures=new Map(),pixels=new Map(),results=[];
     const create=(name,index)=>{const data=new Uint8Array(8*8*4);for(let y=0;y<8;y++)for(let x=0;x<8;x++){const offset=(y*8+x)*4;data.set([(x*37+y*9+index*17)%256,(x*11+y*31+index*19)%256,(x*13+y*7)%256,255],offset);}pixels.set(name,data);const object=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,object);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,8,8,0,gl.RGBA,gl.UNSIGNED_BYTE,data);for(const parameter of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,parameter,gl.NEAREST);for(const parameter of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,parameter,gl.CLAMP_TO_EDGE);textures.set(name,{bind(unit){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,object);},object});};
     for(const [index,name] of ['_MainTex','_FlowMap','_NoiseTex','_MaskTex'].entries())create(name,index);
     const metadata=Object.fromEntries(['_FlowMap','_NoiseTex','_MaskTex'].map(name=>[name,{path:name,settings:{m_FilterMode:0,m_WrapU:0,m_WrapV:0}}]));
@@ -30,7 +33,7 @@ try{
         results.push({originalMipLevel:level,filter:mode,maximum,glError:gl.getError()});
       }
     }finally{effect.dispose();renderer.dispose();for(const texture of textures.values())if(texture.object)gl.deleteTexture(texture.object);gl.getExtension('WEBGL_lose_context')?.loseContext();}return results;
-  });
+  },webgl2Only);
   for(const row of sampling){assert.ok(row.maximum<=1,JSON.stringify(row));assert.equal(row.glError,0);}console.log(engine+': GPU sampling matches independent coordinate reference',sampling);
   const results=[];
   for(const id of ['3016188','3014009','3013012']){
@@ -81,7 +84,7 @@ try{
   },engine);
   for(const row of exports.rows){assert.equal(row.sequenceError,0,JSON.stringify(row));assert.equal(row.loopError,0,JSON.stringify(row));assert.ok(row.videoRms<12,JSON.stringify(row));assert.equal(row.decoded,row.frames);assert.equal(row.sceneUnchanged,true);}assert.equal(exports.cancelled,true);assert.equal(exports.sceneUnchanged,true);assert.deepEqual(errors,[]);console.log(engine+': Distorted sequence and decoded video preserve loops, speed, crop, multiplier, background and live scene',exports);
   const unavailable=await page.evaluate(async()=>{
-    const {Stage}=await import('/src/engine/stage.js'),{exportMedia}=await import('/src/engine/export.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,prototype=WebGLRenderingContext.prototype,original=prototype.getExtension;
+    const {Stage}=await import('/src/engine/stage.js'),{exportMedia}=await import('/src/engine/export.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,prototype=Object.getPrototypeOf(window.mteStudio.gl),original=prototype.getExtension;
     prototype.getExtension=function(name){return name.includes('texture_filter_anisotropic')?null:original.call(this,name);};let stage;
     try{const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;stage=new Stage(canvas,{manual:true});const presentation=catalog.find(row=>row.id==='Spines/painting/3014009_spine'),group=await stage.add(presentation,entries);stage.evaluate(.5);stage.draw();const limitations=group.layers.flatMap(layer=>layer.materialLimitations||[]),output=await exportMedia({scene:stage.snapshot(),catalog,entries,imageAssets:stage.imageAssets,sourceAspect:4/3,settings:{format:'png',width:160,height:120,fps:8,speed:1,start:0,end:.5,loops:1,loopMode:'repeat',background:stage.background,fit:'contain',crop:{x:0,y:0,width:1,height:1}}});return {limitations,warnings:output.warnings,glError:stage.gl.getError(),bytes:output.blob.size};}
     finally{stage?.dispose();prototype.getExtension=original;}
