@@ -27,7 +27,8 @@ export class Stage extends EventTarget {
     super();
     this.canvas = canvas;
     this.options=options;
-    this.gl = canvas.getContext('webgl', {alpha:true, antialias:true, preserveDrawingBuffer:true});
+    const contextOptions={alpha:true, antialias:true, preserveDrawingBuffer:true};
+    this.gl = canvas.getContext('webgl',contextOptions)||canvas.getContext('webgl2',contextOptions);
     if (!this.gl) throw new Error('WebGL is unavailable');
     this.renderer = new (s().webgl.SceneRenderer)(canvas, this.gl);
     this.groups = [];
