@@ -32,3 +32,34 @@ test('original renderer metadata covers every extracted bundle and retains mixed
   const instances=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations.find(p=>p.id==='Spines/painting/3016009_spine').instances;
   assert.deepEqual(Object.fromEntries(instances.map(instance=>[instance.name,instance.renderQueue])),{role2:3003,fg1:3004,fg2:3005,bg1:3000,role1:3002});
 });
+test('station drawing catalogue preserves exact assets, source pairs and template colliders',t=>{
+  if(!fs.existsSync('public/assets/library.json')){t.skip('Local game resources are not installed');return;}
+  const catalogue=JSON.parse(fs.readFileSync('public/assets/library.json')).stationDrawings;
+  if(!catalogue){t.skip('Local resource catalogue predates station drawing metadata');return;}
+  const entries=JSON.parse(fs.readFileSync('public/assets/runtime-index.json')).entries;
+  assert.equal(catalogue.schema,1);assert.equal(catalogue.drawings.length,93);
+  assert.equal(new Set(catalogue.drawings.map(row=>row.id)).size,93);
+  const interactive=catalogue.drawings.filter(row=>row.pairs.length);
+  assert.equal(interactive.length,5);
+  for(const row of catalogue.drawings){
+    const entry=entries.find(entry=>entry.id===row.skeleton?.id&&entry.bundle===row.skeleton?.bundle);
+    assert.ok(entry);assert.equal(entry.name,row.resource+'_SkeletonData');
+    assert.equal(entry.bundle.toLowerCase(),('Spines/story/'+row.resource.replace('ui_jq_lihui_','')).toLowerCase());
+    assert.equal(row.interactionStatus,row.pairs.length?'configured':'not-configured');
+    assert.deepEqual(row.warnings,[]);assert.deepEqual(row.missingAnimations,[]);
+    const names=new Set(entry.animations.map(animation=>animation.name));
+    assert.ok(names.has('stand'));if(row.defaultExpression)assert.ok(names.has(row.defaultExpression));
+    for(const pair of row.pairs){assert.ok(names.has(pair.action));assert.ok(names.has(pair.expression));}
+  }
+  const presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations;
+  const template=presentations.find(row=>row.id===catalogue.template);
+  const receiver=template.nativeBehaviours.find(row=>row.class==='StationDrawingAnim');
+  assert.ok(receiver);assert.equal(receiver.data.id,0);assert.equal(receiver.data.m_Enabled,1);
+  assert.equal(template.instances.length,0);assert.equal(template.unassignedInstances.length,1);
+  assert.equal(template.unassignedInstances[0].gameObject,receiver.gameObject);
+  assert.equal(template.unassignedInstances[0].transform,receiver.transform);
+  const raw=JSON.parse(fs.readFileSync('public/assets/'+template.path+'/hierarchy.json'));
+  assert.deepEqual(receiver.colliders,raw.filter(row=>row.type.endsWith('Collider2D')&&String(row.data.m_GameObject.m_PathID)===receiver.gameObject).map(({id,type,data})=>({id,type,data})));
+  assert.equal(receiver.colliders.length,1);assert.equal(receiver.colliders[0].type,'BoxCollider2D');
+  assert.ok(presentations.filter(row=>row.id!==catalogue.template).every(row=>!row.nativeBehaviours.some(receiver=>receiver.class==='StationDrawingAnim')));
+});

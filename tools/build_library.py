@@ -14,6 +14,51 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
+def station_drawing_catalogue(sources, entries):
+    """Retain exact station drawing references without synthesizing interactions."""
+    merged = {}
+    for origin, rows in sources:
+        for row in rows:
+            merged[str(row["id"])] = (origin, row)
+    by_name = {}
+    for entry in entries:
+        by_name.setdefault(entry.get("name"), []).append(entry)
+    drawings = []
+    for identifier, (origin, row) in merged.items():
+        resource = row.get("drawing") or ""
+        matches = by_name.get(resource + "_SkeletonData", []) if resource else []
+        entry = matches[0] if len(matches) == 1 else None
+        actions = (row.get("action_list") or "").split(";") if row.get("action_list") else []
+        expressions = (row.get("expression_list") or "").split(";") if row.get("expression_list") else []
+        pairs = [{"action": action, "expression": expressions[index] if index < len(expressions) else None} for index, action in enumerate(actions)]
+        warnings = []
+        if entry is None:
+            warnings.append("Ambiguous skeleton reference" if matches else "Missing skeleton reference")
+        elif entry.get("status") != "parsed":
+            warnings.append("Skeleton could not be decoded")
+        if len(actions) != len(expressions) or any(not pair["action"] or not pair["expression"] for pair in pairs):
+            warnings.append("Incomplete action and expression pairs")
+        required = ["stand"] + [value for pair in pairs for value in pair.values() if value]
+        if row.get("expression"):
+            required.append(row["expression"])
+        if actions:
+            if not row.get("expression"):
+                warnings.append("Missing default expression")
+        available = {animation["name"] for animation in entry.get("animations", [])} if entry else set()
+        missing = list(dict.fromkeys(name for name in required if name and name not in available)) if entry else []
+        if missing:
+            warnings.append("Missing configured animations")
+        drawings.append({"id": identifier, "origin": origin, "resource": resource,
+                         "type": row.get("type"), "peopleId": str(row.get("people_id") or ""),
+                         "gospelId": str(row.get("gospel_id") or ""), "skinId": str(row.get("skin_id") or ""),
+                         "defaultExpression": row.get("expression") or "", "pairs": pairs,
+                         "voiceIds": (row.get("voice_list") or "").split(";") if row.get("voice_list") else [],
+                         "skeleton": {"bundle": entry["bundle"], "id": entry["id"]} if entry else None,
+                         "missingAnimations": missing, "warnings": warnings,
+                         "interactionStatus": "unavailable" if warnings else "configured" if actions else "not-configured"})
+    return {"schema": 1, "template": "Spines/drawing", "drawings": drawings}
+
+
 def preview_stands(configs, origin):
     result = []
     for name in ("WitchCultivateStandConfig", "GospelCultivateStandConfig"):
@@ -283,7 +328,9 @@ def build(source, output):
     voice_rows = list(voice_by_id.values())
     sounds = [{"id": row["Id"], "resource": "SoundRes/" + row["FullPathName"], "name": row["SuchName"], "volume": row["Volume"], "loop": row["IsLoop"], "delay": row["Delay"]} for row in raw_sound_rows if row.get("FullPathName")]
     characters = [{"id": key, "name": name} for key, name in names.items()]
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "unresolvedV2VoiceRows": unresolved})
+    runtime_entries = json.loads((output / "runtime-index.json").read_text())["entries"]
+    station_drawings = station_drawing_catalogue([(origin, records(root / "a_station_drawing.json")) for origin, root in zip(("legacy", "archive"), roots)], runtime_entries)
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

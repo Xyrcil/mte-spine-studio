@@ -3,10 +3,50 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_station_drawings_merge_by_id_and_keep_exact_pairs_without_private_metadata(self):
+        old = {"id": 1, "drawing": "old", "action_list": "old"}
+        row = {"id": 1, "drawing": "new", "people_id": 3, "expression": "smile", "action_list": "touch;sigh", "expression_list": "happy;sad", "voice_list": "12;13", "source": "/private/account", "hash": "private"}
+        entry = {"id": "asset", "name": "new_SkeletonData", "bundle": "Spines/story/new", "status": "parsed", "animations": [{"name": name} for name in ("stand", "smile", "touch", "sigh", "happy", "sad")]}
+        result = station_drawing_catalogue([("legacy", [old]), ("archive", [row])], [entry])
+        self.assertEqual(len(result["drawings"]), 1)
+        drawing = result["drawings"][0]
+        self.assertEqual(drawing["origin"], "archive")
+        self.assertEqual(drawing["peopleId"], "3")
+        self.assertEqual(drawing["pairs"], [{"action": "touch", "expression": "happy"}, {"action": "sigh", "expression": "sad"}])
+        self.assertEqual(drawing["voiceIds"], ["12", "13"])
+        self.assertEqual(drawing["skeleton"], {"bundle": "Spines/story/new", "id": "asset"})
+        self.assertEqual(drawing["interactionStatus"], "configured")
+        self.assertEqual(drawing["missingAnimations"], [])
+        self.assertNotIn("source", drawing)
+        self.assertNotIn("hash", drawing)
+        self.assertEqual(row["source"], "/private/account")
+
+    def test_station_drawings_do_not_guess_resources_pairs_or_missing_animations(self):
+        row = {"id": 1, "drawing": "original", "expression": "smile", "action_list": "touch;sigh", "expression_list": "happy"}
+        entry = {"id": "asset", "name": "original_SkeletonData", "bundle": "Spines/story/original", "status": "parsed", "animations": [{"name": "touch"}]}
+        drawing = station_drawing_catalogue([("legacy", [row])], [entry])["drawings"][0]
+        self.assertEqual(drawing["pairs"][1]["expression"], None)
+        self.assertEqual(drawing["missingAnimations"], ["stand", "happy", "sigh", "smile"])
+        self.assertEqual(drawing["interactionStatus"], "unavailable")
+        for entries in ([{**entry, "name": "original_extra_SkeletonData"}], [entry, {**entry, "id": "other"}]):
+            unavailable = station_drawing_catalogue([("legacy", [row])], entries)["drawings"][0]
+            self.assertIsNone(unavailable["skeleton"])
+            self.assertEqual(unavailable["interactionStatus"], "unavailable")
+
+    def test_station_drawings_without_actions_stay_noninteractive_and_validate_idle(self):
+        row = {"id": 1, "drawing": "original", "expression": "smile"}
+        entry = {"id": "asset", "name": "original_SkeletonData", "bundle": "Spines/story/original", "status": "parsed", "animations": [{"name": "stand"}, {"name": "smile"}]}
+        drawing = station_drawing_catalogue([("legacy", [row])], [entry])["drawings"][0]
+        self.assertEqual(drawing["interactionStatus"], "not-configured")
+        self.assertEqual(drawing["pairs"], [])
+        broken = station_drawing_catalogue([("legacy", [row])], [{**entry, "animations": []}])["drawings"][0]
+        self.assertEqual(broken["missingAnimations"], ["stand", "smile"])
+        self.assertEqual(broken["interactionStatus"], "unavailable")
+
     def test_preview_stands_keep_authored_placement_separate_from_portrait_offsets(self):
         configs={"GospelCultivateStandConfig":{"skin":{"posSpine":{"x":.177,"y":.005,"z":-25},"scaleSpine":{"x":.185,"y":.185,"z":.185},"pos2D":{"x":99,"y":99},"Offset":1.1},"empty":{},"zero":{"posSpine":{"x":0,"y":0},"scaleSpine":{"x":0,"y":0}}}}
         rows=preview_stands(configs,"archive")
