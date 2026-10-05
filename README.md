@@ -28,7 +28,11 @@ Development still reads the local assets folder.
 
 ## Website deployment
 
-Confirm permission to distribute the included Spine runtime before publishing.
+Confirm the applicable Spine runtime integration and distribution rights before
+publishing. The [official agreement, Section 2](https://esotericsoftware.com/spine-editor-license)
+sets conditions for integrating, modifying and distributing the runtime,
+including licensing at the time of integration. Keeping the notices or omitting
+game assets does not by itself establish those rights.
 In the repository's **Settings → Pages**, choose **GitHub Actions** as the build
 source, then run **Deploy website** from the **Actions** tab. Deployment is manual;
 commits do not publish automatically. The workflow tests the code, builds `dist/`
