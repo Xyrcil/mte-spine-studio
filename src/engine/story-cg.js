@@ -57,6 +57,10 @@ export class StoryCgRoot {
   activeLayers(){return this.layers.filter(layer=>layer.active&&this.group.isActiveTransform(layer.instance.transform));}
   rebuildCommands(){const active=this.activeLayers();this.hotspots=Object.entries(commands).filter(([,name])=>active.length&&active.every(layer=>layer.skeleton.data.findAnimation(name)&&layer.skeleton.data.findAnimation(transitions[name]))).map(([id])=>({id,name:id==='shake'?'Shake scene':'Next story state',transform:active[0].instance.transform,colliders:[]}));}
   missingAnimations(){const names=this.wq?['animation']:['start','stand'];return this.layers.filter(layer=>layer.active&&this.group.isActiveTransform(layer.instance.transform)).flatMap(layer=>names.filter(name=>!layer.skeleton.data.findAnimation(name)).map(animation=>({hit:layer.instance.name,animation})));}
+  missingTransitionEvents(){
+    if(this.wq)return [];
+    return this.activeLayers().filter(layer=>{const start=layer.skeleton.data.findAnimation('start');return start&&layer.skeleton.data.findAnimation('stand')&&!(start.timelines||[]).some(timeline=>timeline.events?.some(event=>event.stringValue==='stand'));}).map(layer=>({layer:layer.instance.name,id:layer.instance.id}));
+  }
   advance(){}
   hitAt(){return null;}
 }

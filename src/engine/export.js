@@ -85,6 +85,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(writable){fileWriter=writable.getWriter();abortWrite=()=>fileWriter.abort(new DOMException('Export cancelled','AbortError')).catch(()=>{});signal?.addEventListener('abort',abortWrite,{once:true});checkpoint(signal);}
     await session.initialize();if(head)await head.initialize();
     warnings.push(...omittedVisualWarnings(session.stage.groups,session.scene,Boolean(plan.useSequence)));
+    for(const group of session.stage.groups.filter(group=>group.visible)){const cues=(group.controllers||[]).flatMap(root=>root.missingTransitionEvents?.()||[]);if(cues.length)warnings.push(`Story CG source transition events unavailable: ${group.name} (${cues.map(row=>row.layer).join(', ')})`);}
     const effects=session.stage.groups.filter(group=>group.visible).flatMap(group=>group.effects||[]),pendingEffects=effects.filter(effect=>effect.verification);
     if(pendingEffects.length)warnings.push('Masked particle geometry and draw order still need visual verification');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason))))warnings.push('Some source material queues are mixed or unresolved; their separate draw ordering is not yet restored');

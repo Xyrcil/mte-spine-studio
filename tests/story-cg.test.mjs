@@ -39,3 +39,7 @@ test('legacy CG scenes rebuild callback speed from consumed source event strings
   root.restoreLegacy();assert.equal(calls.length,count);assert.ok(root.snapshot().layers.every(row=>row.speed===Math.fround(.7)&&row.listeners[0]==='start'));assert.equal(group.layers[0].instance.timeScale,.8);
   for(const layer of root.layers)layer.state.getCurrent=()=>({animation:{name:'stand'},getAnimationTime:()=>3});root.restoreLegacy();assert.ok(root.snapshot().layers.every(row=>row.speed===null&&!row.listeners.length));assert.equal(calls.length,count);
 });
+test('CG source cue diagnostics use event strings, not same-named events, and exclude inactive components',()=>{
+  const {root,group}=fixture();for(const layer of root.layers){const find=layer.skeleton.data.findAnimation;layer.skeleton.data.findAnimation=name=>name==='start'?{name,timelines:[{events:[{data:{name:'stand'},stringValue:''}]}]}:find(name);}
+  assert.deepEqual(root.missingTransitionEvents().map(row=>row.id),['a','b']);group.layers[0].skeleton.data.findAnimation=name=>({name,timelines:name==='start'?[{events:[{data:{name:'unrelated'},stringValue:'stand'}]}]:[]});assert.deepEqual(root.missingTransitionEvents().map(row=>row.id),['b']);assert.deepEqual(fixture(true).root.missingTransitionEvents(),[]);
+});

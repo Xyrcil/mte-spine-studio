@@ -383,7 +383,12 @@ commands use the source transitions; they are not invented canvas hit regions.
 The commands have their own Controls section and remain available during
 recording, while object edits stay locked. Replay disables the commands.
 WQ previews retain their separate animation-loop path. Story callback state is
-saved with scenes. Full playback, recovery and export verification remains pending.
+saved with scenes. Browser checks cover source callbacks, recorded commands,
+scene recovery and export. Original-client visual comparison remains pending.
+Some source entrances have an event named `stand` but no matching event string.
+The archived receiver compares that string; these layers retain the final
+`start` pose. Artwork details and exports identify the unavailable transition
+cue separately from missing animation files.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,
