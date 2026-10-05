@@ -69,7 +69,21 @@ export class History {
 }
 
 let dbPromise;
-function database(){if(!dbPromise)dbPromise=new Promise((resolve,reject)=>{const request=indexedDB.open('mte-spine-scenes',1);request.onupgradeneeded=()=>request.result.createObjectStore('scenes');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});return dbPromise;}
+function database(){
+  if(!dbPromise){
+    const opening=new Promise((resolve,reject)=>{
+      const request=indexedDB.open('mte-spine-scenes',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('scenes');
+      request.onsuccess=()=>{
+        const db=request.result,forget=()=>{if(dbPromise===pending)dbPromise=undefined;};
+        db.onversionchange=()=>{db.close();forget();};db.onclose=forget;resolve(db);
+      };
+      request.onerror=()=>reject(request.error||new Error('Scene storage could not be opened'));
+    });
+    const pending=opening.catch(error=>{if(dbPromise===pending)dbPromise=undefined;throw error;});dbPromise=pending;
+  }
+  return dbPromise;
+}
 export async function saveLocalScene(scene,key='autosave'){
   const checked=validateScene(scene),db=await database();
   return new Promise((resolve,reject)=>{const tx=db.transaction('scenes','readwrite');tx.objectStore('scenes').put(checked,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Scene save aborted'));});

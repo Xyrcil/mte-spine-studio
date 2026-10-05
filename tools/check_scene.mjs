@@ -5,6 +5,20 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
+  const storage=await page.evaluate(async()=>{
+    const factory=indexedDB,original=factory.open,connections=[],databaseName='mte-storage-check-'+crypto.randomUUID();let attempts=0,version=1;
+    factory.open=function(){attempts++;if(attempts===1){const request={error:new DOMException('Temporary storage failure','UnknownError')};queueMicrotask(()=>request.onerror());return request;}const request=original.call(this,databaseName,version);request.addEventListener('success',()=>connections.push(request.result));return request;};
+    const {saveLocalScene,loadLocalScene,listLocalScenes,deleteLocalScene}=await import('/src/engine/scene.js?storage-recovery');
+    const key='Storage recovery check',scene={schema:1,name:key,background:'#123456',camera:{x:0,y:0,width:10,height:10},speed:1,paused:true,objects:[]};let firstFailed=false;
+    try{
+      try{await listLocalScenes();}catch(error){if(error.name!=='UnknownError')throw error;firstFailed=true;}
+      await saveLocalScene(scene,key);const initial=await loadLocalScene(key);
+      await new Promise((resolve,reject)=>{const request=original.call(factory,databaseName,2);request.onsuccess=()=>{request.result.close();version=2;resolve();};request.onerror=()=>reject(request.error);});
+      const reopened=await loadLocalScene(key);connections.at(-1).close();connections.at(-1).onclose();
+      const reconnected=await loadLocalScene(key);await deleteLocalScene(key);
+      return {firstFailed,attempts,initial:JSON.stringify(initial)===JSON.stringify(scene),reopened:JSON.stringify(reopened)===JSON.stringify(scene),reconnected:JSON.stringify(reconnected)===JSON.stringify(scene),removed:!(await listLocalScenes()).includes(key)};
+    }finally{factory.open=original;for(const db of connections)db.close();await new Promise((resolve,reject)=>{const request=factory.deleteDatabase(databaseName);request.onsuccess=resolve;request.onerror=()=>reject(request.error);});}
+  });assert.deepEqual(storage,{firstFailed:true,attempts:4,initial:true,reopened:true,reconnected:true,removed:true});
   const wrongTypes=await page.evaluate(async()=>{
     const {Stage}=await import('/src/engine/stage.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const stage=new Stage(canvas,{manual:true});
     try{

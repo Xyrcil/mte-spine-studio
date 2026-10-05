@@ -65,3 +65,18 @@ test('portrait references reject traversal and do not embed asset bytes',()=>{
   const checked=validateScene(value);assert.equal(checked.objects[0].asset,'portraits/role/-123.png');assert.equal(checked.objects[0].src,undefined);
   value.objects[0].asset='portraits/../secret/1.png';assert.throws(()=>validateScene(value),/portrait asset/);
 });
+test('local scene storage retries failed opens and reconnects after connection closure',async()=>{
+  const original=globalThis.indexedDB,connections=[];let opens=0,closes=0;
+  globalThis.indexedDB={open(){const request={};opens++;queueMicrotask(()=>{
+    if(opens===1){request.error=new Error('Temporary storage failure');request.onerror();return;}
+    const db={close(){closes++;},transaction(){return {objectStore(){return {getAllKeys(){const result={result:['autosave','Saved scene']};queueMicrotask(()=>result.onsuccess());return result;}};}};}};connections.push(db);request.result=db;request.onsuccess();
+  });return request;}};
+  try{
+    const {listLocalScenes}=await import('../src/engine/scene.js?storage-recovery');
+    await assert.rejects(listLocalScenes(),/Temporary storage failure/);
+    assert.deepEqual(await listLocalScenes(),['Saved scene']);assert.equal(opens,2);
+    connections[0].onversionchange();assert.equal(closes,1);
+    assert.deepEqual(await listLocalScenes(),['Saved scene']);assert.equal(opens,3);
+    connections[1].onclose();assert.deepEqual(await listLocalScenes(),['Saved scene']);assert.equal(opens,4);
+  }finally{if(original===undefined)delete globalThis.indexedDB;else globalThis.indexedDB=original;}
+});
