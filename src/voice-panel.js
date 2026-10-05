@@ -1,4 +1,4 @@
-import {voiceCatalog,hotSpringRole} from './engine/voice-catalog.js';
+import {voiceCatalog,hotSpringRole,stationVoiceBinding} from './engine/voice-catalog.js';
 
 export function createVoicePanel(presentation,library,audio,editor,message){
   document.querySelector('#voice-panel')?.remove();document.querySelector('#hot-spring-controls')?.remove();if(!audio)return;
@@ -7,7 +7,8 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   document.querySelector('.inspector').append(panel);
   panel.querySelector('#voice-scope').append(new Option('All character voices','all'));
   const field=id=>panel.querySelector(`#${id}`),language=field('voice-language'),list=field('voice-list');let rows=[];
-  const role=hotSpringRole(library,presentation),selectedGroup=()=>{const group=editor.selected();return group&&(presentation.appearanceId?group.appearanceId===presentation.appearanceId:group.presentation?.id===presentation.id)?group:null;};
+  const role=hotSpringRole(library,presentation),selectedGroup=()=>{const group=editor.selected();return group&&(presentation.appearanceId?(group.appearanceId??group.presentation?.appearanceId)===presentation.appearanceId:group.presentation?.id===presentation.id)?group:null;};
+  const station=stationVoiceBinding(library,presentation);if(station?.voiceIds.length){field('voice-scope').append(new Option('Station voice pool','station'));const note=document.createElement('p');note.id='station-voice-note';note.textContent='This pool follows the original drawing voice IDs. Playback here is a manual preview, not an animation event.';panel.append(note);}
   if(presentation.hotSpringHouse){
     const controls=document.createElement('section'),title=document.createElement('h3');controls.id='hot-spring-controls';title.textContent='Hot spring conversation';controls.append(title);
     for(const role of presentation.hotSpringHouse.roles||[]){const label=document.createElement('label');label.textContent=library.characters.find(row=>row.id===role.id)?.name||role.id;const level=document.createElement('select');for(const pool of role.levels)level.append(new Option(`Level ${pool.level}`,String(pool.level)));const root=()=>selectedGroup()?.controllers.find(root=>root.source.id==='hot-spring');level.value=String(root()?.value.levels[role.id]||1);level.onchange=()=>editor.mutate(()=>{const controller=root();if(controller)controller.value.levels[role.id]=Number(level.value);});label.append(level);controls.append(label);}
@@ -30,7 +31,7 @@ export function createVoicePanel(presentation,library,audio,editor,message){
   level.onchange=()=>{const group=selectedGroup(),value=Number(level.value);if(group)editor.mutate(()=>group.hotSpringLevel=value);refresh();};
   field('voice-scope').onchange=refresh;field('voice-search').oninput=refresh;list.onchange=status;
   language.onchange=()=>{editor.mutate(()=>audio.language=language.value);refresh();};
-  field('play-voice').onclick=async()=>{try{const group=selectedGroup();await audio.play(selection(),language.value,{group:['scene','hot-spring'].includes(field('voice-scope').value)&&group?group.id:''});}catch(error){message(error.message);}};
+  field('play-voice').onclick=async()=>{try{const group=selectedGroup();await audio.play(selection(),language.value,{group:['scene','hot-spring','station'].includes(field('voice-scope').value)&&group?group.id:''});}catch(error){message(error.message);}};
   field('stop-voice').onclick=()=>audio.stop();
   field('voice-volume').onchange=event=>editor.mutate(()=>audio.setVolume(Number(event.target.value)));
   field('effect-volume').onchange=event=>editor.mutate(()=>audio.setEffectVolume(Number(event.target.value)));

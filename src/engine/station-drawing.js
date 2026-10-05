@@ -20,7 +20,7 @@ export function expandStationDrawings(presentations,library,entries){
     const roleId=drawing.gospelId||drawing.peopleId,appearanceId=`station-${drawing.id}`;
     const presentation={...structuredClone(template),id,path:entry.path,resourceBundle:entry.bundle,standalone:false,category:'story',instances:[bound],unassignedInstances:[],nativeBehaviours:[receiver],stationDrawing:structuredClone(drawing),appearanceId,label:[names.get(roleId),drawing.resource,'Station'].filter(Boolean).join(' · ')};
     result.push(presentation);
-    if(!library.appearances.some(row=>row.id===appearanceId))library.appearances.push({id:appearanceId,bundle:id,characterId:roleId,characterName:names.get(roleId),name:drawing.resource+' · Station',kind:'story',status:'available',spineStatus:'available',displayKind:'spine'});
+    if(!library.appearances.some(row=>row.id===appearanceId))library.appearances.push({id:appearanceId,bundle:id,characterId:roleId,characterName:names.get(roleId),name:drawing.resource+' · Station',kind:'story',status:'available',spineStatus:'available',displayKind:'spine',stationDrawingId:drawing.id});
   }
   return result;
 }

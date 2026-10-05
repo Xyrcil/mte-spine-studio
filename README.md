@@ -396,6 +396,11 @@ until the action completes, then restore both idle tracks. Drawings without
 action lists remain noninteractive. Scenes and recordings retain the choice
 stream so exports reproduce the same actions. These views appear separately
 from the raw story animation previews; actions do not imply voice playback.
+Station voice selection follows the skin's own-voice setting and the drawing's
+explicit voice IDs. Configured pools have a separate **Station voice pool**
+filter. These are manual previews; loading a drawing does not synthesize a login
+or account-specific greeting. Speech remains attached to the selected scene
+object when saved or exported.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,
