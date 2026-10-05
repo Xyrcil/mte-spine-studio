@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateScene,History} from '../src/engine/scene.js';
-import {Stage,objectTransform} from '../src/engine/stage.js';
+import {Stage,objectTransform,disposeRestoredContextResources} from '../src/engine/stage.js';
 import {InteractionRoot} from '../src/engine/interaction.js';
 const scene=()=>({schema:1,name:'Scene',camera:{x:0,y:0,width:10,height:10},background:'#191b20',speed:1,paused:true,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:1,y:2,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[{id:'body',active:true,tracks:[{index:0,name:'Idle',time:2,loop:true,timeScale:1}]}]}]});
+test('recovery disposal skips invalid pre-loss handles and restores deletion methods even on failure',()=>{
+  const valid={},stale={},deleted=[],prototype={},gl=Object.create(prototype);
+  for(const kind of ['Texture','Buffer','Shader','Program','Framebuffer','Renderbuffer']){prototype['is'+kind]=resource=>resource===valid;prototype['delete'+kind]=function(resource){assert.equal(this,gl);deleted.push([kind,resource]);};}
+  const ownDelete=function(){};gl.deleteFramebuffer=ownDelete;
+  assert.throws(()=>disposeRestoredContextResources(gl,()=>{for(const kind of ['Texture','Buffer','Shader','Program','Renderbuffer']){gl['delete'+kind](stale);gl['delete'+kind](valid);}throw new Error('Cleanup failed');}),/Cleanup failed/);
+  assert.equal(deleted.length,5);assert.ok(deleted.every(([,resource])=>resource===valid));assert.deepEqual(Object.keys(gl),['deleteFramebuffer']);assert.equal(gl.deleteFramebuffer,ownDelete);assert.equal(gl.deleteTexture,prototype.deleteTexture);
+  assert.equal(disposeRestoredContextResources(gl,()=>42),42);
+});
 test('stage retains WebGL1 when available and accepts WebGL2-only browsers',()=>{
   const previousWindow=globalThis.window,previousCancel=globalThis.cancelAnimationFrame;globalThis.window={spine:{webgl:{SceneRenderer:class{dispose(){}}}}};globalThis.cancelAnimationFrame=()=>{};
   try{for(const type of ['webgl','webgl2',null]){const calls=[],context={type},canvas=new EventTarget();canvas.getContext=(name,options)=>{calls.push(name);assert.deepEqual(options,{alpha:true,antialias:true,preserveDrawingBuffer:true});return name===type?context:null;};if(type){const stage=new Stage(canvas,{manual:true});assert.equal(stage.gl,context);assert.deepEqual(calls,type==='webgl'?['webgl']:['webgl','webgl2']);stage.dispose();}else assert.throws(()=>new Stage(canvas,{manual:true}),/WebGL is unavailable/);}}

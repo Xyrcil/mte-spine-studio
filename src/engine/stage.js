@@ -22,6 +22,20 @@ export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
 
+export function disposeRestoredContextResources(gl,dispose){
+  const replacements=[];
+  try{
+    for(const kind of ['Texture','Buffer','Shader','Program','Framebuffer','Renderbuffer']){
+      const name='delete'+kind,original=gl[name],valid=gl['is'+kind];
+      if(typeof original!=='function'||typeof valid!=='function')continue;
+      const descriptor=Object.getOwnPropertyDescriptor(gl,name);
+      gl[name]=function(resource){if(resource===null||valid.call(this,resource))return original.call(this,resource);};
+      replacements.push({name,descriptor});
+    }
+    return dispose();
+  }finally{for(const {name,descriptor} of replacements.reverse()){if(descriptor)Object.defineProperty(gl,name,descriptor);else delete gl[name];}}
+}
+
 export class Stage extends EventTarget {
   constructor(canvas,options={}) {
     super();
@@ -153,11 +167,8 @@ export class Stage extends EventTarget {
       if(!detached){this.groups.push(group);this.evaluate(0);this.fit();}
       return group;
     } catch (error) {
-      group.dialogueTypography?.dispose();
-      group.nativeTextLayer?.dispose();
-      group.maskedRenderer?.dispose();
-      group.distortionRenderer?.dispose();
-      manager.dispose();
+      const dispose=()=>this.release(group);
+      if(contextEpoch!==this.contextEpoch)disposeRestoredContextResources(this.gl,dispose);else dispose();
       throw error;
     }finally{this.activeLoads--;}
   }
@@ -287,7 +298,8 @@ export class Stage extends EventTarget {
     this.recoveryPromise=(async()=>{
       this.dispatchEvent(new CustomEvent('rendering-recovering'));
       while(this.activeLoads){await new Promise(resolve=>setTimeout(resolve,20));if(epoch!==this.contextEpoch||this.disposed)throw new Error('Rendering was interrupted during recovery');}
-      for(const group of this.groups)this.release(group);this.groups=[];this.renderer.dispose();this.renderer=new (s().webgl.SceneRenderer)(this.canvas,this.gl);
+      disposeRestoredContextResources(this.gl,()=>{for(const group of this.groups)this.release(group);this.groups=[];this.renderer.dispose();});
+      this.renderer=new (s().webgl.SceneRenderer)(this.canvas,this.gl);
       await this.restore(this.recoverySnapshot,this.recoveryInputs.presentations,this.recoveryInputs.entries);
       if(this.disposed||this.contextLost||epoch!==this.contextEpoch)throw new Error('Rendering was interrupted during recovery');
       this.previous=performance.now();this.recoveryPending=false;this.recoverySnapshot=null;this.recoveryInputs=null;if(this.camera.sourcePreview)this.resize();this.draw();this.dispatchEvent(new CustomEvent('rendering-recovered'));
@@ -419,7 +431,7 @@ export class Stage extends EventTarget {
     this.contextAbort.abort();
     this.disposed=true;this.canvas.removeEventListener('webglcontextlost',this.onContextLost);this.canvas.removeEventListener('webglcontextrestored',this.onContextRestored);
     cancelAnimationFrame(this.frame); this.resizeObserver?.disconnect();
-    for (const group of this.groups) this.release(group);
-    this.renderer.dispose();
+    const dispose=()=>{for(const group of this.groups)this.release(group);this.renderer.dispose();};
+    if(this.recoveryPending&&!this.contextLost)disposeRestoredContextResources(this.gl,dispose);else dispose();
   }
 }
