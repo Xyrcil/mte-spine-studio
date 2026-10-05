@@ -13,6 +13,13 @@ export function createEditor(stage,message,onSelection){
   const formatLabel=document.createElement('label');formatLabel.textContent='Scene file format';const fileFormat=document.createElement('select');fileFormat.id='scene-format';fileFormat.setAttribute('aria-label','Scene file format');for(const [value,title] of [['auto','Automatic (JSON or ZIP)'],['json','JSON'],['zip','ZIP (embedded images)']])fileFormat.append(new Option(title,value));formatLabel.append(fileFormat);controls.querySelector('#download-scene').parentElement.after(formatLabel);
   const cancelFile=document.createElement('button');cancelFile.id='cancel-scene-file';cancelFile.textContent='Cancel file operation';cancelFile.hidden=true;cancelFile.onclick=()=>fileController?.abort();controls.append(cancelFile);document.querySelector('#scene-file').accept='application/json,.json,application/zip,.zip';
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
+  const storyPanel=document.createElement('section');storyPanel.id='story-cg-controls';storyPanel.hidden=true;container.after(storyPanel);let storyKey='';
+  const storyBlocked=()=>busy||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired||stage.assetLoadBusy||Boolean(stage.sequencePlayer)||stage.sequenceBusy&&!stage.sequenceRecording;
+  function refreshStoryControls(){
+    const group=selected(),root=group?.controllers?.find(root=>root.source.id==='story-cg'),actions=root?.hotspots||[],key=JSON.stringify([group?.id,actions.map(action=>action.id)]);storyPanel.hidden=!actions.length;
+    if(key!==storyKey){storyKey=key;storyPanel.replaceChildren();if(actions.length){const title=document.createElement('h3');title.textContent='Story commands';storyPanel.append(title);for(const action of actions){const control=document.createElement('button');control.textContent=action.name;control.onclick=()=>{if(storyBlocked()||!stage.sequenceRecording&&!before())return;const result=stage.triggerInteraction(group.id,'story-cg',action.id);if(!result.accepted){message(result.reason);return;}stage.evaluate(0);changed();};storyPanel.append(control);}}}
+    storyPanel.inert=Boolean(storyBlocked());for(const control of storyPanel.querySelectorAll('button'))control.disabled=storyPanel.inert;
+  }
   const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
   const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
   const controlKey=node=>node?.dataset.editorKey||node?.id||node?.getAttribute('aria-label');
@@ -38,6 +45,7 @@ export function createEditor(stage,message,onSelection){
     document.querySelector('#background').value=stage.background;document.querySelector('#speed').value=stage.speed;document.querySelector('#pause').textContent=stage.paused?'Play':'Pause';const sceneName=document.querySelector('#scene-name');if(locked||active!==sceneName)sceneName.value=name;sceneName.disabled=locked;
   }
   function refresh(){
+    refreshStoryControls();
     const active=document.activeElement,owner=active?.closest('[data-editor-object]')?.dataset.editorObject,key=controlKey(active);
     if(composing===active&&owner===selectedId&&!isBusy())return;
     composing=null;
@@ -60,8 +68,6 @@ export function createEditor(stage,message,onSelection){
       if(group.kind==='spine'||group.asset){const add=document.createElement('button');add.textContent='Add character background';add.dataset.editorKey=add.textContent;add.onclick=()=>{if(isBusy())return;backgroundTarget=group.id;document.querySelector('#background-file').click();};panel.append(add);}
       if(group.kind==='image'&&!group.asset){const label=document.createElement('label');label.textContent='Background for';const select=document.createElement('select');select.setAttribute('aria-label','Background for');select.append(new Option('Scene (independent)',''));for(const owner of stage.groups.filter(row=>row.kind==='spine'||row.asset))select.append(new Option(owner.name,owner.id));select.value=group.parentId||'';select.onchange=()=>mutate(()=>stage.setBackgroundParent(group,select.value||undefined));label.append(select);panel.append(label);}
       const variants=group.layers.filter(layer=>layer.skeleton?.data.skins.length>1);
-      const story=group.controllers?.find(root=>root.source.id==='story-cg');
-      if(story?.hotspots.length){const title=document.createElement('h3');title.textContent='Story commands';panel.append(title);for(const action of story.hotspots)panel.append(button(action.name,()=>{const result=stage.triggerInteraction(group.id,story.source.id,action.id);if(!result.accepted)throw new Error(result.reason);stage.evaluate(0);}));}
       if(variants.length){const title=document.createElement('h3');title.textContent='Artwork variants';panel.append(title);for(const layer of variants){const match=/^(fg|bg|role)(\d+)$/.exec(layer.instance.name),name=match?`${{fg:'Foreground',bg:'Background',role:'Character'}[match[1]]} ${match[2]}`:layer.instance.name,label=document.createElement('label'),select=document.createElement('select');label.textContent=`${name} variant`;select.setAttribute('aria-label',label.textContent);select.dataset.variantLayer=layer.instance.id;select.append(new Option('Source default',''));for(const skin of layer.skeleton.data.skins)select.append(new Option(skin.name,skin.name));select.value=layer.skeleton.skin?.name||'';select.onchange=()=>mutate(()=>stage.setLayerSkin(group,layer.instance.id,select.value||layer.instance.skin||null));label.append(select);panel.append(label);}}
       if(group.kind==='spine'&&!group.presentation.standalone&&group.layers.some(layer=>layer.authoredActive===false)){
         const title=document.createElement('h3');title.textContent='Skeleton layers';panel.append(title);

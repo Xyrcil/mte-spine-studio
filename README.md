@@ -376,6 +376,8 @@ reference catalog portraits rather than embedding copies of game images.
 Story CG playback follows the source entrance-to-idle events and temporary
 per-skeleton speed changes. Available **Next story state** and **Shake scene**
 commands use the source transitions; they are not invented canvas hit regions.
+The commands have their own Controls section and remain available during
+recording, while object edits stay locked. Replay disables the commands.
 WQ previews retain their separate animation-loop path. Story callback state is
 saved with scenes. Full playback, recovery and export verification remains pending.
 Missing Spine bundles remain marked even when a static preview is available.
