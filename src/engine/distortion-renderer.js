@@ -1,4 +1,4 @@
-import {distortionPhases} from './material-distortion.js';
+import {distortionPhases,textureMipLevels} from './material-distortion.js';
 import {drawSkeletonSlots} from './material-order.js';
 
 const vertex=`attribute vec2 position;attribute vec4 light;attribute vec2 atlasUV;uniform mat4 projection;varying vec2 webUV;varying vec4 tint;void main(){gl_Position=projection*vec4(position,0.0,1.0);webUV=atlasUV;tint=light;}`;
@@ -31,7 +31,7 @@ void main(){
 
 export class DistortionRenderer {
   constructor(gl){
-    this.gl=gl;this.shaders=[];
+    this.gl=gl;this.shaders=[];this.uploadedMips=new WeakMap();
     try{
       for(const [kind,source] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const shader=gl.createShader(kind);this.shaders.push(shader);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error('Material distortion shader could not compile');}
       this.program=gl.createProgram();for(const shader of this.shaders)gl.attachShader(this.program,shader);gl.linkProgram(this.program);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error('Material distortion shader could not link');
@@ -40,17 +40,31 @@ export class DistortionRenderer {
       this.white=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.white);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
     }catch(error){this.dispose();throw error;}
   }
+  uploadMips(texture,metadata,getMip){
+    const levels=textureMipLevels(metadata);if(!levels.length)return false;
+    const signature=JSON.stringify(levels);if(this.uploadedMips.get(texture)===signature)return true;
+    const gl=this.gl,base=texture.getImage();if(base.width!==metadata.width||base.height!==metadata.height)throw new Error('Material distortion base texture dimensions differ from source');
+    const images=levels.map(level=>{const image=getMip?.(level)?.getImage();if(!image||image.width!==level.width||image.height!==level.height)throw new Error('Material distortion source mip image is unavailable');return image;});
+    for(let index=0;index<levels.length;index++)gl.texImage2D(gl.TEXTURE_2D,levels[index].level,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,images[index]);
+    this.uploadedMips.set(texture,signature);return true;
+  }
   prepare(renderer,profile,time,getTexture,stride){
     const gl=this.gl,u=this.uniforms,phases=distortionPhases(profile,time);gl.useProgram(this.program);
     gl.bindBuffer(gl.ARRAY_BUFFER,this.vertices);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.indices);
     for(const [name,size,offset] of [['position',2,0],['light',4,8],['atlasUV',2,24]]){const location=this.attributes[name];gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,stride*4,offset);}
     gl.uniformMatrix4fv(u.projection,false,renderer.camera.projectionView.values);gl.uniform4fv(u.mainST,profile.mainST);gl.uniform4fv(u.noiseST,profile.noiseST||[1,1,0,0]);gl.uniform4fv(u.maskST,profile.maskST||[1,1,0,0]);gl.uniform4fv(u.noiseOffsets,phases.noise);gl.uniform3fv(u.flowPhases,phases.flow);gl.uniform2fv(u.intensity,profile.intensity||[0,0]);
     gl.uniform1f(u.flowEnabled,Number(profile.flow));gl.uniform1f(u.noiseEnabled,Number(profile.noise));gl.uniform1f(u.whiteMask,Number(Boolean(profile.whiteMask)));gl.uniform1f(u.flowPower,profile.flowPower||0);gl.uniform1i(u.artwork,0);
-    for(const [name,uniform,unit] of [['_FlowMap','flowTexture',1],['_NoiseTex','noiseTexture',2],['_MaskTex','maskTexture',3]]){const result=getTexture(name);gl.activeTexture(gl.TEXTURE0+unit);if(result){const {texture,metadata}=result;texture.bind(unit);const settings=metadata.settings;gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,settings.m_WrapU===0?gl.REPEAT:gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,settings.m_WrapV===0?gl.REPEAT:gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,settings.m_FilterMode===0?gl.NEAREST:gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,settings.m_FilterMode===0?gl.NEAREST:gl.LINEAR);}else gl.bindTexture(gl.TEXTURE_2D,this.white);gl.uniform1i(u[uniform],unit);}
+    for(const [name,uniform,unit] of [['_FlowMap','flowTexture',1],['_NoiseTex','noiseTexture',2],['_MaskTex','maskTexture',3]]){
+      const result=getTexture(name);gl.activeTexture(gl.TEXTURE0+unit);
+      if(result){const {texture,metadata,getMip}=result;texture.bind(unit);const settings=metadata.settings,mips=this.uploadMips(texture,metadata,getMip);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,settings.m_WrapU===0?gl.REPEAT:gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,settings.m_WrapV===0?gl.REPEAT:gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,settings.m_FilterMode===0?(mips?gl.NEAREST_MIPMAP_NEAREST:gl.NEAREST):(mips?gl.LINEAR_MIPMAP_NEAREST:gl.LINEAR));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,settings.m_FilterMode===0?gl.NEAREST:gl.LINEAR);
+      }else gl.bindTexture(gl.TEXTURE_2D,this.white);gl.uniform1i(u[uniform],unit);
+    }
   }
   draw(renderer,group,draw,time){
     const target=renderer.skeletonRenderer,stride=target.twoColorTint?12:8,gl=this.gl,profile=draw.distortion,material=draw.sourceMaterial;
-    const getTexture=name=>{const metadata=material.textures?.[name];if(!metadata?.path)return null;const texture=group.manager.get(group.materialBase+metadata.path);if(!texture)throw new Error('Material distortion texture is unavailable');return {texture,metadata};};
+    const getTexture=name=>{const metadata=material.textures?.[name];if(!metadata?.path)return null;const texture=group.manager.get(group.materialBase+metadata.path);if(!texture)throw new Error('Material distortion texture is unavailable');return {texture,metadata,getMip:level=>group.manager.get(group.materialBase+level.path)};};
     renderer.end();
     try{
       this.prepare(renderer,profile,time,getTexture,stride);

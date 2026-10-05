@@ -21,8 +21,9 @@ def indexed_files(root):
         for page in entry.get("materialBindings", {}).get("pages", []):
             for material in page["materials"].values():
                 for texture in material.get("textures", {}).values():
-                    if texture.get("path"):
-                        paths.add(entry["path"] + "/" + texture["path"])
+                    for resource in [texture, *texture.get("mips", [])]:
+                        if resource.get("path"):
+                            paths.add(entry["path"] + "/" + resource["path"])
         for atlas in entry["atlases"]:
             path = entry["path"] + "/" + entry["id"] + "/" + atlas["atlas"]
             paths.add(path)
@@ -46,6 +47,8 @@ def indexed_files(root):
             for material in effect.get("materials", []):
                 for texture in material.get("textures", {}).values():
                     local(texture)
+                    for mip in texture.get("mips", []):
+                        local(mip)
 
     def visit(value):
         if isinstance(value, dict):

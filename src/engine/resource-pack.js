@@ -25,11 +25,11 @@ export function expectedPackPaths(catalogues){
   const result=new Set(),add=path=>result.add(packPath(path));
   for(const entry of catalogues['runtime-index.json'].entries)if(entry.status==='parsed'){
     add(entry.path+'/'+entry.skeleton);for(const atlas of entry.atlases){const path=`${entry.path}/${entry.id}/${atlas.atlas}`;add(path);const directory=path.slice(0,path.lastIndexOf('/')+1);for(const page of atlas.pages)add(directory+page);}
-    for(const page of entry.materialBindings?.pages||[])for(const material of Object.values(page.materials))for(const texture of Object.values(material.textures||{}))if(texture.path)add(packPath(entry.path)+'/'+packPath(texture.path));
+    for(const page of entry.materialBindings?.pages||[])for(const material of Object.values(page.materials))for(const texture of Object.values(material.textures||{}))for(const resource of [texture,...(texture.mips||[])])if(resource.path)add(packPath(entry.path)+'/'+packPath(resource.path));
   }
   for(const entry of catalogues['audio-index.json'].entries)if(!entry.errors?.length)for(const clip of entry.clips||[])add(clip.path);
   for(const presentation of catalogues['presentations.json'].presentations){
-    const local=resource=>{if(resource?.path)add(packPath(presentation.path)+'/'+packPath(resource.path));};
+    const local=resource=>{if(resource?.path)add(packPath(presentation.path)+'/'+packPath(resource.path));for(const mip of resource?.mips||[])add(packPath(presentation.path)+'/'+packPath(mip.path));};
     for(const image of presentation.images||[])if(image.assetPath)add(image.assetPath);else local(image.sprite);
     for(const effect of presentation.effects||[]){for(const sprite of effect.sprites||[])local(sprite);for(const material of effect.materials||[])for(const texture of Object.values(material.textures||{}))local(texture);}
   }

@@ -4,6 +4,10 @@ import {cacheKind,rangeBounds,evictionCandidates,sceneCacheUrls,validCatalogue} 
 test('original font files belong to scene cache preparation and stay inside its resource scope',()=>{
   const base='https://example.test/mte/',path='spines/interfaces/fonts/SOURCE.otf';assert.equal(cacheKind(base+'assets/'+path,base),'asset');assert.deepEqual(sceneCacheUrls([{presentation:{hotSpringHouse:{dialoguePanel:{fonts:[{path}]}}}}],base),[base+'assets/'+path]);
 });
+test('offline preparation keeps original skeleton and particle mip levels as unique dependencies',()=>{
+  const base='https://example.test/mte/',path='spines/role',texture={path:'noise.png',mips:[{path:'noise.mip-1.png'}]},entry={path,atlases:[{pages:[]}],materialBindings:{pages:[{materials:{normal:{textures:{_NoiseTex:texture}}}}]}};
+  const urls=sceneCacheUrls([{layers:[{entry}],presentation:{path,effects:[{materials:[{textures:{_NoiseTex:texture}}]}]}}],base);assert.deepEqual(urls,[base+'assets/'+path+'/noise.png',base+'assets/'+path+'/noise.mip-1.png']);
+});
 test('native skill fonts are prepared once alongside their scene images',()=>{
   const path='spines/interfaces/fonts/PER.ttf',url=scope+'assets/'+path;
   assert.deepEqual(sceneCacheUrls([{presentation:{nativeFontAssets:[{path},{path}]},nativeImages:[{used:true,texture:scope+'assets/portraits/badge.png'}]}],scope),[scope+'assets/portraits/badge.png',url]);

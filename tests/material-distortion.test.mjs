@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {distortionSettings,distortionPhases,sampleDistortedTexel,hasMaterialDistortion} from '../src/engine/material-distortion.js';
+import {distortionSettings,distortionPhases,sampleDistortedTexel,hasMaterialDistortion,textureMipLevels} from '../src/engine/material-distortion.js';
 import {Stage} from '../src/engine/stage.js';
 
 const transform={m_Scale:{x:1,y:1},m_Offset:{x:0,y:0}};
 const texture=path=>({path,width:64,height:64,settings:{m_FilterMode:1,m_WrapU:0,m_WrapV:0}});
 function material(){return {shader:'Spine/Skeleton',keywords:['_FLOW_MAP_ON','_NOISE_TEX_ON','_STRAIGHT_ALPHA_INPUT'],properties:{m_TexEnvs:['_MainTex','_NoiseTex','_MaskTex'].map(name=>[name,structuredClone(transform)]),m_Floats:[['_FlowSpeed',1],['_FlowPower',.2],['_NoiseDistortPower',-.1],['_DistortIntensityX',.1],['_DistortIntensityY',.2]]},textures:{_FlowMap:texture('flow.png'),_NoiseTex:texture('noise.png'),_MaskTex:{default:'white'}}};}
 const near=(actual,expected)=>{assert.equal(actual.length,expected.length);actual.forEach((value,index)=>assert.ok(Math.abs(value-expected[index])<1e-9,`${actual} != ${expected}`));};
+test('source mip metadata requires ordered complete original levels and rejects inferred replacements',()=>{
+  const value={...texture('base.png'),width:4,height:2,mipCount:3,mips:[{level:1,width:2,height:1,path:'one.png'},{level:2,width:1,height:1,path:'two.png'}]};assert.deepEqual(textureMipLevels(value),value.mips);assert.deepEqual(textureMipLevels(texture('legacy.png')),[]);
+  for(const changed of [{...value,mips:value.mips.slice(1)},{...value,mips:[{...value.mips[0],width:3},value.mips[1]]},{...value,width:5},{...value,mipCount:2,mips:value.mips.slice(0,1)}])assert.throws(()=>textureMipLevels(changed),/mip/);
+});
 
 test('distortion settings follow source keywords and retain signed strengths without mutating metadata',()=>{
   const source=material(),before=JSON.stringify(source),settings=distortionSettings(source);assert.equal(settings.noisePower,-.1);assert.equal(settings.flowPower,.2);assert.equal(settings.whiteMask,true);assert.equal(JSON.stringify(source),before);

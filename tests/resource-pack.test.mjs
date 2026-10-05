@@ -10,6 +10,10 @@ test('skeleton material textures are required relative to their own bundle and c
   texture.path='../outside.png';assert.throws(()=>expectedPackPaths(catalogs),/Invalid resource path/);
 });
 const files=()=>PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogue(name))));
+test('resource imports require every original material mip and reject escaping mip paths',async()=>{
+  const catalogs=Object.fromEntries(PACK_CATALOGS.map(name=>[name,catalogue(name)])),mip={path:'textures/noise.mip-1.png'},texture={path:'textures/noise.png',mips:[mip]};catalogs['runtime-index.json'].entries=[{status:'parsed',path:'spines/role',skeleton:'skeleton.skel',atlases:[],materialBindings:{pages:[{materials:{normal:{textures:{_NoiseTex:texture}}}}]}}];
+  const selected=PACK_CATALOGS.map(name=>file(name,JSON.stringify(catalogs[name])));selected.push(file('spines/role/skeleton.skel'),file('spines/role/textures/noise.png'));await assert.rejects(validatePackCatalogues(resourceFiles(selected).rows),/noise.mip-1/);selected.push(file('spines/role/textures/noise.mip-1.png'));await validatePackCatalogues(resourceFiles(selected).rows);mip.path='../outside.png';assert.throws(()=>expectedPackPaths(catalogs),/Invalid resource path/);
+});
 test('large imported packs verify their manifest in bounded batches without enumerating the cache',async()=>{
   const base='https://example.test/mte/',manifest=[...PACK_CATALOGS.map(path=>({path,size:0})),...Array.from({length:18000},(_,index)=>({path:`portraits/${index}.png`,size:0}))],byUrl=new Map(manifest.map(row=>[packUrl(row.path,base),row]));let active=0,maximum=0,progress;
   const cache={keys:()=>{throw new Error('Operation too large');},match:async url=>{active++;maximum=Math.max(maximum,active);await Promise.resolve();active--;const row=byUrl.get(url);return new Response(null,{headers:{'content-length':'0','content-type':resourceType(row.path)}});}};

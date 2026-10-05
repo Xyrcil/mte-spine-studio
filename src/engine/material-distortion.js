@@ -5,6 +5,16 @@ const transform=(uv,values)=>[uv[0]*values[0]+values[2],uv[1]*values[1]+values[3
 const pngUV=uv=>[uv[0],1-uv[1]];
 const fract=value=>value-Math.floor(value);
 
+export function textureMipLevels(texture){
+  if(texture.mipCount===undefined)return [];
+  const count=texture.mipCount,levels=texture.mips;
+  if(!Number.isInteger(count)||count<1||!Array.isArray(levels)||levels.length!==count-1)throw new Error('Material distortion source mip chain is unavailable');
+  if(count===1)return levels;
+  if(!Number.isInteger(Math.log2(texture.width))||!Number.isInteger(Math.log2(texture.height))||count!==Math.log2(Math.max(texture.width,texture.height))+1)throw new Error('Material distortion source mip dimensions exceed renderer limits');
+  for(let index=0;index<levels.length;index++){const level=index+1,row=levels[index];if(row.level!==level||row.width!==Math.max(1,texture.width/2**level)||row.height!==Math.max(1,texture.height/2**level)||typeof row.path!=='string'||!row.path)throw new Error('Material distortion source mip level is unavailable');}
+  return levels;
+}
+
 export function distortionSettings(material){
   const flow=material.keywords?.includes('_FLOW_MAP_ON'),noise=material.keywords?.includes('_NOISE_TEX_ON');
   if(!flow&&!noise)return null;
@@ -12,6 +22,7 @@ export function distortionSettings(material){
   if(!material.keywords.includes('_STRAIGHT_ALPHA_INPUT'))throw new Error('Material distortion premultiplied texture input is unavailable');
   const floats=pairs(material.properties?.m_Floats),envs=pairs(material.properties?.m_TexEnvs),result={flow:Boolean(flow),noise:Boolean(noise),mainST:st(envs._MainTex,'artwork transform')};
   const texture=name=>{const value=material.textures?.[name];if(!value?.path&&!(name==='_MaskTex'&&value?.default==='white'))throw new Error(`Material distortion texture ${name} is unavailable`);if(value.path){const settings=value.settings;if(!settings||![0,1].includes(settings.m_FilterMode)||![0,1].includes(settings.m_WrapU)||![0,1].includes(settings.m_WrapV))throw new Error(`Material distortion sampler ${name} is unavailable`);if((settings.m_WrapU===0||settings.m_WrapV===0)&&(!Number.isInteger(Math.log2(value.width))||!Number.isInteger(Math.log2(value.height))))throw new Error(`Material distortion repeat texture ${name} exceeds renderer limits`);}return value;};
+  for(const value of Object.values(material.textures||{}))if(value.path)textureMipLevels(value);
   if(flow){texture('_FlowMap');result.flowSpeed=finite(floats._FlowSpeed,'flow speed');result.flowPower=finite(floats._FlowPower,'flow strength');}
   if(noise){texture('_NoiseTex');const mask=texture('_MaskTex');result.whiteMask=mask.default==='white';result.noiseST=st(envs._NoiseTex,'noise transform');if(!result.whiteMask)result.maskST=st(envs._MaskTex,'mask transform');result.noisePower=finite(floats._NoiseDistortPower,'noise speed');result.intensity=[finite(floats._DistortIntensityX,'horizontal strength'),finite(floats._DistortIntensityY,'vertical strength')];}
   return result;

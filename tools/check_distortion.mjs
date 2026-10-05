@@ -18,7 +18,18 @@ try{
       const profile={flow,noise,whiteMask,mainST:[1.1,.9,.03,-.04],noiseST:[1.25,.75,.13,-.07],maskST:[.8,1.2,-.1,.08],flowSpeed:1,flowPower:.2,noisePower:-.1,intensity:[.1,.2]};
       gl.viewport(0,0,8,8);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);renderer.begin();effect.draw(renderer,group,{layer,slots:[],distortion:profile,sourceMaterial:{textures:metadata}},time);renderer.end();const actual=new Uint8Array(8*8*4);gl.readPixels(0,0,8,8,gl.RGBA,gl.UNSIGNED_BYTE,actual);let maximum=0;
       for(let y=0;y<8;y++)for(let x=0;x<8;x++){const expected=sampleDistortedTexel(profile,[(x+.5)/8,1-(y+.5)/8],time,sample);for(let channel=0;channel<4;channel++)maximum=Math.max(maximum,Math.abs(actual[(y*8+x)*4+channel]-Math.round(expected[channel]*255)));}results.push({filter,flow,noise,whiteMask,time,maximum,glError:gl.getError()});
-    }}}finally{effect.dispose();renderer.dispose();for(const texture of textures.values())gl.deleteTexture(texture.object);gl.getExtension('WEBGL_lose_context')?.loseContext();}return results;
+    }}
+      const solid=(size,red)=>{const image=document.createElement('canvas');image.width=image.height=size;const ctx=image.getContext('2d');ctx.fillStyle=`rgb(${red},0,0)`;ctx.fillRect(0,0,size,size);return image;},base=solid(8,0);
+      textures.get('_NoiseTex').getImage=()=>base;textures.get('_NoiseTex').bind(2);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,base);
+      metadata._NoiseTex={path:'_NoiseTex',width:8,height:8,mipCount:4,mips:[1,2,3].map(level=>({level,width:8/2**level,height:8/2**level,path:'noise-'+level})),settings:{m_FilterMode:1,m_WrapU:0,m_WrapV:0}};
+      for(const level of [1,2,3]){const image=solid(8/2**level,level*64);textures.set('noise-'+level,{getImage:()=>image});}
+      for(const mode of [0,1])for(const level of [1,2,3]){
+        metadata._NoiseTex.settings.m_FilterMode=mode;const profile={flow:false,noise:true,whiteMask:true,mainST:[1,1,0,0],noiseST:[2**level,2**level,0,0],noisePower:0,intensity:[.2,.1]};
+        gl.clear(gl.COLOR_BUFFER_BIT);renderer.begin();effect.draw(renderer,group,{layer,slots:[],distortion:profile,sourceMaterial:{textures:metadata}},0);renderer.end();const actual=new Uint8Array(8*8*4);gl.readPixels(0,0,8,8,gl.RGBA,gl.UNSIGNED_BYTE,actual);let maximum=0;
+        for(let y=0;y<8;y++)for(let x=0;x<8;x++){const expected=sampleDistortedTexel(profile,[(x+.5)/8,1-(y+.5)/8],0,(name,uv)=>name==='_NoiseTex'?[level*64/255,0,0,1]:sample(name,uv));for(let c=0;c<4;c++)maximum=Math.max(maximum,Math.abs(actual[(y*8+x)*4+c]-Math.round(expected[c]*255)));}
+        results.push({originalMipLevel:level,filter:mode,maximum,glError:gl.getError()});
+      }
+    }finally{effect.dispose();renderer.dispose();for(const texture of textures.values())if(texture.object)gl.deleteTexture(texture.object);gl.getExtension('WEBGL_lose_context')?.loseContext();}return results;
   });
   for(const row of sampling){assert.ok(row.maximum<=1,JSON.stringify(row));assert.equal(row.glError,0);}console.log(engine+': GPU sampling matches independent coordinate reference',sampling);
   const results=[];

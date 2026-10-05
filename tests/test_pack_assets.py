@@ -10,6 +10,20 @@ from pack_assets import pack, CATALOGUES, indexed_files
 
 
 class ResourceArchiveTests(unittest.TestCase):
+    def test_original_texture_mips_are_required_by_the_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "assets"
+            self.setup_assets(root)
+            texture = {"path": "base.png", "mips": [{"path": "base.mip-1.png"}]}
+            presentation = {"path": "spines/role", "effects": [{"materials": [{"textures": {"_NoiseTex": texture}}]}]}
+            (root / "presentations.json").write_text(json.dumps({"schema": 1, "presentations": [presentation]}))
+            (root / "spines/role").mkdir(parents=True)
+            (root / "spines/role/base.png").write_bytes(b"base")
+            with self.assertRaisesRegex(ValueError, "base.mip-1"):
+                indexed_files(root)
+            (root / "spines/role/base.mip-1.png").write_bytes(b"source mip")
+            self.assertIn("spines/role/base.mip-1.png", indexed_files(root))
+
     def test_skeleton_material_dependencies_are_required_and_packed_relative_to_the_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "assets"

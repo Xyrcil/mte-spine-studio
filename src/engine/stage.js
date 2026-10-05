@@ -102,7 +102,7 @@ export class Stage extends EventTarget {
         const authoredActive=isActive(instance.transform)&&instance.active!==false;
         group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:authoredActive,authoredActive});
       }
-      for(const layer of group.layers){layer.materialMapping=compileMaterialMapping(layer);for(const materials of layer.materialMapping?.pages?.values()||[])for(const material of Object.values(materials))if(material.distortion)for(const texture of Object.values(material.textures||{}))if(texture.path)manager.loadTexture(base+texture.path);}
+      for(const layer of group.layers){layer.materialMapping=compileMaterialMapping(layer);for(const materials of layer.materialMapping?.pages?.values()||[])for(const material of Object.values(materials))if(material.distortion)for(const texture of Object.values(material.textures||{}))for(const resource of [texture,...(texture.mips||[])])if(resource.path)manager.loadTexture(base+resource.path);}
       if(group.layers.some(layer=>layer.materialMapping?.distorted))group.distortionRenderer=new DistortionRenderer(this.gl);
       group.effects=createParticleLayers(group,base,manager);
       if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
