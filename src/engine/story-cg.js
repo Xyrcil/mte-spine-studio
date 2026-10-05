@@ -42,7 +42,10 @@ export class StoryCgRoot {
     return {accepted:true,animation:name};
   }
   snapshot(){return {kind:'story-cg',schema:1,layers:[...this.states.values()].map(row=>({...row,listeners:[...row.listeners]}))};}
-  check(value){const checked=validateStoryCgState(value);if(checked.layers.length!==this.layers.length||checked.layers.some(row=>!this.states.has(row.id)||row.listeners.some(name=>!this.layers.find(layer=>layer.instance.id===row.id).skeleton.data.findAnimation(name)||!this.layers.find(layer=>layer.instance.id===row.id).skeleton.data.findAnimation(transitions[name]))))throw new Error('Story CG checkpoint does not match artwork');return checked;}
+  check(value){
+    const checked=validateStoryCgState(value),byId=new Map(this.layers.map(layer=>[layer.instance.id,layer]));
+    if(checked.layers.length!==this.layers.length||checked.layers.some(row=>{const layer=byId.get(row.id);return !layer||this.wq&&(row.speed!==null||row.listeners.includes('start'))||row.listeners.some(name=>!layer.skeleton.data.findAnimation(name)||!layer.skeleton.data.findAnimation(transitions[name]));}))throw new Error('Story CG checkpoint does not match artwork');return checked;
+  }
   restore(value){value=this.check(value);this.states=new Map(value.layers.map(row=>[row.id,row]));for(const layer of this.layers)layer.storyTimeScale=this.states.get(layer.instance.id).speed??undefined;this.rebuildCommands();}
   restoreLegacy(){
     for(const layer of this.layers){const row=this.states.get(layer.instance.id),track=layer.state.getCurrent(0),name=track?.animation.name;row.listeners=[];row.speed=null;

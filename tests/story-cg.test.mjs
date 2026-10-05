@@ -28,7 +28,14 @@ test('explicit source commands coordinate active layers and retain independent c
 });
 test('WQ source path loops animation without registering default event behavior',()=>{
   const {group,calls,root}=fixture(true);assert.ok(calls.every(c=>c.name==='animation'&&c.loop));root.onEvent(group.layers[0],{animation:{name:'animation'}},{stringValue:'slow'});assert.equal(group.layers[0].storyTimeScale,undefined);assert.ok(root.snapshot().layers.every(row=>row.listeners.length===0));
+  const saved=root.snapshot();assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,listeners:['start']})}),/does not match/);assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,speed:1})}),/does not match/);
 });
 test('story snapshots reject malformed, duplicate and foreign layer states',()=>{
   const {root}=fixture(),saved=root.snapshot();assert.deepEqual(validateStoryCgState(saved),saved);assert.throws(()=>validateStoryCgState({...saved,layers:[saved.layers[0],saved.layers[0]]}),/Invalid/);assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,id:'foreign'})}),/does not match/);assert.throws(()=>validateStoryCgState({...saved,layers:[{...saved.layers[0],speed:2}]}),/Invalid/);assert.throws(()=>validateStoryCgState({...saved,layers:[{...saved.layers[0],listeners:['missing']}]}),/Invalid/);
+});
+test('legacy CG scenes rebuild callback speed from consumed source event strings without restarting tracks',()=>{
+  const {root,group,calls}=fixture(),count=calls.length;
+  for(const layer of root.layers){layer.state.getCurrent=()=>({animation:{name:'start'},getAnimationTime:()=>.5});layer.entry={animations:[{name:'start',events:[{time:.1,string:'slow'},{time:2.8,string:'recover'}]}]};}
+  root.restoreLegacy();assert.equal(calls.length,count);assert.ok(root.snapshot().layers.every(row=>row.speed===Math.fround(.7)&&row.listeners[0]==='start'));assert.equal(group.layers[0].instance.timeScale,.8);
+  for(const layer of root.layers)layer.state.getCurrent=()=>({animation:{name:'stand'},getAnimationTime:()=>3});root.restoreLegacy();assert.ok(root.snapshot().layers.every(row=>row.speed===null&&!row.listeners.length));assert.equal(calls.length,count);
 });

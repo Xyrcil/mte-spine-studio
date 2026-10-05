@@ -75,7 +75,7 @@ export function assertCheckpoint(layer,animation,pose){
 }
 export function restoreAnimation(state,value,spine=window.spine){
   state.clearTracks();state.queue.clear();
-  const entries=value.entries.map(row=>{const animation=row.name==='<empty>'?spine.AnimationState.emptyAnimation:state.data.skeletonData.findAnimation(row.name),entry=state.trackEntry(row.index,animation,row.loop,null);entry.holdPrevious=row.holdPrevious;for(const key of ENTRY_NUMBERS)if(row[key]!==undefined)entry[key]=row[key];entry.timelineMode=[...row.timelineMode];entry.timelinesRotation=[...row.timelinesRotation];return entry;});
+  const entries=value.entries.map(row=>{const animation=row.name==='<empty>'?spine.AnimationState.emptyAnimation:state.data.skeletonData.findAnimation(row.name),entry=state.trackEntry(row.index,animation,row.loop,null);entry.holdPrevious=row.holdPrevious;for(const key of ENTRY_NUMBERS)if(row[key]!==undefined)entry[key]=row[key];if(row.totalAlpha===undefined)delete entry.totalAlpha;entry.timelineMode=[...row.timelineMode];entry.timelinesRotation=[...row.timelinesRotation];return entry;});
   value.entries.forEach((row,index)=>{const entry=entries[index];for(const key of ['next','mixingFrom','mixingTo'])entry[key]=row[key]===null?null:entries[row[key]];entry.timelineHoldMix=row.timelineHoldMix.map(id=>id===null?null:entries[id]);});
   state.tracks=value.tracks.map(id=>id===null?null:entries[id]);state.timeScale=value.timeScale;state.unkeyedState=value.unkeyedState;state.animationsChanged=value.animationsChanged;state.events.length=0;state.propertyIDs.clear();
 }
