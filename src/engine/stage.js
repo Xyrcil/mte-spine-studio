@@ -19,6 +19,7 @@ import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialEf
 import {hasMaterialDistortion} from './material-distortion.js';
 import {DistortionRenderer} from './distortion-renderer.js';
 import {StoryCgRoot,isStoryCg} from './story-cg.js';
+import {StationDrawingRoot} from './station-drawing.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -151,7 +152,7 @@ export class Stage extends EventTarget {
         mix.defaultMix = layer.entry.defaultMix;
         layer.entry.mixes.fromAnimation.forEach((name,index) => mix.setMix(name, layer.entry.mixes.toAnimation[index], layer.entry.mixes.duration[index]));
         layer.state = new (s().AnimationState)(mix);
-        layer.state.addListener({event:(track,event) => {
+        layer.state.addListener({complete:track=>{if(!this.suppressEvents)for(const root of group.controllers||[])root.onComplete?.(layer,track);},event:(track,event) => {
           if(this.suppressEvents)return;
           for(const root of group.controllers||[])root.onEvent(layer,track,event);
           this.dispatchEvent(new CustomEvent('animation-event', {detail:{group:group.id, layer:layer.instance.id, track:track.trackIndex, name:event.data.name, time:event.time,int:event.intValue,float:event.floatValue,string:event.stringValue}}));
@@ -161,6 +162,7 @@ export class Stage extends EventTarget {
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0&&source.data.m_Enabled!==false).map(source=>new InteractionRoot(this,group,source));
       if(isStoryCg(presentation))group.controllers.push(new StoryCgRoot(this,group));
+      if(presentation.stationDrawing)for(const source of presentation.nativeBehaviours||[])if(source.class==='StationDrawingAnim'&&source.data.m_Enabled)group.controllers.push(new StationDrawingRoot(group,source));
       for(const source of presentation.nativeBehaviours||[])if(source.class==='SpineAniDragBone'&&source.data.m_Enabled!==0&&source.data.m_Enabled!==false)group.controllers.push(new BoneDragRoot(group,source));
       if(presentation.skillWords)group.controllers.push(new SkillWordsRoot(group));
       if(skillReceiver){group.controllers.push(skillReceiver);skillReceiver.initialize();}

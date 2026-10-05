@@ -389,6 +389,13 @@ Some source entrances have an event named `stand` but no matching event string.
 The archived receiver compares that string; these layers retain the final
 `start` pose. Artwork details and exports identify the unavailable transition
 cue separately from missing animation files.
+Station views use the original drawing template and exact story skeleton
+references. They initialize the source idle and expression tracks. Configured
+touch regions select paired actions and expressions, reject repeated clicks
+until the action completes, then restore both idle tracks. Drawings without
+action lists remain noninteractive. Scenes and recordings retain the choice
+stream so exports reproduce the same actions. These views appear separately
+from the raw story animation previews; actions do not imply voice playback.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,
