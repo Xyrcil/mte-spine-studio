@@ -164,6 +164,7 @@ Rebuild the indexes and resource ZIP afterward. Texture filtering, wrap modes,
 scale and offset remain in the material profile and offline preparation includes
 every declared mip image. Imports reject packs missing a declared level.
 Filtering modes follow the [Unity reference](https://docs.unity3d.com/es/2019.3/ScriptReference/FilterMode.html).
+Authored anisotropy uses the [WebGL extension](https://registry.khronos.org/webgl/extensions/EXT_texture_filter_anisotropic/) within device limits; unavailable precision is listed in artwork details and export warnings.
 Ordinary metadata refresh retains existing texture records only
 when their material and texture references still match.
 Scenes retain a separate material clock for distortion playback, independent

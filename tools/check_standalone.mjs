@@ -94,6 +94,7 @@ try{
       }finally{stage.dispose();}
     });
     await writeFile('private/library-rendering-'+engine+'.json',JSON.stringify(library,null,2));
+    assert.deepEqual(library.empty.filter(row=>row.reason==='sampled-no-pixels'),[],'Source-visible animation produced no pixels after keyframe and midpoint sampling');
     console.log(engine+' full library rendering',{...library,brieflyVisible:library.brieflyVisible.length,empty:library.empty.length,emptyReasons:library.empty.reduce((counts,row)=>(counts[row.reason]=(counts[row.reason]||0)+1,counts),{})});assert.deepEqual(library.failures,[]);assert.equal(library.loaded,library.expected);assert.deepEqual(library.unreferenced,[]);assert.equal(library.poses,library.animations*3+library.extraSamples);
   }
   assert.deepEqual(errors,[]);

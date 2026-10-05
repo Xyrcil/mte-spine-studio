@@ -127,6 +127,7 @@ export class Stage extends EventTarget {
         const data = reader.readSkeletonData(layer.entry.skeleton.endsWith('.json') ? JSON.parse(manager.get(layer.source)) : manager.get(layer.source));
         layer.skeleton = new (s().Skeleton)(data);
         layer.materialLimitations=materialEffectLimitations(layer.entry,layer.materialMapping);
+        if(group.distortionRenderer)for(const materials of layer.materialMapping?.pages?.values()||[])for(const material of Object.values(materials))if(material.distortion)layer.materialLimitations.push(...group.distortionRenderer.samplerLimitations(material));
         if (layer.instance.skin) layer.skeleton.setSkinByName(layer.instance.skin);
         layer.skeleton.scaleX = layer.instance.flipX ? -1 : 1;
         layer.skeleton.scaleY = layer.instance.flipY ? -1 : 1;

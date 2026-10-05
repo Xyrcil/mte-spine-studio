@@ -32,6 +32,8 @@ void main(){
 export class DistortionRenderer {
   constructor(gl){
     this.gl=gl;this.shaders=[];this.uploadedMips=new WeakMap();
+    this.anisotropy=gl.getExtension('EXT_texture_filter_anisotropic')||gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic')||gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+    this.maxAnisotropy=this.anisotropy?gl.getParameter(this.anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT):1;
     try{
       for(const [kind,source] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const shader=gl.createShader(kind);this.shaders.push(shader);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error('Material distortion shader could not compile');}
       this.program=gl.createProgram();for(const shader of this.shaders)gl.attachShader(this.program,shader);gl.linkProgram(this.program);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error('Material distortion shader could not link');
@@ -40,6 +42,8 @@ export class DistortionRenderer {
       this.white=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.white);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
     }catch(error){this.dispose();throw error;}
   }
+  configureAnisotropy(settings){if(this.anisotropy)this.gl.texParameterf(this.gl.TEXTURE_2D,this.anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(this.maxAnisotropy,Math.max(1,settings.m_Aniso??1)));}
+  samplerLimitations(material){return Object.entries(material.textures||{}).filter(([,texture])=>texture.path&&Math.max(1,texture.settings?.m_Aniso??1)>this.maxAnisotropy).map(([name,texture])=>`Anisotropic filtering unavailable: ${name} (${texture.settings.m_Aniso}x requested, ${this.maxAnisotropy}x available)`);}
   uploadMips(texture,metadata,getMip){
     const levels=textureMipLevels(metadata);if(!levels.length)return false;
     const signature=JSON.stringify(levels);if(this.uploadedMips.get(texture)===signature)return true;
@@ -59,6 +63,7 @@ export class DistortionRenderer {
       if(result){const {texture,metadata,getMip}=result;texture.bind(unit);const settings=metadata.settings,mips=this.uploadMips(texture,metadata,getMip);
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,settings.m_WrapU===0?gl.REPEAT:gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,settings.m_WrapV===0?gl.REPEAT:gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,settings.m_FilterMode===0?(mips?gl.NEAREST_MIPMAP_NEAREST:gl.NEAREST):(mips?gl.LINEAR_MIPMAP_NEAREST:gl.LINEAR));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,settings.m_FilterMode===0?gl.NEAREST:gl.LINEAR);
+        this.configureAnisotropy(settings);
       }else gl.bindTexture(gl.TEXTURE_2D,this.white);gl.uniform1i(u[uniform],unit);
     }
   }

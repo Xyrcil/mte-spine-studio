@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {distortionSettings,distortionPhases,sampleDistortedTexel,hasMaterialDistortion,textureMipLevels} from '../src/engine/material-distortion.js';
 import {Stage} from '../src/engine/stage.js';
+import {DistortionRenderer} from '../src/engine/distortion-renderer.js';
 
 const transform={m_Scale:{x:1,y:1},m_Offset:{x:0,y:0}};
 const texture=path=>({path,width:64,height:64,settings:{m_FilterMode:1,m_WrapU:0,m_WrapV:0}});
@@ -10,6 +11,11 @@ const near=(actual,expected)=>{assert.equal(actual.length,expected.length);actua
 test('source mip metadata requires ordered complete original levels and rejects inferred replacements',()=>{
   const value={...texture('base.png'),width:4,height:2,mipCount:3,mips:[{level:1,width:2,height:1,path:'one.png'},{level:2,width:1,height:1,path:'two.png'}]};assert.deepEqual(textureMipLevels(value),value.mips);assert.deepEqual(textureMipLevels(texture('legacy.png')),[]);
   for(const changed of [{...value,mips:value.mips.slice(1)},{...value,mips:[{...value.mips[0],width:3},value.mips[1]]},{...value,width:5},{...value,mipCount:2,mips:value.mips.slice(0,1)}])assert.throws(()=>textureMipLevels(changed),/mip/);
+});
+test('anisotropic filtering follows source strength and exposes unavailable device precision',()=>{
+  const renderer=Object.create(DistortionRenderer.prototype),calls=[];Object.assign(renderer,{gl:{TEXTURE_2D:1,texParameterf:(...args)=>calls.push(args)},anisotropy:{TEXTURE_MAX_ANISOTROPY_EXT:2},maxAnisotropy:4});renderer.configureAnisotropy({m_Aniso:2});renderer.configureAnisotropy({m_Aniso:0});renderer.configureAnisotropy({m_Aniso:8});assert.deepEqual(calls,[[1,2,2],[1,2,1],[1,2,4]]);
+  const source=material();source.textures._NoiseTex.settings.m_Aniso=8;assert.match(renderer.samplerLimitations(source)[0],/8x requested, 4x available/);renderer.anisotropy=null;renderer.maxAnisotropy=1;renderer.configureAnisotropy({m_Aniso:8});assert.equal(calls.length,3);assert.match(renderer.samplerLimitations(source)[0],/1x available/);
+  source.textures._NoiseTex.settings.m_Aniso=-1;assert.throws(()=>distortionSettings(source),/anisotropic/);source.textures._NoiseTex.settings.m_Aniso=2;source.textures._NoiseTex.settings.m_MipBias=1;assert.throws(()=>distortionSettings(source),/mip bias/);
 });
 
 test('distortion settings follow source keywords and retain signed strengths without mutating metadata',()=>{
