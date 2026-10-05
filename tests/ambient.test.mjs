@@ -32,3 +32,8 @@ test('effect resume ignores removed requests but retains autoplay-blocked audio 
     let reject;element.play=()=>new Promise((_,failure)=>reject=failure);const pending=bus.resume();bus.releaseEffect(element);const replacement=await bus.playEffect('cloth');reject(new DOMException('Old request aborted','AbortError'));await pending;assert.equal(bus.effects.has(replacement),true);assert.equal(bus.effects.size,1);bus.dispose();
   }finally{globalThis.Audio=previous;}
 });
+test('effect lifecycle notifies persistence on creation, pause and removal exactly once',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus}=setup(),states=[];bus.addEventListener('effect-state',()=>states.push(bus.snapshot().effectTracks.length));const element=await bus.playEffect('cloth');bus.pause();bus.releaseEffect(element);bus.releaseEffect(element);assert.deepEqual(states,[1,1,0]);bus.dispose();}
+  finally{globalThis.Audio=previous;}
+});
