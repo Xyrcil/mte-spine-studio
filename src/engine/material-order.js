@@ -1,3 +1,4 @@
+import {distortionSettings,hasMaterialDistortion} from './material-distortion.js';
 const modes=['normal','additive','multiply','screen'];
 const tintShaders=new Set(['Spine/Blend Modes/Skeleton PMA Additive','Spine/Blend Modes/Skeleton PMA Multiply','Spine/Blend Modes/Skeleton PMA Screen']);
 
@@ -18,11 +19,12 @@ export function materialVertexColorPower(material){
   return power===1?undefined:power;
 }
 
-export function materialEffectLimitations(entry){
+export function materialEffectLimitations(entry,mapping){
   const effects=new Set();
-  for(const page of entry.materialBindings?.pages||[])for(const material of Object.values(page.materials)){
-    if(material.keywords?.includes('_FLOW_MAP_ON'))effects.add('Flow-map distortion');
-    if(material.keywords?.includes('_NOISE_TEX_ON'))effects.add('Noise-texture distortion');
+  for(const page of entry.materialBindings?.pages||[])for(const [mode,material] of Object.entries(page.materials)){
+    const restored=page.atlas===0&&mapping?.pages?.get(page.page)?.[mode]?.distortion;
+    if(!restored&&material.keywords?.includes('_FLOW_MAP_ON'))effects.add('Flow-map distortion');
+    if(!restored&&material.keywords?.includes('_NOISE_TEX_ON'))effects.add('Noise-texture distortion');
     for(const error of material.textureErrors||[])effects.add(`Material texture unavailable: ${error.texture}`);
   }
   return [...effects];
@@ -32,13 +34,13 @@ export function compileMaterialMapping(layer){
   const mixed=layer.instance.renderOrderStatus==='mixed-queues';
   const source=layer.entry.materialBindings;
   if(source?.errors?.length)return {reason:'Skeleton material bindings are unavailable'};
-  if(!mixed&&!source?.pages?.some(page=>Object.values(page.materials).some(material=>material.properties?.m_Colors||material.keywords?.includes('_VERTEX_COLOR_POW_ON'))))return null;
+  if(!mixed&&!hasMaterialDistortion(layer.entry)&&!source?.pages?.some(page=>Object.values(page.materials).some(material=>material.properties?.m_Colors||material.keywords?.includes('_VERTEX_COLOR_POW_ON'))))return null;
   if(!source?.pages.length||source.errors.length)return {reason:'Skeleton material bindings are unavailable'};
-  const pages=new Map(),queues=new Map();let tinted=false,colorPowered=false;
-  try{for(const page of source.pages.filter(page=>page.atlas===0)){const materials={};for(const [mode,material] of Object.entries(page.materials)){if(mixed&&(!Number.isInteger(material.renderQueue)||material.renderQueue<0))return {reason:'Skeleton material queue is unavailable'};queues.set(material.id,material.renderQueue);const tint=materialTint(material),vertexColorPower=materialVertexColorPower(material);tinted ||= Boolean(tint);colorPowered ||= Boolean(vertexColorPower);materials[mode]={...material,...(tint?{tint}:{}),...(vertexColorPower?{vertexColorPower}:{})};}pages.set(page.page,materials);}}catch(error){return {reason:error.message};}
-  if(!mixed&&!tinted&&!colorPowered)return null;
+  const pages=new Map(),queues=new Map();let tinted=false,colorPowered=false,distorted=false;
+  try{for(const page of source.pages.filter(page=>page.atlas===0)){const materials={};for(const [mode,material] of Object.entries(page.materials)){if(mixed&&(!Number.isInteger(material.renderQueue)||material.renderQueue<0))return {reason:'Skeleton material queue is unavailable'};queues.set(material.id,material.renderQueue);const tint=materialTint(material),vertexColorPower=materialVertexColorPower(material);let distortion;try{distortion=distortionSettings(material);}catch{}tinted ||= Boolean(tint);colorPowered ||= Boolean(vertexColorPower);distorted ||= Boolean(distortion);materials[mode]={...material,...(tint?{tint}:{}),...(vertexColorPower?{vertexColorPower}:{}),...(distortion?{distortion}:{})};}pages.set(page.page,materials);}}catch(error){return {reason:error.message};}
+  if(!mixed&&!tinted&&!colorPowered&&!distorted)return null;
   if(mixed)for(const material of layer.instance.renderMaterials)if(queues.get(material.id)!==material.renderQueue)return {reason:'Renderer and skeleton materials do not match'};
-  return {pages,tinted,colorPowered,mixed};
+  return {pages,tinted,colorPowered,distorted,mixed};
 }
 
 export function skeletonDrawSegments(layer){
@@ -53,7 +55,7 @@ export function skeletonDrawSegments(layer){
     if(!materials||!mode)throw new Error('Animated attachment material is unavailable');
     const material=materials[mode]||materials.normal;
     if(!material)throw new Error('Animated attachment material is unavailable');
-    const previous=segments.at(-1);if(previous?.material===material.id)previous.slots.push(slot.data.index);else segments.push({material:material.id,queue:mapping.mixed?material.renderQueue:layer.instance.renderQueue,slots:[slot.data.index],...(material.tint?{tint:material.tint}:{}),...(material.vertexColorPower?{vertexColorPower:material.vertexColorPower}:{})});
+    const previous=segments.at(-1);if(previous?.material===material.id)previous.slots.push(slot.data.index);else segments.push({material:material.id,queue:mapping.mixed?material.renderQueue:layer.instance.renderQueue,slots:[slot.data.index],...(material.tint?{tint:material.tint}:{}),...(material.vertexColorPower?{vertexColorPower:material.vertexColorPower}:{}),...(material.distortion?{distortion:material.distortion,sourceMaterial:material}:{})});
   }
   return segments;
 }

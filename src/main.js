@@ -69,6 +69,7 @@ function describe(group){
   const powerErrors=group.layers.filter(layer=>layer.materialMapping?.reason?.includes('color power')).length;if(powerErrors)parts.push(`Material color power unavailable: ${powerErrors}`);
   const materialEffects=[...new Set(group.layers.filter(layer=>layer.active).flatMap(layer=>layer.materialLimitations||[]))];if(materialEffects.length)parts.push(`Material effects not yet rendered: ${materialEffects.join(', ')}`);
   if(group.layers.some(layer=>layer.materialMapping?.pages))parts.push('Material segment visual verification pending');
+  if(group.layers.some(layer=>layer.active&&layer.materialMapping?.distorted))parts.push('Material distortion filtering and color-space verification pending');
   document.querySelector('#details').textContent=parts.join(' · ');
 }
 function describePortrait(appearance){document.querySelector('#details').textContent=`Static portrait · ${appearance?.portrait?.width} × ${appearance?.portrait?.height}${appearance?.spineStatus==='missing-source'?' · Spine bundle absent from backup':appearance?.spineStatus==='available'?' · Animated version also available':''}`;}

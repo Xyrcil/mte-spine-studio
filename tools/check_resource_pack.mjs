@@ -76,9 +76,10 @@ try{
       const stage=window.mteStudio,group=stage.groups[0];stage.evaluate(time);
       const profiles=group.layers.flatMap(layer=>[...(layer.materialMapping?.pages?.values()||[])].flatMap(page=>Object.values(page))).filter(material=>material[field]);
       const pixels=()=>{stage.draw();const values=new Uint8Array(stage.canvas.width*stage.canvas.height*4);stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,values);return values;},original=pixels(),saved=profiles.map(material=>({material,value:material[field]}));for(const row of saved)delete row.material[field];const plain=pixels();for(const row of saved)row.material[field]=row.value;stage.draw();
-      return {values:saved.map(row=>row.value),changed:plain.reduce((count,value,index)=>count+Number(value!==original[index]),0)};
+      const distortionProfiles=group.layers.flatMap(layer=>[...(layer.materialMapping?.pages?.values()||[])].flatMap(page=>Object.values(page))).filter(material=>material.distortion),materialTime=stage.materialTime;stage.materialTime=materialTime+.5;const advanced=pixels();stage.materialTime=materialTime;stage.draw();
+      return {values:saved.map(row=>row.value),changed:plain.reduce((count,value,index)=>count+Number(value!==original[index]),0),distortionProfiles:distortionProfiles.length,distortionChanged:advanced.reduce((count,value,index)=>count+Number(value!==original[index]),0)};
     },{field,time});assert.ok(importedMaterial.values.some(value=>field==='tint'?value.r===expected&&value.g===expected&&value.b===expected&&value.a===1:value===expected));assert.ok(importedMaterial.changed>100,JSON.stringify(importedMaterial));materials.push({source,...importedMaterial});
-    if(id==='3014009')assert.match(await page.locator('#details').textContent(),/Noise-texture distortion/);
+    if(id==='3014009'){assert.match(await page.locator('#details').textContent(),/Material distortion filtering and color-space verification pending/);assert.ok(importedMaterial.distortionProfiles>0);assert.ok(importedMaterial.distortionChanged>100,JSON.stringify(importedMaterial));}
     await page.getByRole('button',{name:'Export',exact:true}).click();assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));await page.getByRole('button',{name:'Gallery',exact:true}).click();assert.equal(mediaNetworkRequests,networkBefore);
   }
   console.log(engine+': Imported source material tint and vertex-color power render and export offline',materials);

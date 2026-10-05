@@ -9,8 +9,9 @@ export function distortionSettings(material){
   const flow=material.keywords?.includes('_FLOW_MAP_ON'),noise=material.keywords?.includes('_NOISE_TEX_ON');
   if(!flow&&!noise)return null;
   if(material.shader!=='Spine/Skeleton')throw new Error('Material distortion shader is unavailable');
+  if(!material.keywords.includes('_STRAIGHT_ALPHA_INPUT'))throw new Error('Material distortion premultiplied texture input is unavailable');
   const floats=pairs(material.properties?.m_Floats),envs=pairs(material.properties?.m_TexEnvs),result={flow:Boolean(flow),noise:Boolean(noise),mainST:st(envs._MainTex,'artwork transform')};
-  const texture=name=>{const value=material.textures?.[name];if(!value?.path&&!(name==='_MaskTex'&&value?.default==='white'))throw new Error(`Material distortion texture ${name} is unavailable`);return value;};
+  const texture=name=>{const value=material.textures?.[name];if(!value?.path&&!(name==='_MaskTex'&&value?.default==='white'))throw new Error(`Material distortion texture ${name} is unavailable`);if(value.path){const settings=value.settings;if(!settings||![0,1].includes(settings.m_FilterMode)||![0,1].includes(settings.m_WrapU)||![0,1].includes(settings.m_WrapV))throw new Error(`Material distortion sampler ${name} is unavailable`);if((settings.m_WrapU===0||settings.m_WrapV===0)&&(!Number.isInteger(Math.log2(value.width))||!Number.isInteger(Math.log2(value.height))))throw new Error(`Material distortion repeat texture ${name} exceeds renderer limits`);}return value;};
   if(flow){texture('_FlowMap');result.flowSpeed=finite(floats._FlowSpeed,'flow speed');result.flowPower=finite(floats._FlowPower,'flow strength');}
   if(noise){texture('_NoiseTex');const mask=texture('_MaskTex');result.whiteMask=mask.default==='white';result.noiseST=st(envs._NoiseTex,'noise transform');if(!result.whiteMask)result.maskST=st(envs._MaskTex,'mask transform');result.noisePower=finite(floats._NoiseDistortPower,'noise speed');result.intensity=[finite(floats._DistortIntensityX,'horizontal strength'),finite(floats._DistortIntensityY,'vertical strength')];}
   return result;

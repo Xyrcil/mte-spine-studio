@@ -148,9 +148,14 @@ resources need a metadata refresh and rebuilt resource ZIP to include these sett
 The source vertex-color power keyword applies its saved exponent to combined
 RGB while retaining alpha, including clipped geometry. Slot and attachment
 colors stay unchanged between draws.
-Flow-map and noise-texture distortion remain unimplemented. Active source
-keywords are reported in artwork details and export warnings; the underlying
-Spine animation remains available.
+Spine/Skeleton flow-map and noise-texture variants use their source coordinate
+transforms, two-phase flow blending and signed noise offsets. Both can run
+together on clipped geometry and share the saved material clock. The renderer
+uses exported PNG base textures with their point/bilinear and repeat/clamp
+settings. Original-client mip filtering, color-space and vertex-color parity
+remain unverified; artwork details and exports retain that notice. Missing
+texture dependencies leave the affected distortion unavailable while the
+underlying Spine animation remains available.
 Their source flow, noise and mask textures can be recovered with
 `python3 tools/extract_assets.py --source /path/to/archive --merge --metadata-only --material-textures`.
 Rebuild the indexes and resource ZIP afterward. Texture filtering, wrap modes,

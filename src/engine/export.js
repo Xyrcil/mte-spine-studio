@@ -89,6 +89,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     if(pendingEffects.length)warnings.push('Masked particle geometry and draw order still need visual verification');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.instance.renderOrderStatus&&(!layer.materialMapping||layer.materialMapping.reason))))warnings.push('Some source material queues are mixed or unresolved; their separate draw ordering is not yet restored');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.pages)))warnings.push('Material segment ordering still needs original-client visual verification');
+    if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.active&&layer.materialMapping?.distorted)))warnings.push('Material distortion filtering and color space still need original-client visual verification');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('tint'))))warnings.push('Some source material tints are unavailable');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('bindings'))))warnings.push('Some source material bindings are unavailable');
     if(session.stage.groups.some(group=>group.visible&&group.layers.some(layer=>layer.materialMapping?.reason?.includes('color power'))))warnings.push('Some source material color powers are unavailable');

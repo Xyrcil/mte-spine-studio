@@ -17,6 +17,7 @@ import {prepareSkillArtwork} from './skill-display.js';
 import {SkillDisplayRoot} from './skill-receiver.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialEffectLimitations} from './material-order.js';
 import {hasMaterialDistortion} from './material-distortion.js';
+import {DistortionRenderer} from './distortion-renderer.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -67,6 +68,7 @@ export class Stage extends EventTarget {
     const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager, layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
     try {
       const base = `${import.meta.env.BASE_URL}assets/${presentation.path}/`;
+      group.materialBase=base;
       const byId = new Map(entries.map(entry => [entry.id, entry]));
       const tree = new Map(structuredClone(presentation.hierarchy).map(node => [node.id, node]));
       const world = (id, seen = new Set()) => {
@@ -100,6 +102,8 @@ export class Stage extends EventTarget {
         const authoredActive=isActive(instance.transform)&&instance.active!==false;
         group.layers.push({instance, entry, atlas, source:skeleton, transform:world(instance.transform), active:authoredActive,authoredActive});
       }
+      for(const layer of group.layers){layer.materialMapping=compileMaterialMapping(layer);for(const materials of layer.materialMapping?.pages?.values()||[])for(const material of Object.values(materials))if(material.distortion)for(const texture of Object.values(material.textures||{}))if(texture.path)manager.loadTexture(base+texture.path);}
+      if(group.layers.some(layer=>layer.materialMapping?.distorted))group.distortionRenderer=new DistortionRenderer(this.gl);
       group.effects=createParticleLayers(group,base,manager);
       if(group.effects.some(effect=>effect.maskedProfile))group.maskedRenderer=new MaskedParticleRenderer(this.gl);
       if(presentation.nativeText?.length){group.nativeTextLayer=new NativeTextLayer(this,group);await group.nativeTextLayer.initialize(`${import.meta.env.BASE_URL}assets/`,signal);if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');}
@@ -122,8 +126,7 @@ export class Stage extends EventTarget {
         reader.scale = layer.entry.scale;
         const data = reader.readSkeletonData(layer.entry.skeleton.endsWith('.json') ? JSON.parse(manager.get(layer.source)) : manager.get(layer.source));
         layer.skeleton = new (s().Skeleton)(data);
-        layer.materialMapping=compileMaterialMapping(layer);
-        layer.materialLimitations=materialEffectLimitations(layer.entry);
+        layer.materialLimitations=materialEffectLimitations(layer.entry,layer.materialMapping);
         if (layer.instance.skin) layer.skeleton.setSkinByName(layer.instance.skin);
         layer.skeleton.scaleX = layer.instance.flipX ? -1 : 1;
         layer.skeleton.scaleY = layer.instance.flipY ? -1 : 1;
@@ -151,6 +154,7 @@ export class Stage extends EventTarget {
       group.dialogueTypography?.dispose();
       group.nativeTextLayer?.dispose();
       group.maskedRenderer?.dispose();
+      group.distortionRenderer?.dispose();
       manager.dispose();
       throw error;
     }finally{this.activeLoads--;}
@@ -288,7 +292,7 @@ export class Stage extends EventTarget {
     })().catch(error=>{if(!this.contextLost&&!this.disposed)this.dispatchEvent(new CustomEvent('rendering-recovery-error',{detail:error.message}));throw error;}).finally(()=>this.recoveryPromise=null);
     return this.recoveryPromise;
   }
-  release(group){group.nativeTextLayer?.dispose();group.dialogueTypography?.dispose();group.maskedRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
+  release(group){group.nativeTextLayer?.dispose();group.dialogueTypography?.dispose();group.maskedRenderer?.dispose();group.distortionRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
   boneDragAt(clientX,clientY){
     if(this.paused||this.recoveryPending||this.sequencePlayer)return null;const position=this.screenToWorld(clientX,clientY);
@@ -389,7 +393,7 @@ export class Stage extends EventTarget {
       }else{
         const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used&&!image.source.viewportDecoration).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
         for(const slot of group.nativeTextLayer?.slots||[])if(slot.used)draws.push({order:0,path:hierarchyOrder(group,slot.source.transform),text:slot});draws.sort(compareDraws);
-        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots,draw.tint,draw.vertexColorPower);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
+        for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.distortion)group.distortionRenderer.draw(renderer,group,draw,this.materialTime);else if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots,draw.tint,draw.vertexColorPower);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
       }
     }
     const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};
