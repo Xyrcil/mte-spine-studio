@@ -8,6 +8,7 @@ import {validateHotSpringState} from './hot-spring.js';
 import {validateSkillWordsState} from './skill-words.js';
 import {validateSkillDisplayState} from './skill-receiver.js';
 import {validateBoneDragState} from './bone-drag-root.js';
+import {validateStoryCgState} from './story-cg.js';
 import {validateBackgroundLinks} from './background-layers.js';
 import {sourcePreviewSettings} from './geometry.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
@@ -30,7 +31,7 @@ export function validateScene(value) {
       if(object.appearanceId!==undefined)result.appearanceId=text(object.appearanceId,'appearance ID');
       if(object.nativeAnimations!==undefined){if(!Array.isArray(object.nativeAnimations)||object.nativeAnimations.length>100)throw new Error('Invalid native animations');const ids=new Set();result.nativeAnimations=object.nativeAnimations.map(row=>{const checked=validateNativeAnimation(row);if(ids.has(checked.id))throw new Error('Duplicate native animation');ids.add(checked.id);return checked;});}
       if(object.effects!==undefined){if(!Array.isArray(object.effects)||object.effects.length>32)throw new Error('Invalid particle effects');const ids=new Set();result.effects=object.effects.map(row=>{if(ids.has(row.id))throw new Error('Duplicate particle effect');ids.add(row.id);return validateParticleCheckpoint(row);});}
-      if(object.interactions!==undefined){if(!Array.isArray(object.interactions)||object.interactions.length>100)throw new Error('Invalid interaction controllers');const ids=new Set();result.interactions=object.interactions.map(row=>{const id=text(row.id,'controller ID');if(ids.has(id))throw new Error('Duplicate controller ID');ids.add(id);return {id,state:row.state?.kind==='bone-drag'?validateBoneDragState(row.state):row.state?.kind==='skill-display'?validateSkillDisplayState(row.state):row.state?.kind==='skill-words'?validateSkillWordsState(row.state):row.state?.kind==='hot-spring'?validateHotSpringState(row.state):validateInteraction(row.state)};});}
+      if(object.interactions!==undefined){if(!Array.isArray(object.interactions)||object.interactions.length>100)throw new Error('Invalid interaction controllers');const ids=new Set();result.interactions=object.interactions.map(row=>{const id=text(row.id,'controller ID');if(ids.has(id))throw new Error('Duplicate controller ID');ids.add(id);return {id,state:row.state?.kind==='story-cg'?validateStoryCgState(row.state):row.state?.kind==='bone-drag'?validateBoneDragState(row.state):row.state?.kind==='skill-display'?validateSkillDisplayState(row.state):row.state?.kind==='skill-words'?validateSkillWordsState(row.state):row.state?.kind==='hot-spring'?validateHotSpringState(row.state):validateInteraction(row.state)};});}
       if(!object.layers||!Array.isArray(object.layers))throw new Error('Missing animation state');
       const layerIds=new Set();
       result.layers=object.layers.map(layer=>{

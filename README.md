@@ -373,9 +373,11 @@ resets the preview to its initial pose without retaining a frozen mix chain.
 Selections during playback keep the source mixing settings. Extracted static portraits can be
 viewed, played alongside voices and composed with animated artwork. Scenes
 reference catalog portraits rather than embedding copies of game images.
-Story CG previews do not yet reproduce the client's event-driven entrance-to-idle
-transitions, temporary playback-speed changes, or `nextState` and `shake` commands.
-These remain separate from ordinary Spine animation previews.
+Story CG playback follows the source entrance-to-idle events and temporary
+per-skeleton speed changes. Available **Next story state** and **Shake scene**
+commands use the source transitions; they are not invented canvas hit regions.
+WQ previews retain their separate animation-loop path. Story callback state is
+saved with scenes. Full playback, recovery and export verification remains pending.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,

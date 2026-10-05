@@ -18,6 +18,7 @@ import {SkillDisplayRoot} from './skill-receiver.js';
 import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialEffectLimitations} from './material-order.js';
 import {hasMaterialDistortion} from './material-distortion.js';
 import {DistortionRenderer} from './distortion-renderer.js';
+import {StoryCgRoot,isStoryCg} from './story-cg.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -159,6 +160,7 @@ export class Stage extends EventTarget {
       }
       group.layers.sort((a,b) => a.instance.sortingOrder-b.instance.sortingOrder);
       group.controllers=presentation.controllers.filter(source=>source.data.m_Enabled!==0&&source.data.m_Enabled!==false).map(source=>new InteractionRoot(this,group,source));
+      if(isStoryCg(presentation))group.controllers.push(new StoryCgRoot(this,group));
       for(const source of presentation.nativeBehaviours||[])if(source.class==='SpineAniDragBone'&&source.data.m_Enabled!==0&&source.data.m_Enabled!==false)group.controllers.push(new BoneDragRoot(group,source));
       if(presentation.skillWords)group.controllers.push(new SkillWordsRoot(group));
       if(skillReceiver){group.controllers.push(skillReceiver);skillReceiver.initialize();}
@@ -187,7 +189,7 @@ export class Stage extends EventTarget {
     for (const group of this.groups.filter(group=>group.kind==='spine')) for (const layer of group.layers) {
       const sk = layer.skeleton;
       const dirty=layer.state.animationsChanged!==layer.appliedChanged||!layer.appliedTracks||layer.appliedTracks.length!==layer.state.tracks.length||layer.state.tracks.some((track,index)=>track?APPLIED_FIELDS.some(key=>layer.appliedTracks[index]?.[key]!==track[key]):layer.appliedTracks[index]!==null);
-      if(delta!==0||dirty){layer.state.update(delta * (layer.instance.timeScale ?? 1));layer.state.apply(sk);this.recordApplied(layer);}
+      if(delta!==0||dirty){layer.state.update(delta * (layer.storyTimeScale ?? layer.instance.timeScale ?? 1));layer.state.apply(sk);this.recordApplied(layer);}
       for(const root of group.controllers||[])if(root instanceof BoneDragRoot)root.apply(layer);
       this.transformLayer(group,layer);
     }
@@ -199,6 +201,7 @@ export class Stage extends EventTarget {
   setLayerActive(group,id,active){
     if(group?.kind!=='spine'||typeof active!=='boolean')throw new Error('Invalid skeleton layer selection');const layer=group.layers.find(row=>row.instance.id===id);if(!layer)throw new Error('Skeleton layer is unavailable');layer.active=active;
     for(const root of group.controllers||[])if(root instanceof InteractionRoot){root.rebind();root.reset();for(const member of root.layers){member.state.clearTracks();member.skeleton.setToSetupPose();initializeAnimation(member,{interactive:true});}root.initializeBackgrounds();}
+    for(const root of group.controllers||[])if(root instanceof StoryCgRoot)root.reset();
     this.evaluate(0);this.fit();
   }
   transformLayer(group,layer){
@@ -278,7 +281,7 @@ export class Stage extends EventTarget {
       this.suppressEvents=true;
       try{scene.objects.forEach((row,index)=>{const group=created[index];if(group.kind==='spine')for(const layer of group.layers){const saved=row.layers.find(saved=>saved.id===layer.instance.id);if(!saved){layer.active=false;layer.state.clearTracks();layer.skeleton.setToSetupPose();initializeAnimation(layer,{interactive:group.presentation.controllers.length>0});layer.state.update(0);layer.state.apply(layer.skeleton);}else{layer.active=saved.active;if(saved.animationState){restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);}else{layer.state.clearTracks();layer.skeleton.setToSetupPose();for(const track of saved.tracks){const entry=track.name==='<empty>'?layer.state.setEmptyAnimation(track.index,0):layer.state.setAnimation(track.index,track.name,track.loop);entry.trackTime=track.time;entry.timeScale=track.timeScale;}layer.state.update(0);layer.state.apply(layer.skeleton);}}this.recordApplied(layer);this.transformLayer(group,layer);}});}finally{this.suppressEvents=false;}
       for(const group of created)for(const root of group.controllers||[])if(root instanceof InteractionRoot)root.rebind();
-      scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else root.reset();}});
+      scene.objects.forEach((row,index)=>{for(const root of created[index].controllers||[]){const state=row.interactions?.find(state=>state.id===root.source.id);if(state)root.restore(state.state);else if(root.restoreLegacy)root.restoreLegacy();else root.reset();}});
       scene.objects.forEach((row,index)=>{for(const effect of created[index].effects||[])if(effect.model){const saved=row.effects?.find(saved=>saved.id===effect.source.id);if(saved)effect.model.restore(saved);else effect.model=effect.make(effect.model.seed);}});
       scene.objects.forEach((row,index)=>{for(const native of created[index].nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(saved=>saved.id===native.source.id)||{...native.model.snapshot(),time:0,playing:Boolean(native.source.data.m_PlayAutomatically)};native.model.restore(saved);}});
       for(const group of old)if(!created.includes(group))this.release(group);
