@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {interactionEffects,resolveInteractionVoice,explicitInteractionEffect,eventLateness} from '../src/engine/interaction-audio.js';
 const state={isBig:false,state:1,cardStage:false,names:{4:'stand_down',6:'click_01_down',8:'kaoji_01',12:'rope_down',17:'game_down1'}};
+test('source voice requests retain the original row and cannot fall through to reassigned IDs',()=>{
+  const source={id:'old',resourceName:'original',text:'Original caption'},library={mainViewVoices:{voices:[source],favorVoices:[]},voices:[{id:'old',resourceName:'replacement',text:'Wrong caption'}],storyVoices:[]},calls=[],audio={resolve:(name,language,exact)=>{calls.push({name,language,exact});return name==='original'&&language==='original'?{}:null;}};
+  assert.equal(resolveInteractionVoice({sourceVoiceId:'old'},library,audio,'original').text,'Original caption');assert.deepEqual(calls,[{name:'original',language:'original',exact:true}]);
+  const warnings=[];assert.equal(resolveInteractionVoice({sourceVoiceId:'old',voiceId:'old'},library,audio,'missing',{onUnavailable:warning=>warnings.push(warning)}),null);assert.equal(warnings.length,1);assert.equal(calls.at(-1).name,'original');
+});
+test('source favor requests retain missing-caption status and unknown IDs stay unavailable',()=>{
+  const library={mainViewVoices:{favorVoices:[{id:'favor:line',resourceName:'line',text:'',subtitleStatus:'missing'}]},voices:[],storyVoices:[]},audio={resolve:()=>({})};
+  const voice=resolveInteractionVoice({sourceVoiceId:'favor:line'},library,audio,'a_sound_voiceeff');
+  assert.equal(voice.exactResource,true);assert.equal(voice.text,'');assert.equal(voice.subtitleStatus,'missing');assert.equal(voice.title,'line');
+  const warnings=[];assert.equal(resolveInteractionVoice({sourceVoiceId:'unknown',explicit:'line'},library,audio,'a_sound_voiceeff',{onUnavailable:warning=>warnings.push(warning)}),null);
+  assert.deepEqual(warnings,['Source voice unavailable (a_sound_voiceeff): unknown']);
+});
 test('special click sound branches retain state-dependent source names',()=>{
   assert.deepEqual(interactionEffects(6,'123',state),['12301_cm_click_01_down']);assert.deepEqual(interactionEffects(14,'123',{...state,isBig:true}),['12301_cm_click_03_down']);assert.deepEqual(interactionEffects(8,'123',state),['12301_cm_stand_down']);assert.deepEqual(interactionEffects(9,'123',{...state,state:2}),['12301_cm_door_down']);assert.deepEqual(interactionEffects(11,'123',state),['12301_cm_click_lleg']);assert.deepEqual(interactionEffects(18,'123',{...state,cardStage:true}),['12301_cm_card_click']);assert.deepEqual(interactionEffects(4,'301400901',state),[]);assert.deepEqual(interactionEffects(1,'0',state),[]);
 });
