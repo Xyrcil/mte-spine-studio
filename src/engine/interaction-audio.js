@@ -1,5 +1,16 @@
 const TOUCH={1:'Hand',2:'Head',3:'Chest',6:'Chest',13:'Head',14:'Chest',15:'Hand'};
 
+export function configureInteractionAmbients(stage,library){
+  stage.interactionAmbientSounds=new Map((library.appearances||[]).filter(row=>row.kind==='skin'&&row.ambientSound).map(row=>[String(row.id),row.ambientSound]));
+}
+
+export async function ensureInteractionAmbients(stage,signal){
+  if(stage.interactionAmbientSounds)return;
+  const response=await fetch(`${import.meta.env.BASE_URL}assets/library.json`,{signal});
+  if(!response.ok)throw new Error(`Interaction sound catalogue unavailable (${response.status})`);
+  configureInteractionAmbients(stage,await response.json());
+}
+
 export function eventLateness(layer,track,event){
   if(typeof track.getAnimationTime!=='function')return 0;
   const rate=(layer.instance?.timeScale??1)*(layer.state?.timeScale??1)*(track.timeScale??1);if(rate<=0)return 0;

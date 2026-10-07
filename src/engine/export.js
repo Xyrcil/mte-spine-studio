@@ -10,6 +10,7 @@ import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
 import {objectVisible} from './background-layers.js';
 import {ensureMainViewSpeech} from './main-view-speech.js';
+import {ensureInteractionAmbients} from './interaction-audio.js';
 
 const checkpoint=signal=>{if(signal?.aborted)throw new DOMException('Export cancelled','AbortError');};
 const yieldBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -23,7 +24,7 @@ export class RenderSession {
     this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
     const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
   }
-  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
+  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
     if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');
     checkpoint(this.signal);

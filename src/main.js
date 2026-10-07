@@ -16,7 +16,7 @@ import {createResourcePackPanel} from './resource-pack-panel.js';
 import {skillDisplayOptions} from './engine/skill-display.js';
 import {expandStationDrawings} from './engine/station-drawing.js';
 import {createSkillPanel} from './skill-panel.js';
-import {resolveInteractionVoice,explicitInteractionEffect} from './engine/interaction-audio.js';
+import {resolveInteractionVoice,explicitInteractionEffect,configureInteractionAmbients} from './engine/interaction-audio.js';
 
 document.querySelector('#app').innerHTML = `
   <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="library-toggle" aria-controls="asset-library" aria-expanded="false">Library</button><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
@@ -142,6 +142,7 @@ try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
+  configureInteractionAmbients(stage,libraryData);
   const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles,libraryData.voices,libraryData.characters);
   const skills=skillDisplayOptions(catalog.presentations,libraryData);catalog.presentations.push(...skills.flatMap(row=>row.presentation?[row.presentation]:[]));
   catalog.presentations=expandStationDrawings(catalog.presentations,libraryData,runtime.entries);

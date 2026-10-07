@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {InteractionRoot,validateInteraction} from '../src/engine/interaction.js';
+import {configureInteractionAmbients} from '../src/engine/interaction-audio.js';
 import {colliderContains,polygonContains,point,inversePoint,objectTransform} from '../src/engine/geometry.js';
 function fixture(){
   const events=[],stage={dispatchEvent:event=>events.push(event.detail)},nodes=new Map([['root',{data:{m_Children:[{m_PathID:'front'},{m_PathID:'body'}]}}],['front',{data:{}}],['body',{data:{}}]]);
@@ -30,6 +31,22 @@ test('newer source controllers retain their explicit transition events',()=>{
   const {root}=fixture();root.source.class='SpineClickAnimationRoot';root.source.data.rolePetType=0;
   root.click({event:100,animation:'transition'});root.onEvent(root.primary,root.primary.state.getCurrent(0),{data:{name:'changeto_animation2'}});
   assert.equal(root.value.playing,false);assert.equal(root.primary.state.getCurrent(0).animation.name,'animation2');
+});
+test('managed music events count in idle, survive restoration and reset only on a matching end',()=>{
+  const {root,events}=fixture();root.source.class='SpineClickAnimationRoot';
+  configureInteractionAmbients(root.stage,{appearances:[{kind:'skin',id:'301619402',ambientSound:'original_cloth'}]});
+  const music=()=>root.onEvent(root.primary,{animation:{name:'animation'}},{data:{name:'music'}});
+  music();assert.equal(root.value.voiceTimes,1);assert.equal(events.length,0);
+  const saved=validateInteraction(root.snapshot());root.reset();root.restore(saved);music();assert.equal(root.value.voiceTimes,0);assert.equal(events[0].name,'original_cloth');
+  music();root.click({event:1});root.onEvent(root.primary,{animation:{name:'animation_bg'}},{data:{name:'end'}});assert.equal(root.value.voiceTimes,1);
+  root.onEvent(root.primary,root.primary.state.getCurrent(0),{data:{name:'end'}});assert.equal(root.value.voiceTimes,0);
+  const legacy=root.snapshot();delete legacy.voiceTimes;assert.equal(validateInteraction(legacy).voiceTimes,0);
+  assert.throws(()=>validateInteraction({...legacy,voiceTimes:2}),/music counter/);
+});
+test('secondary layers and newer controllers do not count managed music events',()=>{
+  const {root,group,events}=fixture();root.source.class='SpineClickAnimationRoot';
+  root.onEvent(group.layers[0],{},{data:{name:'music'}});assert.equal(root.value.voiceTimes,0);
+  root.source.data.rolePetType=0;root.onEvent(root.primary,{},{data:{name:'music'}});assert.equal(root.value.voiceTimes,0);assert.equal(events.length,0);
 });
 test('missing variants retain source voice requests and recorded toggles without playing an animation',()=>{
   for(const event of [5,102]){

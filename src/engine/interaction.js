@@ -11,6 +11,7 @@ export function sourceOrder(group,gameObject){
 export function validateInteraction(value){
   if(!value||value.schema!==1)throw new Error('Unsupported interaction state');
   const result={schema:1};
+  const voiceTimes=value.voiceTimes??0;if(!Number.isInteger(voiceTimes)||voiceTimes<0||voiceTimes>1)throw new Error('Invalid interaction music counter');result.voiceTimes=voiceTimes;
   for(const key of ['playing','isBig','stockingDown','cardStage','cardClickable']){if(typeof value[key]!=='boolean')throw new Error(`Invalid interaction ${key}`);result[key]=value[key];}
   for(const [key,min,max] of [['event',0,102],['track',0,31],['state',0,3],['selectedCard',-1,2],['wins',0,3],['rounds',0,3],['random',0,4294967295]]){const n=value[key];if(!Number.isInteger(n)||n<min||n>max)throw new Error(`Invalid interaction ${key}`);result[key]=n;}
   if(typeof value.clock!=='number'||!Number.isFinite(value.clock)||value.clock<0)throw new Error('Invalid interaction clock');result.clock=value.clock;
@@ -45,7 +46,7 @@ export class InteractionRoot {
   initializeBackgrounds(){const {source}=this;
     for(const pointer of source.data.bg_list||[]){const layer=this.layers.find(layer=>layer.instance.transform===String(pointer.m_PathID));if(layer?.skeleton.data.findAnimation('animation_bg'))layer.state.setAnimation(1,'animation_bg',true);}
   }
-  reset(){this.value={schema:1,playing:false,event:0,track:0,animation:'',names:{...DEFAULT_ANIMATIONS},variants:{},isBig:false,state:this.source.data.aniState||0,stockingDown:false,cardStage:false,cardClickable:true,selectedCard:-1,wins:0,rounds:0,clock:0,random:0x12345678,tasks:[]};}
+  reset(){this.value={schema:1,voiceTimes:0,playing:false,event:0,track:0,animation:'',names:{...DEFAULT_ANIMATIONS},variants:{},isBig:false,state:this.source.data.aniState||0,stockingDown:false,cardStage:false,cardClickable:true,selectedCard:-1,wins:0,rounds:0,clock:0,random:0x12345678,tasks:[]};}
   missingVariants(){return this.hotspots.filter(hit=>[5,102].includes(hit.event)&&hit.animation&&!this.source.data.rolePetType&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(`${hit.animation}_02`))).map(hit=>({hit:hit.name,animation:`${hit.animation}_02`}));}
   missingAnimations(){
     const current=this.value.cardStage&&this.value.cardClickable?[]:this.hotspots.filter(hit=>hit.event&&hit.enabled!==0&&hit.enabled!==false&&this.group.isActiveTransform(hit.transform)).map(hit=>({hit:hit.name,animation:this.animationRequest(hit).name})).filter(row=>row.animation&&row.animation!=='rope_up'&&!this.layers.some(layer=>layer.skeleton.data.findAnimation(row.animation)));
@@ -119,10 +120,16 @@ export class InteractionRoot {
   onEvent(layer,track,event){
     if(layer!==this.primary)return;
     const name=event.data.name,v=this.value;
+    const managed=this.source.class==='SpineClickAnimationRoot'&&!Object.hasOwn(this.source.data,'rolePetType');
+    if(managed&&name==='music'){
+      v.voiceTimes=((v.voiceTimes??0)+1)%2;
+      if(v.voiceTimes===0)this.sound(this.stage.interactionAmbientSounds?.get(String(this.source.data.skin_id)),'a_sound_ui',eventLateness(layer,track,event));
+    }
     if(name.includes('sound_'))this.sound(name.replaceAll('sound_','').replace('301619402_caidan_Rshoes02','301619402_caidan_Rshoes_02'),'a_sound_ui',eventLateness(layer,track,event));
     if(!v.playing)return;
     for(const effect of this.source.data.OtherEffectList||[])if(effect.Key===name)this.emit('effect-request',{object:String(effect.Obj?.m_PathID||'0'),duration:effect.Time});
-    if(this.source.class==='SpineClickAnimationRoot'&&!Object.hasOwn(this.source.data,'rolePetType')&&(name!=='end'||track.animation?.name!==v.animation))return;
+    if(managed&&(name!=='end'||track.animation?.name!==v.animation))return;
+    if(managed)v.voiceTimes=0;
     if(name!=='end'&&name!=='card'&&!name.includes('changeto'))return;
     const eventId=v.event,variant=v.names[6]==='click_01_down_02'?2:1;
     let idle=null;
