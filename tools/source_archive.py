@@ -53,17 +53,29 @@ def sanitize_diagnostics(value):
     return value
 
 
+def source_versions(key, rows, include_all=False):
+    if len(rows) != 1 and not include_all:
+        raise ValueError("Requested bundle is ambiguous: " + key)
+    if len(rows) == 1:
+        return [(key, rows[0], None)]
+    ordered = sorted(rows, key=lambda row: row.filename)
+    return [(f"{key}/archive-{index}", row, index) for index, row in enumerate(ordered, 1)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--catalog", type=Path, default=Path("public/assets/presentations.json"))
     parser.add_argument("--bundle", action="append", default=[])
     parser.add_argument("--missing-paintings", action="store_true", help="Convert all unindexed painting bundles with unambiguous source entries")
+    parser.add_argument("--all-versions", action="store_true", help="Preserve every source entry of an explicitly selected ambiguous bundle")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
     parser.add_argument("--apk", type=Path, help="Read original shared shaders from the client archive without extracting client code")
     args = parser.parse_args()
-    known = {row["id"].lower() for row in json.loads(args.catalog.read_text())["presentations"]}
+    known = {(row.get("sourceBundle") or row["id"]).lower() for row in json.loads(args.catalog.read_text())["presentations"]}
+    if args.all_versions and (len(args.bundle) != 1 or args.missing_paintings):
+        parser.error("--all-versions requires one explicit --bundle")
     with zipfile.ZipFile(args.archive) as archive:
         entries = collections.defaultdict(list)
         for row in archive.infolist():
@@ -91,24 +103,29 @@ def main():
                 shader_bytes = decode_bundle(apk.read("assets/common/shader.data"))
         catalog_path = args.output / "extraction.json"
         bundles = json.loads(catalog_path.read_text())["bundles"] if catalog_path.exists() else []
+        selected = []
         for requested in requested_bundles:
             key = next((key for key in entries if key.lower() == requested.lower()), None)
-            if key is None or len(entries[key]) != 1:
-                raise ValueError("Requested bundle is absent or ambiguous: " + requested)
-            destination = args.output / "spines" / key.removeprefix("Spines/")
+            if key is None:
+                raise ValueError("Requested bundle is absent: " + requested)
+            selected.extend((identifier, row, version, key) for identifier, row, version in source_versions(key, entries[key], args.all_versions))
+        for identifier, row, version, key in selected:
+            destination = args.output / "spines" / identifier.removeprefix("Spines/")
             if destination.exists():
                 raise ValueError("Conversion will not overwrite an existing bundle: " + key)
-            raw = decode_bundle(archive.read(entries[key][0]))
+            raw = decode_bundle(archive.read(row))
             environment = UnityPy.load(raw)
             extractor = BundleExtractor(environment, destination)
             if shader_bytes:
                 environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
             destination.mkdir(parents=True)
             result = sanitize_diagnostics(extractor.extract())
-            result.update(id=key, path=destination.relative_to(args.output).as_posix(), origin="original-archive")
+            result.update(id=identifier, path=destination.relative_to(args.output).as_posix(), origin="original-archive")
+            if version is not None:
+                result.update(sourceBundle=key, sourceVersion=version)
             bundles.append(result)
             write_json(catalog_path, {"schema": 1, "bundles": bundles})
-            print(json.dumps({"bundle": key, "skeletons": len(result["skeletons"]), "errors": result["errors"]}), flush=True)
+            print(json.dumps({"bundle": identifier, "skeletons": len(result["skeletons"]), "errors": result["errors"]}), flush=True)
 
 
 if __name__ == "__main__":

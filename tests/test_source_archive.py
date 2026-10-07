@@ -1,12 +1,22 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_explicit_versions_preserve_both_entries_with_stable_distinct_keys(self):
+        rows = [SimpleNamespace(filename="folder/spineaniprefab.data"), SimpleNamespace(filename="folder/spineaniprefab .data")]
+        with self.assertRaises(ValueError):
+            source_versions("Spines/painting/model_hx", rows)
+        selected = source_versions("Spines/painting/model_hx", rows, True)
+        self.assertEqual([row[0] for row in selected], ["Spines/painting/model_hx/archive-1", "Spines/painting/model_hx/archive-2"])
+        self.assertIs(selected[0][1], rows[1])
+        self.assertIs(selected[1][1], rows[0])
+        self.assertEqual(source_versions("single", [rows[0]]), [("single", rows[0], None)])
     def test_diagnostic_paths_are_removed_without_rewriting_resource_content(self):
         original = {"text": "/Users/example/original dialogue", "nested": [{"error": "File cab-example not found in /Users/example/project"}]}
         result = sanitize_diagnostics(original)

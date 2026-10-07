@@ -14,13 +14,16 @@ class PortraitLibraryTests(unittest.TestCase):
         before = deepcopy(parent)
         variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
-        join_artwork_variants([parent, variant, unknown])
+        archived = {"id": "archive", "bundle": "Spines/painting/skin_spine_hx/archive-1", "sourceBundle": "Spines/painting/skin_spine_hx", "sourceVersion": 1}
+        join_artwork_variants([parent, variant, unknown, archived])
         self.assertEqual(parent, before)
         self.assertEqual(variant["variantOf"], "skin")
         self.assertEqual(variant["characterId"], "actor")
         self.assertEqual(variant["kind"], "skin")
         self.assertEqual(variant["portraitResource"], "portrait")
         self.assertNotIn("variantOf", unknown)
+        self.assertEqual(archived["variantOf"], "skin")
+        self.assertEqual(archived["name"], "Summer · HX variant · Archive variant 1")
     def test_chinese_caption_policy_exposes_only_required_configuration(self):
         result = chinese_caption_policy([{"id": 9991139, "int_value": 3, "string_value": "[3016119,3016049,3014019]", "private": "Excluded"}])
         self.assertEqual(result, {"schema": 1, "players": [3016119, 3016049, 3014019], "duration": 3})

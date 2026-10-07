@@ -64,7 +64,7 @@ for (const bundle of extraction.bundles) {
   const fontAssets=fontIndex.filter(font=>uiText.some(row=>String(row.data.m_fontAsset?.m_PathID)===font.assetId));
   result.push({id: bundle.id, path: bundle.path, category: bundle.id.split('/')[1], standalone, instances, ...(completed.unassignedInstances.length?{unassignedInstances:completed.unassignedInstances}:{}), hotspots, controllers, effects, images, canvasGroups, visualAnimations, canvasScalers, uiText, nativeText, nativeFontAssets, nativeBehaviours, typewriters, fontAssets, sortingGroups, hierarchy: nodes.filter(node => ['GameObject', 'Transform', 'RectTransform'].includes(node.type)), errors: bundle.errors});
 }
-for(const presentation of result){const origin=extraction.bundles.find(bundle=>bundle.id===presentation.id)?.origin;if(origin)presentation.origin=origin;}
+for(const presentation of result){const bundle=extraction.bundles.find(bundle=>bundle.id===presentation.id);for(const key of ['origin','sourceBundle','sourceVersion'])if(bundle?.[key]!==undefined)presentation[key]=bundle[key];}
 fs.writeFileSync(path.join(root, 'presentations.json'), JSON.stringify({schema: 1, presentations: result}, null, 2));
 console.log({presentations: result.length, instances: result.reduce((n,x) => n+x.instances.length,0), hotspots: result.reduce((n,x) => n+x.hotspots.length,0), controllers: result.reduce((n,x) => n+x.controllers.length,0)});
 const special = result.find(item => item.id === 'Spines/painting/301619402_spine');
