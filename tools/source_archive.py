@@ -69,7 +69,11 @@ def sanitize_diagnostics(value):
     return value
 
 
-def source_versions(key, rows, include_all=False):
+def source_versions(key, rows, include_all=False, variant=None):
+    if variant is not None:
+        if include_all or len(rows) != 1 or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", variant):
+            raise ValueError("A named variant requires one unambiguous bundle and a lowercase name")
+        return [(key + "/" + variant, rows[0], variant)]
     if len(rows) != 1 and not include_all:
         raise ValueError("Requested bundle is ambiguous: " + key)
     if len(rows) == 1:
@@ -127,6 +131,7 @@ def main():
     parser.add_argument("--bundle", action="append", default=[])
     parser.add_argument("--missing-paintings", action="store_true", help="Convert all unindexed painting bundles with unambiguous source entries")
     parser.add_argument("--all-versions", action="store_true", help="Preserve every source entry of an explicitly selected ambiguous bundle")
+    parser.add_argument("--variant", help="Keep an explicitly selected original bundle under a separate named variant")
     parser.add_argument("--dependency", action="append", default=[], help="Add a verified relative resource dependency when the original manifest is absent")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
@@ -135,6 +140,8 @@ def main():
     known = {(row.get("sourceBundle") or row["id"]).lower() for row in json.loads(args.catalog.read_text())["presentations"]}
     if args.all_versions and (len(args.bundle) != 1 or args.missing_paintings):
         parser.error("--all-versions requires one explicit --bundle")
+    if args.variant is not None and (len(args.bundle) != 1 or args.missing_paintings or args.all_versions):
+        parser.error("--variant requires one explicit --bundle without --all-versions")
     with zipfile.ZipFile(args.archive) as archive:
         entries = collections.defaultdict(list)
         for row in archive.infolist():
@@ -167,7 +174,7 @@ def main():
             key = next((key for key in entries if key.lower() == requested.lower()), None)
             if key is None:
                 raise ValueError("Requested bundle is absent: " + requested)
-            selected.extend((identifier, row, version, key) for identifier, row, version in source_versions(key, entries[key], args.all_versions))
+            selected.extend((identifier, row, version, key) for identifier, row, version in source_versions(key, entries[key], args.all_versions, args.variant))
         for identifier, row, version, key in selected:
             destination = output_destination(args.output, identifier)
             if destination.exists():

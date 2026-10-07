@@ -278,13 +278,17 @@ def join_artwork_variants(appearances):
     by_bundle = {row.get("bundle"): row for row in appearances if row.get("characterId")}
     for row in appearances:
         bundle = row.get("sourceBundle") or row.get("bundle", "")
-        if not bundle.startswith("Spines/painting/") or not bundle.endswith("_hx"):
+        if not bundle.startswith("Spines/painting/"):
             continue
-        parent = by_bundle.get(bundle.removesuffix("_hx"))
+        hx = bundle.endswith("_hx")
+        if not hx and (not row.get("sourceBundle") or row.get("bundle") == bundle):
+            continue
+        parent = by_bundle.get(bundle.removesuffix("_hx") if hx else bundle)
         if not parent:
             continue
-        row.update(variantOf=parent["id"], characterId=parent["characterId"], characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · HX variant")
-        if row.get("sourceVersion"):
+        label = "HX variant" if hx else "Original archive" if row.get("sourceVersion") == "original" else "Archive variant " + str(row.get("sourceVersion"))
+        row.update(variantOf=parent["id"], characterId=parent["characterId"], characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
+        if hx and row.get("sourceVersion"):
             row["name"] += " · Archive variant " + str(row["sourceVersion"])
         if parent.get("portraitResource"):
             row.setdefault("portraitResource", parent["portraitResource"])

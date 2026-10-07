@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
-const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
+const engine=process.argv[2]||'chromium',bundle=process.argv[3]||'Spines/painting/301602402_spine',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
-  const result=await page.evaluate(async()=>{
+  const result=await page.evaluate(async bundle=>{
     const {Stage}=await import('/src/engine/stage.js'),{createCanvasInput}=await import('/src/canvas-input.js'),{InteractionRecorder,InteractionPlayer}=await import('/src/engine/interaction-sequence.js'),{exportMedia}=await import('/src/engine/export.js'),{point}=await import('/src/engine/geometry.js'),{unzipSync}=await import('/node_modules/fflate/esm/browser.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;
-    const presentation=catalog.find(row=>row.id==='Spines/painting/301602402_spine'),canvas=document.createElement('canvas');canvas.width=320;canvas.height=192;const stage=new Stage(canvas,{manual:true});
+    const presentation=catalog.find(row=>row.id===bundle);if(!presentation)throw new Error('Bone drag artwork is unavailable: '+bundle);
+    const canvas=document.createElement('canvas');canvas.width=320;canvas.height=192;const stage=new Stage(canvas,{manual:true});
     try{
-      const group=await stage.add(presentation,entries),root=group.controllers.find(row=>row.snapshot().kind==='bone-drag');if(!root||!root.source.dragColliders.length)throw new Error('Source drag receiver or collider missing');
+      const group=await stage.add(presentation,entries),root=group.controllers.find(row=>row.snapshot().kind==='bone-drag'),source=presentation.nativeBehaviours.find(row=>row.class==='SpineAniDragBone');
+      if(source&&(source.data.m_Enabled===0||source.data.m_Enabled===false)){
+        if(root)throw new Error('Disabled source drag component was enabled');
+        return {disabled:true,sourceReceiver:source.id,renderedLayers:group.layers.length,colliders:source.dragColliders.length};
+      }
+      if(!root||!root.source.dragColliders.length)throw new Error('Source drag receiver or collider missing');
       const baseline=stage.snapshot(),center={...root.motion.center},left=root.rangePosition(root.left),right=root.rangePosition(root.right),world={x:(left.x+right.x)/2,y:(left.y+right.y)/2};root.begin();if(!root.move(world))throw new Error('Source range did not accept its center');stage.evaluate(0);
       if(!root.members.every(({bone})=>bone.x===root.motion.current.x&&bone.y===root.motion.current.y))throw new Error('Drag pose was overwritten');root.release();stage.evaluate(.2);const saved=stage.snapshot();stage.evaluate(.1);const expected=root.snapshot();
       await stage.restore(saved,[presentation],entries);stage.evaluate(.1);if(JSON.stringify(root.snapshot())!==JSON.stringify(expected))throw new Error('Return motion changed after restore');stage.evaluate(.2);
@@ -37,5 +43,5 @@ try{
         return {members:root.members.length,colliders:root.source.dragColliders.length,center,left,right,transformedRanges,recorded:sequence.actions.length,exportedFrames:files.length,videoFrames};
       }finally{input.dispose();recorder.dispose();canvas.remove();}
     }finally{stage.dispose();}
-  });assert.deepEqual(errors,[]);console.log('Real source drag: shared pose, dynamic bounds, return and scene restore verified',result);
+  },bundle);assert.deepEqual(errors,[]);console.log('Real source drag: shared pose, dynamic bounds, return and scene restore verified',{bundle,...result});
 }finally{await close();}

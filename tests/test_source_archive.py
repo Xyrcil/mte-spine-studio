@@ -11,6 +11,17 @@ from source_archive import spine_key, decode_bundle, missing_paintings, sanitize
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_named_original_variant_preserves_its_resource_identity(self):
+        row = SimpleNamespace(filename="source.data")
+        self.assertEqual(source_versions("Spines/painting/model", [row], variant="original"), [("Spines/painting/model/original", row, "original")])
+        for name in ["../escape", "Original", "", "a/b", "a" * 65]:
+            with self.assertRaises(ValueError):
+                source_versions("Spines/painting/model", [row], variant=name)
+        with self.assertRaises(ValueError):
+            source_versions("Spines/painting/model", [row, row], variant="original")
+        with self.assertRaises(ValueError):
+            source_versions("Spines/painting/model", [row], True, "original")
+
     def test_output_paths_preserve_existing_directory_casing(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

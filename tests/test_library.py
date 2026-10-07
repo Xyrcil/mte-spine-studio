@@ -26,7 +26,8 @@ class PortraitLibraryTests(unittest.TestCase):
         variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
         archived = {"id": "archive", "bundle": "Spines/painting/skin_spine_hx/archive-1", "sourceBundle": "Spines/painting/skin_spine_hx", "sourceVersion": 1}
-        join_artwork_variants([parent, variant, unknown, archived])
+        original = {"id": "original", "bundle": "Spines/painting/skin_spine/original", "sourceBundle": "Spines/painting/skin_spine", "sourceVersion": "original"}
+        join_artwork_variants([parent, variant, unknown, archived, original])
         self.assertEqual(parent, before)
         self.assertEqual(variant["variantOf"], "skin")
         self.assertEqual(variant["characterId"], "actor")
@@ -35,6 +36,10 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertNotIn("variantOf", unknown)
         self.assertEqual(archived["variantOf"], "skin")
         self.assertEqual(archived["name"], "Summer · HX variant · Archive variant 1")
+        self.assertEqual(original["variantOf"], "skin")
+        self.assertEqual(original["characterId"], "actor")
+        self.assertEqual(original["portraitResource"], "portrait")
+        self.assertEqual(original["name"], "Summer · Original archive")
     def test_chinese_caption_policy_exposes_only_required_configuration(self):
         result = chinese_caption_policy([{"id": 9991139, "int_value": 3, "string_value": "[3016119,3016049,3014019]", "private": "Excluded"}])
         self.assertEqual(result, {"schema": 1, "players": [3016119, 3016049, 3014019], "duration": 3})
