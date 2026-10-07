@@ -14,7 +14,12 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
-def main_view_voice_catalogue(rows):
+def main_view_voice_catalogue(rows, skins=(), station_ids=()):
+    rows = list(rows)
+    captions = {}
+    for row in rows:
+        if row.get("show_type") == 1:
+            captions.setdefault(row["file_name"], row["voice_text"])
     result = []
     for row in rows:
         resource = row["file_name"]
@@ -24,7 +29,12 @@ def main_view_voice_catalogue(rows):
                        "type": row["type"], "resourceName": resource,
                        "title": row["voice_title"], "text": row["voice_text"],
                        "exactResource": True})
-    return {"schema": 1, "touchType": 3, "voices": result}
+    station = [{"id": str(row["id"]), "targetId": str(row["target_id"]), "type": row["type"],
+                "resourceName": row["file_name"], "title": row["voice_title"], "text": row["voice_text"],
+                "exactResource": True} for row in rows if str(row["id"]) in station_ids and row["type"] != 0]
+    return {"schema": 1, "touchType": 3, "voices": result, "stationVoices": station,
+            "captions": captions,
+            "touchRules": [{"id": str(row["id"]), "spineTouch": int(row.get("spine_touch") or 0)} for row in skins]}
 
 
 def hot_spring_speech_catalogue(houses, skins, voices):
@@ -364,7 +374,8 @@ def build(source, output):
     characters = [{"id": key, "name": name} for key, name in names.items()]
     runtime_entries = json.loads((output / "runtime-index.json").read_text())["entries"]
     station_drawings = station_drawing_catalogue([(origin, records(root / "a_station_drawing.json")) for origin, root in zip(("legacy", "archive"), roots)], runtime_entries)
-    main_voices = main_view_voice_catalogue(voices.values())
+    main_voices = main_view_voice_catalogue(voices.values(), skins.values(),
+                                          {identifier for drawing in station_drawings["drawings"] for identifier in drawing["voiceIds"]})
     favor_speech = hot_spring_speech_catalogue(source_hot_springs.values(), skins.values(), voices.values())
     main_voices.update(hotSpringProfiles=favor_speech["profiles"], favorVoices=favor_speech["voices"])
     write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "mainViewVoices": main_voices, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})

@@ -19,7 +19,7 @@ export class MainViewSpeechClock {
   requestClick(){if(!this.value.canClick)return false;this.value.canClick=false;return true;}
   soundStarted(length){this.value.wordsRemaining=sourceSpeechDelay(length);}
   stopWords(){this.value.canClick=true;this.value.wordsRemaining=null;this.onHideWords();}
-  finish(){this.value.canClick=true;this.value.wordsRemaining=null;this.onHideWords();if(this.value.visible)this.value.idleRemaining=120;}
+  finish(lateness=0){this.value.canClick=true;this.value.wordsRemaining=null;this.onHideWords(lateness);if(this.value.visible)this.value.idleRemaining=120;}
   nextIdle(){let random=this.value.random;random^=random<<13;random^=random>>>17;random^=random<<5;this.value.random=random>>>0;return Math.floor(this.value.random/4294967296*2)+1;}
   advance(delta){
     if(!Number.isFinite(delta)||delta<0)throw new Error('Invalid source game-clock step');
@@ -29,8 +29,8 @@ export class MainViewSpeechClock {
       for(const field of ['wordsRemaining','idleRemaining'])if(this.value[field]!==null)this.value[field]=Math.max(0,this.value[field]-step);
       delta=Math.max(0,delta-step);if(step<due-1e-9)return;
       if(++steps>10000)throw new Error('Too many source speech timer callbacks');
-      if(this.value.idleRemaining!==null&&this.value.idleRemaining<=1e-9){this.value.idleRemaining=null;this.onIdle(this.nextIdle());}
-      if(this.value.wordsRemaining!==null&&this.value.wordsRemaining<=1e-9)this.finish();
+      if(this.value.idleRemaining!==null&&this.value.idleRemaining<=1e-9){this.value.idleRemaining=null;this.onIdle(this.nextIdle(),delta);}
+      if(this.value.wordsRemaining!==null&&this.value.wordsRemaining<=1e-9)this.finish(delta);
       if(delta===0)return;
     }
   }

@@ -1,6 +1,13 @@
 import {savedVoiceRow} from './voice-catalog.js';
 import {objectVisible} from './background-layers.js';
 
+export function audioResourceLookup(index,resources){
+  const lookup={resources:new Map(resources.map(row=>[row.name,row])),byName:new Map()};
+  for(const row of resources){const name=row.resource.split('/').at(-1);if(!lookup.resources.has(name))lookup.resources.set(name,row);}
+  for(const entry of index.entries)if(!entry.errors.length)lookup.byName.set(entry.name,[...(lookup.byName.get(entry.name)||[]),entry]);
+  lookup.resolve=AudioBus.prototype.resolve.bind(lookup);return lookup;
+}
+
 export class AudioBus extends EventTarget {
   constructor(index, resources, base,voiceRows=[]) {
     super();
@@ -8,12 +15,7 @@ export class AudioBus extends EventTarget {
     this.voiceRows=voiceRows;this.currentVoice=null;this.currentSubtitle=null;
     this.volume=1;this.muted=false;this.token=0;this.effects=new Set();this.effectVolume=.8;
     this.ambientVolume=.5;this.ambientEnabled=false;this.language='a_sound_voiceeff';this.paused=false;this.unlocked=false;this.ambients=new Map();this.ambientPreferences=new Map();this.sceneGroups=[];this.appearances=[];
-    this.resources=new Map(resources.map(row=>[row.name,row]));
-    for(const row of resources){const name=row.resource.split('/').at(-1);if(!this.resources.has(name))this.resources.set(name,row);}
-    this.byName=new Map();
-    for(const entry of index.entries)if(!entry.errors.length) {
-      this.byName.set(entry.name,[...(this.byName.get(entry.name)||[]),entry]);
-    }
+    const lookup=audioResourceLookup(index,resources);this.resources=lookup.resources;this.byName=lookup.byName;
     this.element=new Audio();this.element.preload='none';
     this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
     this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop();this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
@@ -30,6 +32,7 @@ export class AudioBus extends EventTarget {
     const volume=Number(metadata?.volume??1);return {name,category:chosen,clip,volume:Number.isFinite(volume)?Math.max(0,Math.min(1,volume)):1,loop:metadata?.loop===true||metadata?.loop===1||metadata?.loop==='1'};
   }
   setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
+  hideSourceSubtitle(group){if(this.currentVoice?.group===group&&this.currentVoice.voice.sourceMainView){this.currentVoice.voice.subtitleHidden=true;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}}
   async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
     if(!voice?.resourceName)throw new Error('No voice resource selected');
     voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{}),...(voice.exactResource?{exactResource:true}:{})},this.voiceRows),...voice};
@@ -42,7 +45,7 @@ export class AudioBus extends EventTarget {
     this.element.src=this.base+clip.path;this.element.volume=this.volume;this.element.muted=this.muted;
     if(autoplay){this.unlocked=true;if(!await this.startVoice(token))return;}
     if(token!==this.token)return;
-    this.setSubtitle({title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
+    this.setSubtitle(voice.subtitleHidden?null:{title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
   }
   async startVoice(token){
     try{if(token===this.token&&this.currentVoice?.pauseTime!==undefined&&this.element.readyState>0)this.element.currentTime=Math.min(this.currentVoice.pauseTime,this.element.duration);await this.element.play();if(token===this.token&&!this.paused)delete this.currentVoice?.pauseTime;return token===this.token;}
@@ -68,7 +71,7 @@ export class AudioBus extends EventTarget {
   releaseEffect(element){if(!this.effects.delete(element))return;element.pause();element.removeAttribute('src');element.load();this.dispatchEvent(new CustomEvent('effect-state'));}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
   pause() {const voiceWasPlaying=this.currentVoice&&!this.element.paused,effectsWerePlaying=[...this.effects].some(effect=>!effect.paused);if(this.currentVoice&&(voiceWasPlaying||this.currentVoice.pauseTime===undefined)){const position=this.element.currentTime||this.currentVoice.time;this.currentVoice.pauseTime=this.currentVoice.time=position;}this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();if(voiceWasPlaying)this.dispatchEvent(new CustomEvent('voice-state'));if(effectsWerePlaying)this.dispatchEvent(new CustomEvent('effect-state'));}
-  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>this.startEffect(effect)),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle({title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
+  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>this.startEffect(effect)),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle(this.currentVoice.voice.subtitleHidden?null:{title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}
@@ -113,11 +116,11 @@ export class AudioBus extends EventTarget {
   ambientSnapshot(){
     const tracks=[];for(const group of this.sceneGroups){const setting=this.ambientSetting(group);if(!setting)continue;const channel=this.ambients.get(group.id);tracks.push({...setting,time:channel?.element.currentTime||setting.time,ended:channel?.ended??setting.ended});}return tracks;
   }
-  snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.paused&&current.pauseTime!==undefined?current.pauseTime:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.voice.exactResource?{exactResource:true}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
+  snapshot(){const current=this.currentVoice,voiceTrack=current&&!this.element.ended?{name:current.voice.resourceName,category:current.category,time:this.element.paused&&current.pauseTime!==undefined?current.pauseTime:this.element.currentTime||current.time,...(current.voice.id?{id:current.voice.id}:{}),...(current.voice.exactResource?{exactResource:true}:{}),...(current.voice.sourceMainView?{sourceMainView:true}:{}),...(current.voice.subtitleHidden?{subtitleHidden:true}:{}),...(current.group?{group:current.group}:{})}:null;return {schema:1,voiceVolume:this.volume,effectVolume:this.effectVolume,ambientVolume:this.ambientVolume,muted:this.muted,ambientEnabled:this.ambientEnabled,language:this.language,ambientTracks:this.ambientSnapshot(),effectTracks:[...this.effects].filter(element=>!element.ended).map(element=>({name:element.effectName,category:element.effectCategory,time:element.currentTime||element.effectTime||0,...(element.effectGroup?{group:element.effectGroup}:{})})),voiceTrack};}
   exportVoice(snapshot,objects){
     const track=snapshot?.voiceTrack;if(!track||track.group&&!objects.some(object=>object.id===track.group&&objectVisible(object,objects)))return null;
     const clip=this.resolve(track.name,track.category,track.exactResource);if(!clip)throw new Error(`Voice unavailable: ${track.name}`);
-    const row=savedVoiceRow(track,this.voiceRows);return {url:this.base+clip.path,text:row.text,position:track.time,gain:snapshot.voiceVolume,scene:true,repeat:false};
+    const row=savedVoiceRow(track,this.voiceRows);return {url:this.base+clip.path,text:row.text,position:track.time,gain:snapshot.voiceVolume,scene:true,repeat:false,...(track.subtitleHidden?{subtitleHidden:true}:{})};
   }
   exportAmbients(snapshot,objects){
     if(!snapshot||snapshot.muted||!snapshot.ambientEnabled)return [];

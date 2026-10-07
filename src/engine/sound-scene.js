@@ -31,8 +31,9 @@ export function validateSoundScene(value,objects){
     if(typeof track.time!=='number'||!Number.isFinite(track.time)||track.time<0||track.time>86400)throw new Error('Invalid voice time');
     if(track.id!==undefined&&(typeof track.id!=='string'||!track.id||track.id.length>512))throw new Error('Invalid voice identifier');
     if(track.exactResource!==undefined&&typeof track.exactResource!=='boolean')throw new Error('Invalid exact voice reference');
+    for(const key of ['sourceMainView','subtitleHidden'])if(track[key]!==undefined&&typeof track[key]!=='boolean')throw new Error(`Invalid voice ${key}`);
     if(track.group!==undefined&&(typeof track.group!=='string'||!objectIds.has(track.group)))throw new Error('Invalid voice object');
-    voiceTrack={name:track.name,category:track.category,time:track.time,...(track.id!==undefined?{id:track.id}:{}),...(track.exactResource?{exactResource:true}:{}),...(track.group!==undefined?{group:track.group}:{})};
+    voiceTrack={name:track.name,category:track.category,time:track.time,...(track.id!==undefined?{id:track.id}:{}),...(track.exactResource?{exactResource:true}:{}),...(track.sourceMainView?{sourceMainView:true}:{}),...(track.subtitleHidden?{subtitleHidden:true}:{}),...(track.group!==undefined?{group:track.group}:{})};
   }}
   return {schema:1,voiceVolume:volume(value.voiceVolume,'voice volume'),effectVolume:volume(value.effectVolume,'effect volume'),ambientVolume:volume(value.ambientVolume,'ambient volume'),muted:value.muted,ambientEnabled:value.ambientEnabled,language:value.language,ambientTracks,...(effectTracks!==undefined?{effectTracks}:{}),...(voiceTrack!==undefined?{voiceTrack}:{})};
 }

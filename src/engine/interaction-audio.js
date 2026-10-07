@@ -26,11 +26,15 @@ export function interactionEffects(event,skin,state){
 
 export function resolveInteractionVoice(request,library,audio,language,{onUnavailable=()=>{}}={}){
   if(request.sourceVoiceId){
-    const rows=[...(library.mainViewVoices?.voices||[]),...(library.mainViewVoices?.favorVoices||[])];
+    const rows=[...(library.mainViewVoices?.voices||[]),...(library.mainViewVoices?.stationVoices||[]),...(library.mainViewVoices?.favorVoices||[])];
     const row=rows.find(row=>row.id===request.sourceVoiceId);
-    if(row&&audio.resolve(row.resourceName,language,true))return {...row,exactResource:true,title:row.title||row.resourceName};
+    if(row&&audio.resolve(row.resourceName,language,true))return {...row,exactResource:true,title:row.title||row.resourceName,...(request.sourceCaption?{text:library.mainViewVoices?.captions?.[row.resourceName]||'',sourceMainView:true}:{})};
     onUnavailable(`Source voice unavailable (${language}): ${row?.resourceName||request.sourceVoiceId}`);
     return null;
+  }
+  if(request.sourceResource){
+    if(audio.resolve(request.sourceResource,language,true))return {resourceName:request.sourceResource,title:request.sourceResource,text:library.mainViewVoices?.captions?.[request.sourceResource]||'',exactResource:true,sourceMainView:true};
+    onUnavailable(`Source voice unavailable (${language}): ${request.sourceResource}`);return null;
   }
   if(request.voiceId){const row=library.voices.find(row=>row.id===request.voiceId);if(row&&audio.resolve(row.resourceName,language))return {...row,title:row.title||row.resourceName};onUnavailable(`Voice unavailable (${language}): ${row?.resourceName||request.voiceId}`);return null;}
   const skin=String(request.skinId||'');

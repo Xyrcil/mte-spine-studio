@@ -26,6 +26,15 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertTrue(all(voice["exactResource"] for voice in result["voices"]))
         self.assertTrue(all("source" not in voice and "hash" not in voice for voice in result["voices"]))
 
+    def test_main_view_caption_visibility_and_touch_rules_follow_source_fields(self):
+        rows = [{"id": 1, "target_id": 7, "file_name": "line", "type": 3, "voice_title": "Title", "voice_text": "Hidden", "show_type": 0},
+                {"id": 2, "target_id": 7, "file_name": "line", "type": 4, "voice_title": "Title", "voice_text": "First visible", "show_type": 1},
+                {"id": 3, "target_id": 7, "file_name": "line", "type": 0, "voice_title": "Title", "voice_text": "Later", "show_type": 1}]
+        result = main_view_voice_catalogue(rows, [{"id": 7, "spine_touch": 1}], {"2", "3"})
+        self.assertEqual(result["captions"], {"line": "First visible"})
+        self.assertEqual(result["touchRules"], [{"id": "7", "spineTouch": 1}])
+        self.assertEqual([voice["id"] for voice in result["stationVoices"]], ["2"])
+
     def test_station_drawings_merge_by_id_and_keep_exact_pairs_without_private_metadata(self):
         old = {"id": 1, "drawing": "old", "action_list": "old"}
         row = {"id": 1, "drawing": "new", "people_id": 3, "expression": "smile", "action_list": "touch;sigh", "expression_list": "happy;sad", "voice_list": "12;13", "source": "/private/account", "hash": "private"}

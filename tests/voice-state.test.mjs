@@ -11,6 +11,12 @@ class FakeAudio extends EventTarget{
 }
 const voices=[{id:'1',resourceName:'spoken',title:'Voice',text:'Original source subtitle'}];
 function setup(){const bus=new AudioBus({entries:[{name:'spoken',category:'a_sound_voiceeff_ch',errors:[],clips:[{path:'spoken.m4a'}]}]},[],'/assets/',voices),group={id:'actor',visible:true};bus.syncAmbients([group],[]);return {bus,group};}
+test('source subtitle hiding preserves native speech and stays hidden across pause and restore',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus,group}=setup();bus.voiceRows=bus.voiceRows.map(row=>({...row,mainViewText:'Source caption'}));await bus.play({...voices[0],sourceMainView:true,text:'Source caption'},'a_sound_voiceeff_ch',{group:group.id});bus.hideSourceSubtitle(group.id);assert.equal(bus.element.paused,false);assert.ok(bus.currentVoice);assert.equal(bus.currentSubtitle,null);
+    bus.pause();const saved=validateSoundScene(bus.snapshot(),[group]);assert.equal(saved.voiceTrack.subtitleHidden,true);bus.restore(saved,[group],[],true);assert.equal(bus.currentSubtitle,null);await bus.resume();assert.equal(bus.currentSubtitle,null);assert.equal(bus.exportVoice(saved,[group]).subtitleHidden,true);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
 test('exact source voices cannot be redirected by newer sound aliases during capture or restore',async()=>{
   const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
   try{const source={id:'1',resourceName:'original',title:'Source',text:'Source subtitle',exactResource:true},modern={id:'1',resourceName:'replacement',alias:'original',text:'New subtitle'},bus=new AudioBus({entries:['original','replacement'].map(name=>({name,category:'a_sound_voiceeff',errors:[],clips:[{path:name+'.m4a'}]}))},[{name:'original',resource:'SoundRes/a_sound_voiceeff/replacement'}],'/assets/',[modern,source]);

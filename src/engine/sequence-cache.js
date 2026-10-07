@@ -19,10 +19,11 @@ export async function sequenceCacheResources(value,{catalog,entries,imageAssets,
   const voice=event=>{try{
     if(!audio||!library)return;
     const effect=explicitInteractionEffect(event.detail,audio);if(effect)addSound(effect.name,effect.category);
-    const languages=sequence.initial.audio?.language?[sequence.initial.audio.language]:[...new Set([audio.language,'a_sound_voiceeff'])];
+    const languages=event.detail.language?[event.detail.language]:sequence.initial.audio?.language?[sequence.initial.audio.language]:[...new Set([audio.language,'a_sound_voiceeff'])];
     for(const language of languages){const row=resolveInteractionVoice(event.detail,library,audio,language,{onUnavailable:warning=>warnings.add(warning)}),clip=row&&audio.resolve(row.resourceName,language,row.exactResource);if(clip)urls.add(new URL('assets/'+clip.path,base).href);}
   }catch(error){callbackError=error;}};
-  session.stage.addEventListener('sound-request',sound);session.stage.addEventListener('voice-request',voice);
+  const unavailable=event=>warnings.add(`Source speech unavailable (${event.detail.language}): ${event.detail.resourceName}`);
+  session.stage.addEventListener('sound-request',sound);session.stage.addEventListener('voice-request',voice);session.stage.addEventListener('speech-unavailable',unavailable);
   try{
     onProgress(0,sequence.duration);await session.initialize();
     for(const url of sceneCacheUrls(session.stage.groups,base))urls.add(url);
@@ -30,5 +31,5 @@ export async function sequenceCacheResources(value,{catalog,entries,imageAssets,
     if(audio&&library)for(const object of sequence.initial.objects){const appearance=library.appearances.find(row=>object.appearanceId?row.id===object.appearanceId:row.bundle===object.bundle);if(appearance?.ambientSound){const info=audio.soundInfo(appearance.ambientSound);if(info.clip)urls.add(new URL('assets/'+info.clip.path,base).href);}}
     await session.seek(sequence.duration,at=>{if(callbackError)throw callbackError;onProgress(at,sequence.duration);});if(callbackError)throw callbackError;
     return {urls:[...urls],warnings:[...warnings]};
-  }finally{session.stage.removeEventListener('sound-request',sound);session.stage.removeEventListener('voice-request',voice);session.dispose();}
+  }finally{session.stage.removeEventListener('sound-request',sound);session.stage.removeEventListener('voice-request',voice);session.stage.removeEventListener('speech-unavailable',unavailable);session.dispose();}
 }

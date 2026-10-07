@@ -11,6 +11,10 @@ export function validateSequence(value){
   const actions=value.actions.map(action=>{
     const at=time(action.at);if(at<previous||at>duration)throw new Error('Sequence actions must be ordered within its duration');previous=at;
     const group=identifier(action.group,'object'),controller=identifier(action.controller,'controller'),hit=identifier(action.hit,'region');
+    if(action.type==='main-view-speech'){
+      if(!initial.objects.some(object=>object.id===group)||controller!=='main-view-speech'||!['start','touch','stop'].includes(hit)||action.unavailable!==undefined||typeof action.animation!=='string'||action.animation.length>512||!['a_sound_voiceeff','a_sound_voiceeff_ch'].includes(action.language)||typeof action.localized!=='boolean')throw new Error('Invalid sequence main-view speech');
+      return {at,group,controller,hit,animation:action.animation,type:'main-view-speech',language:action.language,localized:action.localized};
+    }
     const object=initial.objects.find(object=>object.id===group&&object.kind==='spine');
     if(!object?.interactions?.some(root=>root.id===controller))throw new Error('Sequence controller is absent from its initial scene');
     if(action.unavailable!==undefined&&(typeof action.unavailable!=='boolean'||action.type!==undefined))throw new Error('Invalid unavailable sequence action');
@@ -59,7 +63,7 @@ export class InteractionRecorder {
   constructor(stage){
     this.stage=stage;this.active=false;this.elapsed=0;this.actions=[];
     this.onStep=event=>{if(this.active){this.elapsed+=event.detail.delta;if(this.elapsed>86400){this.elapsed=86400;this.stop();}}};
-    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000)return;const {group,controller,hit,animation='',unavailable,type,operation,position}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation,...(unavailable?{unavailable:true}:{}),...(type==='bone-drag'?{type,operation,...(position?{position:{...position}}:{})}:{})});if(!this.stopping&&this.actions.length>=10000-this.dragReserve)this.stop();}};
+    this.onInteraction=event=>{if(this.active){if(this.actions.length>=10000)return;const {group,controller,hit,animation='',unavailable,type,operation,position,language,localized}=event.detail;this.actions.push({at:this.elapsed,group,controller,hit,animation,...(unavailable?{unavailable:true}:{}),...(type==='main-view-speech'?{type,language,localized}:type==='bone-drag'?{type,operation,...(position?{position:{...position}}:{})}:{})});if(!this.stopping&&this.actions.length>=10000-this.dragReserve)this.stop();}};
     this.onLost=()=>{if(this.active)this.stop();};
     stage.addEventListener('simulation-step',this.onStep);stage.addEventListener('interaction-invoked',this.onInteraction);stage.addEventListener('rendering-pausing',this.onLost);stage.addEventListener('rendering-lost',this.onLost);
   }
@@ -86,7 +90,7 @@ export class InteractionPlayer {
     const advanceTo=target=>{while(target-this.elapsed>TIME_EPSILON){const remaining=target-this.elapsed,step=remaining>=SIMULATION_STEP-TIME_EPSILON?SIMULATION_STEP:remaining;timed(Math.min(target,this.elapsed+step),()=>evaluate(step));this.elapsed+=step;}this.elapsed=target;};
     while(this.cursor<this.sequence.actions.length&&this.sequence.actions[this.cursor].at<=end){
       const action=this.sequence.actions[this.cursor];advanceTo(action.at);
-      const result=timed(action.at,()=>action.type==='bone-drag'?this.stage.triggerBoneDrag(action,{replay:true}):this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
+      const result=timed(action.at,()=>action.type==='main-view-speech'?this.stage.triggerMainViewSpeech(action.group,action.hit,{language:action.language,localized:action.localized,replay:true}):action.type==='bone-drag'?this.stage.triggerBoneDrag(action,{replay:true}):this.stage.triggerInteraction(action.group,action.controller,action.hit,{replay:true}));
       const matched=action.unavailable?result.accepted===false&&result.unavailable===true:result.accepted;
       if(!matched||result.animation!==action.animation)throw new Error(`Sequence action ${this.cursor+1} could not be reproduced: ${result.reason||'animation changed'}`);
       this.cursor++;

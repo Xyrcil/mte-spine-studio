@@ -21,6 +21,7 @@ import {DistortionRenderer} from './distortion-renderer.js';
 import {StoryCgRoot,isStoryCg} from './story-cg.js';
 import {StationDrawingRoot} from './station-drawing.js';
 import {MainViewSpeechClock} from './main-view-speech-clock.js';
+import {MainViewSpeech} from './main-view-speech.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -44,7 +45,8 @@ export class Stage extends EventTarget {
     super();
     this.canvas = canvas;
     this.options=options;
-    this.mainViewSpeechClock=new MainViewSpeechClock({onHideWords:()=>this.dispatchEvent(new CustomEvent('main-view-words-hidden')),onIdle:index=>this.dispatchEvent(new CustomEvent('main-view-idle',{detail:{index}}))});
+    this.mainViewSpeech=new MainViewSpeech(this);
+    this.mainViewSpeechClock=new MainViewSpeechClock({onHideWords:late=>{this.mainViewSpeech.hideWords(late);this.dispatchEvent(new CustomEvent('main-view-words-hidden'));},onIdle:(index,late)=>{this.mainViewSpeech.idle(index,late);this.dispatchEvent(new CustomEvent('main-view-idle',{detail:{index}}));}});
     const contextOptions={alpha:true, antialias:true, preserveDrawingBuffer:true};
     this.gl = canvas.getContext('webgl',contextOptions)||canvas.getContext('webgl2',contextOptions);
     if (!this.gl) throw new Error('WebGL is unavailable');
@@ -186,6 +188,7 @@ export class Stage extends EventTarget {
     if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
   }
   evaluateFrame(delta) {
+    this.mainViewSpeech?.advance();
     this.mainViewSpeechClock?.advance(delta);
     if(delta>0)this.materialTime=(this.materialTime??0)+delta;
     for(const group of this.groups)if(group.visible)for(const native of group.nativeAnimations||[])if(native.model&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject.m_PathID))?.id))native.model.advance(delta);
@@ -243,7 +246,7 @@ export class Stage extends EventTarget {
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
-    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.mainViewSpeechClock&&(this.mainViewSpeechClock.value.visible||this.mainViewSpeechClock.active||!this.mainViewSpeechClock.value.canClick||this.mainViewSpeechClock.value.random!==0x12345678)?{mainViewSpeechClock:this.mainViewSpeechClock.snapshot()}:{}),...(this.groups.some(group=>group.layers?.some(layer=>hasMaterialDistortion(layer.entry)))?{materialTime:this.materialTime??0}:{}),...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
+    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.mainViewSpeech&&(this.mainViewSpeech.value.group||this.mainViewSpeech.value.random!==0x12345678)?{mainViewSpeech:this.mainViewSpeech.snapshot()}:{}),...(this.mainViewSpeechClock&&(this.mainViewSpeechClock.value.visible||this.mainViewSpeechClock.active||!this.mainViewSpeechClock.value.canClick||this.mainViewSpeechClock.value.random!==0x12345678)?{mainViewSpeechClock:this.mainViewSpeechClock.snapshot()}:{}),...(this.groups.some(group=>group.layers?.some(layer=>hasMaterialDistortion(layer.entry)))?{materialTime:this.materialTime??0}:{}),...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.parentId!==undefined)row.parentId=group.parentId;
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
@@ -256,7 +259,7 @@ export class Stage extends EventTarget {
     if(this.contextLost||this.disposed)throw new Error('Rendering context is unavailable');
     const contextEpoch=this.contextEpoch;
     scene=validateScene(scene);
-    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused,previousMaterialTime=this.materialTime,previousSpeechClock=this.mainViewSpeechClock?.snapshot();this.paused=true;
+    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused,previousMaterialTime=this.materialTime,previousSpeechClock=this.mainViewSpeechClock?.snapshot(),previousSpeech=this.mainViewSpeech?.snapshot();this.paused=true;
     this.loadingRestorePaused=previousPaused;
     const created=[];
     try {
@@ -272,6 +275,7 @@ export class Stage extends EventTarget {
       }
       if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
       if(contextEpoch!==this.contextEpoch)throw new DOMException('Rendering was interrupted while loading','AbortError');
+      if(scene.mainViewSpeech?.group){const index=scene.objects.findIndex(row=>row.id===scene.mainViewSpeech.group),group=created[index];if(!this.mainViewSpeech?.binding({...group,...(group.kind==='image'?{appearanceId:scene.objects[index].appearanceId}:{})}))throw new Error('Scene main-view speech binding is unavailable');}
       scene.objects.forEach((row,index)=>{
         const group=created[index];
         if(group.kind==='image')return;
@@ -294,9 +298,10 @@ export class Stage extends EventTarget {
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
       this.materialTime=scene.materialTime??0;
       if(this.mainViewSpeechClock){if(scene.mainViewSpeechClock)this.mainViewSpeechClock.restore(scene.mainViewSpeechClock);else this.mainViewSpeechClock.reset();}
+      if(this.mainViewSpeech){if(scene.mainViewSpeech)this.mainViewSpeech.restore(scene.mainViewSpeech);else this.mainViewSpeech.reset();}
       for(const group of created)for(const layer of group.layers)this.transformLayer(group,layer);
       if(this.camera.sourcePreview&&!this.options?.manual)this.resize();this.draw();
-    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(previousSpeechClock)this.mainViewSpeechClock.restore(previousSpeechClock);if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(previousSpeechClock)this.mainViewSpeechClock.restore(previousSpeechClock);if(previousSpeech)this.mainViewSpeech.restore(previousSpeech);if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
     this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }
@@ -353,6 +358,12 @@ export class Stage extends EventTarget {
     const result={...root.click(hit),group:groupId,controller:controllerId,hit:hitId};
     if((result.accepted||result.unavailable)&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));
     return result;
+  }
+  triggerMainViewSpeech(group,operation,{language,localized,replay=false}={}){
+    if(this.paused&&operation==='touch'&&!replay)return {accepted:false,reason:'Playback is paused'};
+    if(this.recoveryPending||this.sequencePlayer&&!replay)return {accepted:false,reason:'Source speech commands are unavailable during recovery or sequence playback'};
+    const result={...this.mainViewSpeech.command(group,operation,{language,localized}),group,controller:'main-view-speech',hit:operation,type:'main-view-speech',language:language??this.mainViewSpeech.value.language,localized:localized??this.mainViewSpeech.value.localized};
+    if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));return result;
   }
   hitTest(clientX,clientY){
     const {x,y}=this.screenToWorld(clientX,clientY);
@@ -432,6 +443,7 @@ export class Stage extends EventTarget {
     this.frame=requestAnimationFrame(next => this.tick(next));
   }
   remove(id) {
+    if(this.mainViewSpeech?.value.group===id||this.groups.some(group=>group.parentId===id&&group.id===this.mainViewSpeech?.value.group))this.mainViewSpeech.detach(this.mainViewSpeech.value.group);
     if(this.camera?.sourcePreview?.group===id)delete this.camera.sourcePreview;
     for(let index=this.groups.length-1;index>=0;index--){const group=this.groups[index];if(group.id===id||group.parentId===id){this.release(group);this.groups.splice(index,1);}}
   }

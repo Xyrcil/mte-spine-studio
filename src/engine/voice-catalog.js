@@ -18,9 +18,9 @@ export function mainViewVoiceBinding(library,object){
   return {modelId:appearance.id,targetId:appearance.ownVoice===false?appearance.characterId:appearance.id,voiceIds:[]};
 }
 
-export function mainViewTouchVoices(library,object){
+export function mainViewTouchVoices(library,object,{explicitStationPool=true}={}){
   const binding=mainViewVoiceBinding(library,object);if(!binding)return [];
-  if(binding.voiceIds.length)return binding.voiceIds.map(id=>(library.mainViewVoices?.voices||[]).find(row=>row.id===id)||library.voices.find(row=>row.id===id)||{id,resourceName:'',title:`Station line ${id}`,text:''});
+  if(explicitStationPool&&binding.voiceIds.length)return binding.voiceIds.map(id=>(library.mainViewVoices?.voices||[]).find(row=>row.id===id)||library.voices.find(row=>row.id===id)||{id,resourceName:'',title:`Station line ${id}`,text:''});
   const profile=library.mainViewVoices?.hotSpringProfiles?.find(row=>row.id===binding.modelId);
   if(profile){const level=object.hotSpringFavorLevel??1,names=profile.tiers.slice(0,level).flat();return names.map(name=>library.mainViewVoices.favorVoices.find(row=>row.resourceName===name)||{id:'favor:'+name,resourceName:name,title:name,text:'',exactResource:true,subtitleStatus:'missing'});}
   if(library.hotSpringRoles?.some(row=>row.skinId===binding.modelId))return [];
@@ -46,5 +46,5 @@ export function voiceCatalog(library,objects=[],scope='scene',query=''){
 
 export function savedVoiceRow(track,rows){
   const name=track.name.split('/').at(-1),matches=rows.filter(row=>!track.id||row.id===track.id),row=track.exactResource?matches.find(row=>row.exactResource&&row.resourceName===name)||matches.find(row=>row.resourceName===name):matches.find(row=>[row.resourceName,row.alias,row.resourcePath].some(value=>value?.split('/').at(-1)===name));
-  return {resourceName:track.name,title:row?.title||track.name,text:row?.text||'',...(track.exactResource?{exactResource:true}:{}),...(track.id?{id:track.id}:row?.id?{id:row.id}:{})};
+  return {resourceName:track.name,title:row?.title||track.name,text:track.sourceMainView?row?.mainViewText||'':row?.text||'',...(track.sourceMainView?{sourceMainView:true}:{}),...(track.subtitleHidden?{subtitleHidden:true}:{}),...(track.exactResource?{exactResource:true}:{}),...(track.id?{id:track.id}:row?.id?{id:row.id}:{})};
 }

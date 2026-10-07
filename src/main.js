@@ -98,7 +98,7 @@ async function loadAsset(label,create,loadedMessage=label){
 function selectPortrait(appearance){return loadAsset(appearance.name||appearance.id,signal=>stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,signal,true),'Static portrait loaded');}
 function select(presentation){return loadAsset(presentation.id,signal=>stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true));}
 function voicePanel(presentation) {
-  createVoicePanel(presentation,libraryData,audio,editor,message);
+  createVoicePanel(presentation,libraryData,audio,editor,message,stage);
 }
 document.querySelector('#library-toggle').onclick=event=>{if(editor.busy||view==='export')return;const open=document.body.classList.toggle('library-open');event.target.setAttribute('aria-expanded',String(open));if(open){document.body.classList.remove('inspector-open');document.querySelector('#editor-toggle').setAttribute('aria-expanded','false');if(!matchMedia('(max-width:540px)').matches||event.detail===0)document.querySelector('#search').focus();}};
 document.querySelector('#editor-toggle').onclick=event=>{closeLibrary();event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
@@ -131,10 +131,12 @@ stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
   if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
   const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
-  const language=document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>queueMicrotask(()=>message(warning))});if(!voice)return;
-  audio.play(voice,language,{group:event.detail.group||'',time:event.detail.lateness||0}).catch(error=>message(error.message));
+  const language=event.detail.language||document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>queueMicrotask(()=>message(warning))});if(!voice)return;
+  audio.play(voice,language,{group:event.detail.group||'',time:event.detail.lateness||0}).then(()=>{if(voice.sourceMainView&&!stage.mainViewSpeech.value.wordsVisible&&audio.currentVoice?.voice.resourceName===voice.resourceName)audio.hideSourceSubtitle(event.detail.group);}).catch(error=>message(error.message));
 });
 stage.addEventListener('voice-stop-request',event=>{if(audio?.currentVoice?.group===event.detail.group)audio.stop();});
+stage.addEventListener('voice-caption-hide-request',event=>audio?.hideSourceSubtitle(event.detail.group));
+stage.addEventListener('speech-unavailable',event=>message(`Source speech unavailable (${event.detail.language}): ${event.detail.resourceName}`));
 try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
@@ -145,7 +147,7 @@ try {
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const sourceId=presentation.id.match(/^Spines\/painting\/(\d+)_spine(?:_hx)?$/)?.[1],views=libraryData.artworkViews?.views,view=views?.find(row=>row.id===appearance.id)||views?.find(row=>row.id===sourceId);if(view)presentation.previewView={...view,camera:libraryData.artworkViews.camera};}}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
-  if(audioResponse.ok){audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.favorVoices||[])]);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
+  if(audioResponse.ok){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
   window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
   const recovered=await editor.init(catalog.presentations,runtime.entries);
