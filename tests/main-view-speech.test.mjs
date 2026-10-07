@@ -43,6 +43,13 @@ test('recorded speech commands reproduce source choices and idle timers for port
 test('missing audio is reported without inventing a duration or retrying another selected line',()=>{
   const {stage}=setup(),warnings=[];stage.mainViewSpeech.audio.resolve=()=>null;stage.addEventListener('speech-unavailable',event=>warnings.push(event.detail));assert.equal(stage.triggerMainViewSpeech('actor','touch',{localized:true}).accepted,false);assert.equal(warnings.length,1);assert.equal(stage.mainViewSpeechClock.value.wordsRemaining,null);assert.equal(stage.mainViewSpeechClock.value.canClick,true);
 });
+test('invalid source durations cannot close the click gate or create a partial words state',()=>{
+  for(const duration of [-1,86401,NaN,Infinity,undefined]){
+    const {stage}=setup();stage.mainViewSpeech.audio.resolve=()=>({path:'invalid.m4a',duration});
+    assert.equal(stage.triggerMainViewSpeech('actor','touch',{localized:true}).accepted,false);
+    assert.equal(stage.mainViewSpeechClock.value.canClick,true);assert.equal(stage.mainViewSpeechClock.value.wordsRemaining,null);assert.equal(stage.mainViewSpeech.value.wordsVisible,false);
+  }
+});
 test('removing the selected speaker clears its reference while retaining the random stream',()=>{
   const {stage}=setup();stage.release=()=>{};stage.triggerMainViewSpeech('actor','touch');const random=stage.mainViewSpeech.value.random;stage.remove('actor');assert.equal(stage.mainViewSpeech.value.group,'');assert.equal(stage.mainViewSpeech.value.random,random);assert.equal(stage.mainViewSpeechClock.active,false);assert.equal(validateScene(stage.snapshot()).objects.length,0);
 });

@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 const webgl2Only=process.argv.includes('--webgl2');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -22,4 +22,4 @@ try{
   await page.getByRole('button',{name:'Play',exact:true}).click();await page.waitForTimeout(100);await page.evaluate(()=>{window.recoveryExtension=window.mteStudio.gl.getExtension('WEBGL_lose_context');window.recoveryExtension.loseContext();});await page.waitForFunction(()=>window.mteStudio.contextLost);const active=await page.evaluate(()=>window.mteEditor.snapshot());assert.equal(active.paused,false);await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),active);await page.evaluate(()=>window.recoveryExtension.restoreContext());await page.waitForFunction(()=>!window.mteStudio.recoveryPending&&!window.mteStudio.paused);await page.waitForFunction(()=>!window.mteAudio.element.paused&&window.mteAudio.element.currentTime>0);await page.getByRole('button',{name:'Pause',exact:true}).click();
   const interrupted=await page.evaluate(async()=>{const {RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js'),stage=window.mteStudio,scene=window.mteEditor.snapshot(),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,plan=exportPlan({format:'png',width:160,height:120,fps:10,speed:1,start:0,end:1,loops:1,loopMode:'repeat',fit:'contain',background:'#191b20',crop:{x:0,y:0,width:1,height:1}}),session=new RenderSession(scene,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,plan);try{await session.initialize();const lost=new Promise(resolve=>session.stage.addEventListener('rendering-lost',resolve,{once:true}));session.stage.gl.getExtension('WEBGL_lose_context').loseContext();await lost;try{await session.seek(.1);return false;}catch(error){return error.message.includes('Export rendering was interrupted');}}finally{session.dispose();}});assert.equal(interrupted,true);assert.deepEqual(errors,[]);
   console.log('Rendering recovery checks passed: repeated native context loss, exact mixed-scene pixels, failed reload, JSON preservation, retry and interrupted export detection');
-}finally{await browser.close();}
+}finally{await close();}

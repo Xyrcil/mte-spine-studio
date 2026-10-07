@@ -2,6 +2,7 @@ import {mainViewVoiceBinding,mainViewTouchVoices} from './voice-catalog.js';
 import {audioResourceLookup} from './audio.js';
 
 const languages=['a_sound_voiceeff','a_sound_voiceeff_ch'];
+const usableClip=clip=>clip&&Number.isFinite(clip.duration)&&clip.duration>=0&&clip.duration<=86400;
 export function validateMainViewSpeech(value){
   if(value?.schema!==1||typeof value.group!=='string'||value.group.length>512||!languages.includes(value.language)||typeof value.localized!=='boolean'||typeof value.wordsVisible!=='boolean'||!Number.isInteger(value.random)||value.random<1||value.random>4294967295)throw new Error('Invalid main-view speech state');
   return {schema:1,group:value.group,language:value.language,localized:value.localized,wordsVisible:value.wordsVisible,random:value.random};
@@ -32,7 +33,7 @@ export class MainViewSpeech {
   emit(name,detail){this.stage.dispatchEvent(new CustomEvent(name,{detail}));}
   request(group,row,lateness=0){
     const resourceName=row.resourceName,clip=this.audio?.resolve(resourceName,this.value.language,true);
-    if(!clip||!Number.isFinite(clip.duration)){this.emit('speech-unavailable',{resourceName,language:this.value.language});return {accepted:false,reason:'Source speech is unavailable for this language'};}
+    if(!usableClip(clip)){this.emit('speech-unavailable',{resourceName,language:this.value.language});return {accepted:false,reason:'Source speech or its timing metadata is unavailable for this language'};}
     this.value.wordsVisible=true;this.stage.mainViewSpeechClock.soundStarted(clip.duration);
     this.emit('voice-request',{group:group.id,...(row.id?{sourceVoiceId:row.id}:{sourceResource:resourceName}),sourceCaption:true,language:this.value.language,lateness});
     return {accepted:true,animation:resourceName};
@@ -55,7 +56,7 @@ export class MainViewSpeech {
     if(operation==='start'){if(!clock.active)clock.finish();return {accepted:true,animation:''};}
     const pool=this.pool(group);if(!pool.length)return {accepted:false,reason:'The original touch pool has no unlocked lines'};
     const row=pool[this.choose(pool.length)],clip=this.audio?.resolve(row.resourceName,language,true);
-    if(!clip)return this.request(group,row);
+    if(!usableClip(clip))return this.request(group,row);
     clock.requestClick();return this.request(group,row);
   }
   idle(index,lateness=0){

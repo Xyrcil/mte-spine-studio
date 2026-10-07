@@ -13,9 +13,20 @@ try{
   const initial=await page.evaluate(async()=>{window.mteHost.pause();const scene=window.mteEditor.snapshot(),bus=window.mteAudio,source=window.mteStudio.mainViewSpeech.library.mainViewVoices,voice=bus.currentVoice.voice;
     if(!scene.mainViewSpeechClock.wordsRemaining||scene.mainViewSpeechClock.canClick||voice.resourceName.toLowerCase().includes('chest'))throw new Error('Source click gate or localization filter changed');
     if(bus.currentSubtitle.text!==(source.captions[voice.resourceName]||''))throw new Error('Source caption visibility changed');
-    await window.mteEditor.restore(scene);if(JSON.stringify(scene)!==JSON.stringify(window.mteEditor.snapshot()))throw new Error('Main-view checkpoint changed on restore');
-    return {name:voice.resourceName,remaining:scene.mainViewSpeechClock.wordsRemaining,exact:scene.audio.voiceTrack.exactResource,source:scene.audio.voiceTrack.sourceMainView,silent:bus.element.muted};
+    const {createSceneFile,readSceneFile}=await import('/src/engine/scene-file.js'),canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+    const equal=(left,right)=>JSON.stringify(canonical(left))===JSON.stringify(canonical(right));
+    for(const format of ['json','zip']){const file=await createSceneFile(scene,{format}),restored=await readSceneFile(new File([file.blob],`speech.${file.extension}`));if(!equal(restored,scene))throw new Error('Main-view scene file changed state: '+format);await window.mteEditor.restore(restored);if(!equal(scene,window.mteEditor.snapshot()))throw new Error('Main-view checkpoint changed on restore: '+format);}
+    return {name:voice.resourceName,remaining:scene.mainViewSpeechClock.wordsRemaining,exact:scene.audio.voiceTrack.exactResource,source:scene.audio.voiceTrack.sourceMainView,silent:bus.element.muted,sceneFiles:['json','zip']};
   });assert.equal(initial.exact,true);assert.equal(initial.source,true);assert.equal(initial.silent,true);
+  if(engine==='chromium'){
+    const frozen=await page.evaluate(()=>window.mteEditor.snapshot());
+    for(let cycle=0;cycle<2;cycle++){
+      await page.evaluate(()=>{const stage=window.mteStudio;window.speechRecoveryExtension=stage.gl.getExtension('WEBGL_lose_context');if(!window.speechRecoveryExtension)throw new Error('Context loss extension unavailable');window.speechRecoveryExtension.loseContext();});
+      await page.waitForFunction(()=>window.mteStudio.contextLost&&window.mteStudio.recoveryPending);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),frozen);
+      await page.evaluate(()=>window.speechRecoveryExtension.restoreContext());await page.waitForFunction(()=>!window.mteStudio.recoveryPending,null,{timeout:30000});assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),frozen);assert.equal(await page.evaluate(()=>window.mteStudio.gl.getError()),0);
+    }
+    initial.renderingRecoveryCycles=2;
+  }
   await page.locator('#main-view-stop').click();await page.locator('#sequence-record').click();
   await page.locator('#main-view-start').click();await page.locator('#main-view-touch').click();await page.waitForFunction(()=>window.mteAudio.currentVoice?.voice.sourceMainView);
   const automatic=await page.evaluate(()=>{const stage=window.mteStudio,voices=[],hides=[],voice=event=>voices.push(event.detail),hide=event=>hides.push(event.detail);stage.addEventListener('voice-request',voice);stage.addEventListener('voice-caption-hide-request',hide);
