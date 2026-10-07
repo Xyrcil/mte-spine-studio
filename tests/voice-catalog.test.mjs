@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding,mainViewTouchVoices} from '../src/engine/voice-catalog.js';
+import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding,mainViewTouchVoices,mainViewIdleVoices} from '../src/engine/voice-catalog.js';
 const library={appearances:[{id:'skin',characterId:'actor',bundle:'Spines/skin'}],voices:[{id:'1',targetId:'actor',title:'Login',resourceName:'Voice_Login',text:'Hello'},{id:'2',targetId:'skin',title:'Costume',resourceName:'Voice_Skin',text:'Hello again'},{id:'3',targetId:'other',title:'Other',resourceName:'Other'}],storyVoices:[{id:'1',resourceName:'Voice_Plot_1',text:'Story text'},{id:'2',resourceName:'',text:'Unvoiced text'}]};
 test('station voice scope uses source skin remapping and exact voice IDs, not resource prefixes',()=>{
   const source={...structuredClone(library),stationDrawings:{drawings:[{id:'drawing',skinId:'skin',gospelId:'actor',peopleId:'',voiceIds:['3','missing']}]}};
@@ -24,6 +24,23 @@ test('main-view touch pool uses source type and target rather than the newer app
   source.appearances.push({id:'station',stationDrawingId:'drawing',characterId:'actor'});
   assert.deepEqual(voiceCatalog(source,[{appearanceId:'station'}],'main-view-touch').map(row=>row.resourceName),['original']);
   assert.equal(savedVoiceRow({name:'original',id:'1',exactResource:true},[{id:'1',resourceName:'replacement',alias:'original',text:'Replacement'},source.mainViewVoices.voices[0]]).text,'Original');
+});
+test('explicit station pools precede favor and ordinary touch pools without dropping missing IDs',()=>{
+  const original={id:'old',resourceName:'original',exactResource:true},current={id:'new',resourceName:'newer'};
+  const data={appearances:[{id:'station',stationDrawingId:'drawing'}],stationDrawings:{drawings:[{id:'drawing',gospelId:'12',skinId:'',voiceIds:['old','new','missing','old']}]},voices:[{id:'old',resourceName:'replacement'},current],storyVoices:[],mainViewVoices:{voices:[original,{id:'touch',type:3,targetId:'12',resourceName:'touch'}],hotSpringProfiles:[{id:'12',tiers:[['favor']]}],favorVoices:[{id:'favor:line',resourceName:'favor'}]}};
+  const pool=mainViewTouchVoices(data,{appearanceId:'station',hotSpringFavorLevel:0});
+  assert.deepEqual(pool.map(row=>row.id),['old','new','missing','old']);assert.equal(pool[0],original);assert.equal(pool[1],current);assert.equal(pool[2].resourceName,'');
+  assert.deepEqual(voiceCatalog(data,[{appearanceId:'station'}],'main-view-touch').map(row=>row.id),['old','new','missing']);
+});
+test('idle lines use station people or gospel targets rather than skin touch targets',()=>{
+  const rows=['actor','person','12'].flatMap(target=>[2,1].map(index=>({id:target+index,resourceName:`Voice_${target}_Greetings_Idel_0${index}`,exactResource:true})));
+  const data={appearances:[{id:'12',characterId:'actor',ownVoice:true},{id:'station',stationDrawingId:'drawing'}],stationDrawings:{drawings:[{id:'drawing',skinId:'12',peopleId:'person',gospelId:'actor',voiceIds:[]}]},mainViewVoices:{voices:rows},voices:[],storyVoices:[]};
+  assert.deepEqual(mainViewIdleVoices(data,{appearanceId:'station'}).map(row=>row.id),['person1','person2']);
+  data.stationDrawings.drawings[0].peopleId='';assert.deepEqual(mainViewIdleVoices(data,{appearanceId:'station'}).map(row=>row.id),['actor1','actor2']);
+  assert.deepEqual(mainViewIdleVoices(data,{appearanceId:'12'}).map(row=>row.id),['121','122']);
+  data.appearances[0].ownVoice=false;assert.deepEqual(mainViewIdleVoices(data,{appearanceId:'12'}).map(row=>row.id),['actor1','actor2']);
+  assert.deepEqual(voiceCatalog(data,[{appearanceId:'station'},{appearanceId:'12'}],'main-view-idle').map(row=>row.id),['actor1','actor2']);
+  assert.deepEqual(mainViewIdleVoices(data,{appearanceId:'absent'}),[]);
 });
 test('hot spring source overrides include earlier favor tiers and never fall back while locked',()=>{
   const source={appearances:[{id:'12',characterId:'2',ownVoice:false}],voices:[],storyVoices:[],mainViewVoices:{hotSpringProfiles:[{id:'12',tiers:[['a','b'],['c']]}],favorVoices:['a','b','c'].map(name=>({id:'favor:'+name,resourceName:name,exactResource:true})),voices:[{id:'fallback',targetId:'2',type:3,resourceName:'normal'}]}};

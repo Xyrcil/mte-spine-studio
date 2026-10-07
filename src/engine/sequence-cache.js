@@ -5,7 +5,7 @@ import {resolveInteractionVoice,explicitInteractionEffect} from './interaction-a
 export function capturedSoundUrls(snapshot,audio,base,warnings=new Set()){
   if(!snapshot||!audio)return [];
   const urls=new Set(),tracks=[...(snapshot.voiceTrack?[snapshot.voiceTrack]:[]),...(snapshot.effectTracks||[]),...(snapshot.ambientTracks||[]).filter(track=>track.enabled)];
-  for(const track of tracks){const clip=audio.resolve(track.name,track.category);if(clip)urls.add(new URL('assets/'+clip.path,base).href);else warnings.add(`Recorded sound unavailable: ${track.name}`);}
+  for(const track of tracks){const clip=audio.resolve(track.name,track.category,track.exactResource);if(clip)urls.add(new URL('assets/'+clip.path,base).href);else warnings.add(`Recorded sound unavailable: ${track.name}`);}
   return [...urls];
 }
 
@@ -20,7 +20,7 @@ export async function sequenceCacheResources(value,{catalog,entries,imageAssets,
     if(!audio||!library)return;
     const effect=explicitInteractionEffect(event.detail,audio);if(effect)addSound(effect.name,effect.category);
     const languages=sequence.initial.audio?.language?[sequence.initial.audio.language]:[...new Set([audio.language,'a_sound_voiceeff'])];
-    for(const language of languages){const row=resolveInteractionVoice(event.detail,library,audio,language,{onUnavailable:warning=>warnings.add(warning)}),clip=row&&audio.resolve(row.resourceName,language);if(clip)urls.add(new URL('assets/'+clip.path,base).href);}
+    for(const language of languages){const row=resolveInteractionVoice(event.detail,library,audio,language,{onUnavailable:warning=>warnings.add(warning)}),clip=row&&audio.resolve(row.resourceName,language,row.exactResource);if(clip)urls.add(new URL('assets/'+clip.path,base).href);}
   }catch(error){callbackError=error;}};
   session.stage.addEventListener('sound-request',sound);session.stage.addEventListener('voice-request',voice);
   try{
