@@ -26,5 +26,13 @@ try{
     }
     return results;
   },engine);
-  assert.equal(results.length,3);assert.equal(audioRequests,0);assert.deepEqual(errors,[]);console.log('Real source Chinese caption-only checks passed',{engine,audioRequests,results});
+  assert.equal(results.length,3);assert.equal(audioRequests,0);
+  await page.route('**/assets/audio/**',route=>route.abort());
+  const mediaFailure=await page.evaluate(async()=>{
+    const bus=window.mteAudio,stage=window.mteStudio,group=stage.groups[0],library=stage.mainViewSpeech.library,row=library.mainViewVoices.voices.find(row=>bus.resolve(row.resourceName,'a_sound_voiceeff',true)),name='Voice_3014019_Touch_Chest';
+    const text=library.mainViewVoices.captions[name],pending=bus.play(row,'a_sound_voiceeff',{group:group.id}).catch(()=>{});bus.showSourceCaption(group.id,text);await pending;
+    if(bus.currentVoice||bus.element.hasAttribute('src')||bus.currentSubtitle?.text!==text)throw new Error('Failed real audio cleared independent source captions');
+    await bus.resume();if(bus.currentSubtitle?.text!==text)throw new Error('Resume cleared captions after real media failure');bus.hideSourceSubtitle(group.id);if(bus.currentSubtitle!==null)throw new Error('Source caption could not be hidden after media failure');return {captionPreserved:true,failedVoiceReleased:true};
+  });
+  assert.deepEqual(errors,[]);console.log('Real source Chinese caption-only checks passed',{engine,captionModeAudioRequests:0,results,mediaFailure});
 }finally{await close();}

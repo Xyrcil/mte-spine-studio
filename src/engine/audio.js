@@ -18,7 +18,7 @@ export class AudioBus extends EventTarget {
     const lookup=audioResourceLookup(index,resources);this.resources=lookup.resources;this.byName=lookup.byName;
     this.element=new Audio();this.element.preload='none';
     this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;if(!this.externalCaption)this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
-    this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop();this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
+    this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop({preserveCaption:true});this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
   }
   resolve(name,category='a_sound_voiceeff',exactResource=false) {
     if(typeof name!=='string'||!name)return null;
@@ -33,7 +33,7 @@ export class AudioBus extends EventTarget {
   }
   setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
   showSourceCaption(group,text){if(this.currentVoice)this.currentVoice.voice.subtitleHidden=true;this.externalCaption={group,text};this.setSubtitle({title:'',text});this.dispatchEvent(new CustomEvent('voice-state'));}
-  hideSourceSubtitle(group){if(this.externalCaption?.group===group){this.externalCaption=null;this.setSubtitle(null);}if(this.currentVoice?.group===group&&this.currentVoice.voice.sourceMainView){this.currentVoice.voice.subtitleHidden=true;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}}
+  hideSourceSubtitle(group){let changed=false;if(this.externalCaption?.group===group){this.externalCaption=null;this.setSubtitle(null);changed=true;}if(this.currentVoice?.group===group&&this.currentVoice.voice.sourceMainView){this.currentVoice.voice.subtitleHidden=true;this.setSubtitle(null);changed=true;}if(changed)this.dispatchEvent(new CustomEvent('voice-state'));}
   async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
     if(!voice?.resourceName)throw new Error('No voice resource selected');
     voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{}),...(voice.exactResource?{exactResource:true}:{})},this.voiceRows),...voice};
@@ -50,9 +50,9 @@ export class AudioBus extends EventTarget {
   }
   async startVoice(token){
     try{if(token===this.token&&this.currentVoice?.pauseTime!==undefined&&this.element.readyState>0)this.element.currentTime=Math.min(this.currentVoice.pauseTime,this.element.duration);await this.element.play();if(token===this.token&&!this.paused)delete this.currentVoice?.pauseTime;return token===this.token;}
-    catch(error){if(token!==this.token||this.paused&&error.name==='AbortError')return false;if(error.name!=='NotAllowedError')this.stop();throw error;}
+    catch(error){if(token!==this.token||this.paused&&error.name==='AbortError')return false;if(error.name!=='NotAllowedError')this.stop({preserveCaption:true});throw error;}
   }
-  stop() {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;this.externalCaption=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}
+  stop({preserveCaption=false}={}) {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;if(!preserveCaption)this.externalCaption=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(this.externalCaption?{title:'',text:this.externalCaption.text}:null);this.dispatchEvent(new CustomEvent('voice-state'));}
   async playEffect(name,category='a_sound_ui',time=0,autoplay=true,group=''){
     const info=this.soundInfo(name,category),clip=info.clip;if(!clip)throw new Error(`Sound unavailable: ${name}`);
     if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
@@ -86,7 +86,8 @@ export class AudioBus extends EventTarget {
   syncAmbients(groups,appearances){
     this.sceneGroups=groups;this.appearances=appearances;
     const present=new Set(groups.map(group=>group.id));
-    if(this.currentVoice?.group&&!groups.some(group=>group.id===this.currentVoice.group&&objectVisible(group,groups)))this.stop();
+    if(this.externalCaption?.group&&!groups.some(group=>group.id===this.externalCaption.group&&objectVisible(group,groups)))this.hideSourceSubtitle(this.externalCaption.group);
+    if(this.currentVoice?.group&&!groups.some(group=>group.id===this.currentVoice.group&&objectVisible(group,groups)))this.stop({preserveCaption:true});
     for(const effect of this.effects)if(effect.effectGroup&&!groups.some(group=>group.id===effect.effectGroup&&objectVisible(group,groups)))this.releaseEffect(effect);
     const desired=new Map();
     for(const group of groups){const setting=this.ambientSetting(group);if(setting&&setting.enabled&&objectVisible(group,groups))desired.set(group.id,setting);}

@@ -17,6 +17,24 @@ test('caption-only playback leaves prior audio running and survives its end and 
     bus.element.ended=true;bus.element.dispatchEvent(new Event('ended'));assert.equal(bus.currentSubtitle.text,'Only captions');await bus.resume();assert.equal(bus.currentSubtitle.text,'Only captions');bus.hideSourceSubtitle(group.id);assert.equal(bus.currentSubtitle,null);bus.dispose();
   }finally{globalThis.Audio=previous;}
 });
+test('prior audio errors do not clear independent source captions or leave failed voice state',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus,group}=setup();await bus.play(voices[0],'a_sound_voiceeff_ch',{group:group.id});bus.showSourceCaption('caption-owner','Independent words');bus.element.error={code:3};bus.element.dispatchEvent(new Event('error'));
+    assert.equal(bus.currentVoice,null);assert.equal(bus.element.hasAttribute?.('src')??Boolean(bus.element.src),false);assert.equal(bus.currentSubtitle.text,'Independent words');await bus.resume();assert.equal(bus.currentSubtitle.text,'Independent words');bus.hideSourceSubtitle('caption-owner');assert.equal(bus.currentSubtitle,null);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
+test('failed media resume retains independent captions and explicit stop still clears them',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus,group}=setup();await bus.play(voices[0],'a_sound_voiceeff_ch',{group:group.id});bus.showSourceCaption(group.id,'Independent words');bus.pause();bus.element.play=async()=>{throw new DOMException('Decode failed','NotSupportedError');};await assert.rejects(bus.resume(),{name:'NotSupportedError'});
+    assert.equal(bus.currentVoice,null);assert.equal(bus.currentSubtitle.text,'Independent words');bus.stop();assert.equal(bus.currentSubtitle,null);assert.equal(bus.externalCaption,null);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
+test('voice and caption visibility belong to their own objects and caption hiding notifies persistence',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus,group}=setup(),captionOwner={id:'caption-owner',visible:true};await bus.play(voices[0],'a_sound_voiceeff_ch',{group:group.id});bus.showSourceCaption(captionOwner.id,'Independent words');group.visible=false;bus.syncAmbients([group,captionOwner],[]);assert.equal(bus.currentVoice,null);assert.equal(bus.currentSubtitle.text,'Independent words');
+    let changed=0;bus.addEventListener('voice-state',()=>changed++);captionOwner.visible=false;bus.syncAmbients([group,captionOwner],[]);assert.equal(bus.currentSubtitle,null);assert.equal(bus.externalCaption,null);assert.equal(changed,1);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
 test('source subtitle hiding preserves native speech and stays hidden across pause and restore',async()=>{
   const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
   try{const {bus,group}=setup();bus.voiceRows=bus.voiceRows.map(row=>({...row,mainViewText:'Source caption'}));await bus.play({...voices[0],sourceMainView:true,text:'Source caption'},'a_sound_voiceeff_ch',{group:group.id});bus.hideSourceSubtitle(group.id);assert.equal(bus.element.paused,false);assert.ok(bus.currentVoice);assert.equal(bus.currentSubtitle,null);
