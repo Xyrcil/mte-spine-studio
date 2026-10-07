@@ -412,6 +412,7 @@ export class Stage extends EventTarget {
   draw() {
     if(this.contextLost||this.disposed)return;
     if(this.camera.sourcePreview)this.checkPreview();
+    for(const group of this.groups)if(group.visible)group.dialogueTypography?.prepare();
     const {gl,renderer,canvas}=this;
     gl.viewport(0,0,canvas.width,canvas.height);
     const hex=this.background.replace('#','');

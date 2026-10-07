@@ -58,6 +58,15 @@ export class DialogueTextLayer {
       if(this.slots.length!==2)throw new Error('Original dialogue text fields are unavailable');
     }catch(error){this.reason=error.message;for(const font of this.fonts.values())document.fonts.delete(font.face);this.fonts.clear();this.slots=[];if(error.name==='AbortError')throw error;}
   }
+  prepare(){
+    if(this.reason||this.disposed)return;
+    const root=this.group.controllers.find(root=>root.source.id==='hot-spring'),display=root?.dialogueDisplay();
+    if(root?.value.phase!=='dialogue'||!display?.name)return;
+    for(const slot of this.slots)if(slot.name==='tv_name'){
+      slot.context.font=`${slot.source.data.m_fontSize}px "${slot.font.family}"`;
+      this.group.nodes.get(slot.source.transform).data.m_SizeDelta.x=slot.context.measureText(display.name).width;
+    }
+  }
   draw(renderer,viewport){
     if(this.reason||this.disposed)return;const group=this.group,root=group.controllers.find(root=>root.source.id==='hot-spring'),display=root?.dialogueDisplay();if(root?.value.phase!=='dialogue'||!display)return;
     const panel=group.presentation.hotSpringHouse.dialoguePanel,vm=viewportDecorationMatrix(viewport,panel.scaler),canvasSize={x:viewport.width/vm[0],y:viewport.height/vm[0]};
@@ -66,7 +75,6 @@ export class DialogueTextLayer {
       if(/[<>]|\\[.,^<>]/.test(text)){this.reason='Original dialogue text markup is unsupported';return;}
       const node=group.nodes.get(source.transform),fontSize=data.m_fontSize,fontScale=fontSize/slot.font.source.face.m_PointSize*slot.font.source.face.m_Scale;
       slot.context.font=`${fontSize}px "${slot.font.family}"`;
-      if(slot.name==='tv_name')node.data.m_SizeDelta.x=slot.context.measureText(text).width;
       const layout=viewportRectLayout(group.nodes,node.id,panel.rootTransform,canvasSize),margin=data.m_margin||{x:0,y:0,z:0,w:0},width=Math.max(0,layout.size.x-margin.x-margin.z),flow=layoutDialogueGlyphs(text,character=>slot.context.measureText(character).width,width,Boolean(data.m_enableWordWrapping),slot.font.source.lineBreaking);
       const face=slot.font.source.face,ascent=face.m_AscentLine*fontScale,descent=face.m_DescentLine*fontScale,pitch=face.m_LineHeight*fontScale+(data.m_lineSpacing||0)*fontSize*.01,height=ascent-descent+(flow.lines-1)*pitch;
       const left=-layout.pivot.x*layout.size.x+margin.x,top=data.m_VerticalAlignment===256?(1-layout.pivot.y)*layout.size.y-margin.y:(.5-layout.pivot.y)*layout.size.y+height/2;

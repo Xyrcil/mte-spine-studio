@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {layoutDialogueGlyphs,advanceDialogueTypewriter} from '../src/engine/dialogue-text.js';
+import {layoutDialogueGlyphs,advanceDialogueTypewriter,DialogueTextLayer} from '../src/engine/dialogue-text.js';
+
+test('dialogue prepares measured name width before any graphics are drawn',()=>{
+  const node={data:{m_SizeDelta:{x:30,y:43}}},root={value:{phase:'dialogue'},source:{id:'hot-spring'},dialogueDisplay:()=>({name:'Long name'})},context={measureText:text=>({width:text.length*10})};
+  const group={controllers:[root],nodes:new Map([['name',node]])},layer=new DialogueTextLayer({},group);
+  layer.slots=[{name:'tv_name',source:{transform:'name',data:{m_fontSize:24}},font:{family:'original'},context}];
+  layer.prepare();assert.equal(node.data.m_SizeDelta.x,90);assert.equal(context.font,'24px "original"');
+  layer.prepare();assert.equal(node.data.m_SizeDelta.x,90);root.value.phase='idle';node.data.m_SizeDelta.x=30;layer.prepare();assert.equal(node.data.m_SizeDelta.x,30);
+});
 
 test('dialogue layout remains fixed as visible characters advance and retains Unicode indices',()=>{
   const flow=layoutDialogueGlyphs('甲乙丙\n丁😀',()=>10,20,true);assert.deepEqual(flow.glyphs.map(row=>[row.character,row.x,row.line,row.index]),[['甲',0,0,0],['乙',10,0,1],['丙',0,1,2],['丁',0,2,4],['😀',10,2,5]]);assert.equal(flow.characters,6);assert.equal(flow.lines,3);assert.throws(()=>layoutDialogueGlyphs('x',()=>NaN,10,true),/advance/);
