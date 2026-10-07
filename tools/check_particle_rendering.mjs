@@ -1,8 +1,8 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser('chromium');
 const bundle=process.argv[2]||'Spines/painting/301500101_spine';
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -18,18 +18,19 @@ try{
     stage.evaluate(.5);await stage.restore(before,catalog,entries);const restored=pixels(),equal=restored.every((value,index)=>value===withEffects[index]);
     const saved=stage.snapshot(),bad=structuredClone(saved);bad.objects[0].effects[0].state.clock=NaN;let rejected=false;try{await stage.restore(bad,catalog,entries);}catch{rejected=true;}
     const preserved=JSON.stringify(stage.snapshot())===JSON.stringify(saved);
-    const {exportMedia}=await import('/src/engine/export.js');
+    const {exportMedia,RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js');
     const settings={format:'png',width:stage.canvas.width,height:stage.canvas.height,scale:1,fps:30,speed:1,start:0,end:1,loops:1,loopMode:'repeat',fade:.2,background:stage.background,transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}};
     const output=await exportMedia({scene:saved,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings});
     const verificationWarning=output.warnings.some(warning=>warning.includes('visual verification'));
     const bitmap=await createImageBitmap(output.blob),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const png=ctx.getImageData(0,0,canvas.width,canvas.height).data;let exportError=0;
-    for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)for(let c=0;c<4;c++)exportError=Math.max(exportError,Math.abs(png[(y*canvas.width+x)*4+c]-restored[((canvas.height-y-1)*canvas.width+x)*4+c]));
+    const reference=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...exportPlan(settings,saved.speed),supersampling:true});
+    try{await reference.initialize();await reference.seek(0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingQuality='high';ctx.drawImage(reference.canvas,0,0,canvas.width,canvas.height);const expected=ctx.getImageData(0,0,canvas.width,canvas.height).data;for(let i=0;i<png.length;i++)exportError=Math.max(exportError,Math.abs(png[i]-expected[i]));}finally{reference.dispose();}
     let cropError=0;
     if(group.effects.some(effect=>effect.maskedProfile)){
       const width=Math.floor(stage.canvas.width/2),cropped=await exportMedia({scene:saved,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{...settings,width,crop:{x:0,y:0,width:width/stage.canvas.width,height:1}}}),bitmap=await createImageBitmap(cropped.blob),cropCanvas=document.createElement('canvas');cropCanvas.width=bitmap.width;cropCanvas.height=bitmap.height;const context=cropCanvas.getContext('2d');context.drawImage(bitmap,0,0);bitmap.close();const data=context.getImageData(0,0,width,cropCanvas.height).data;
-      for(let y=0;y<cropCanvas.height;y++)for(let x=2;x<width-2;x++)for(let c=0;c<4;c++)cropError=Math.max(cropError,Math.abs(data[(y*width+x)*4+c]-restored[((cropCanvas.height-y-1)*stage.canvas.width+x)*4+c]));
+      for(let y=0;y<cropCanvas.height;y++)for(let x=2;x<width-2;x++)for(let c=0;c<4;c++)cropError=Math.max(cropError,Math.abs(data[(y*width+x)*4+c]-png[(y*canvas.width+x)*4+c]));
     }
-    const {RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js'),session=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,exportPlan(settings,saved.speed));let sessionError=0;
+    const session=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,exportPlan(settings,saved.speed));let sessionError=0;
     try{await session.initialize();await session.seek(0);const data=new Uint8Array(restored.length);session.stage.gl.readPixels(0,0,session.canvas.width,session.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,data);for(let i=0;i<data.length;i++)sessionError=Math.max(sessionError,Math.abs(data[i]-restored[i]));}finally{session.dispose();}
     return {difference,frozen,equal,rejected,preserved,exportError,cropError,sessionError,verificationWarning,glError:stage.gl.getError(),minAlpha:restored.reduce((min,value,index)=>index%4===3?Math.min(min,value):min,255),effects:group.effects.length,counts:group.effects.map(effect=>effect.model.view().length)};
   });
@@ -44,4 +45,4 @@ try{
   await page.getByRole('button',{name:'Studio',exact:true}).click();await page.getByRole('button',{name:'Duplicate',exact:true}).click();await page.waitForFunction(()=>window.mteStudio.groups.length===2);
   const duplicate=await page.evaluate(()=>{const [original,copy]=window.mteStudio.groups;return {offset:copy.x-original.x,separate:original.effects.every((effect,index)=>effect.model!==copy.effects[index].model),particles:original.effects.every((effect,index)=>{const a=effect.model.snapshot(),b=copy.effects[index].model.snapshot();return a.seed===b.seed&&a.state.particles.every((particle,i)=>Math.abs(b.state.particles[i].position[0]-particle.position[0]-1)<1e-9&&b.state.particles[i].position[1]===particle.position[1]);})};});assert.deepEqual(duplicate,{offset:1,separate:true,particles:true});assert.deepEqual(errors,[]);
   console.log('Native particle rendering checks passed: real sprite pixels, pause, exact restore, invalid checkpoint safety, export parity and context recovery',result,recovery);
-}finally{await browser.close();}
+}finally{await close();}
