@@ -2,12 +2,38 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+import io
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_dependency_closure_loads_shared_files_once_and_falls_back_to_apk(self):
+        source_buffer, apk_buffer = io.BytesIO(), io.BytesIO()
+        member = "package/files/vercache_demo/spines/painting/model/spineaniprefab.data"
+        prefix = "package/files/vercache_demo/"
+        with zipfile.ZipFile(source_buffer, "w") as archive:
+            archive.writestr(member + ".manifest", "Dependencies:\n- D:/build/StreamingAssets/share/shared.data")
+            archive.writestr(prefix + "share/shared.data", b"UnityFS-shared")
+            archive.writestr(prefix + "share/shared.data.manifest", "Dependencies:\n- D:/build/StreamingAssets/common/shader.data\n- D:/build/StreamingAssets/share/shared.data")
+        with zipfile.ZipFile(apk_buffer, "w") as archive:
+            archive.writestr("assets/common/shader.data", b"UnityFS-shader")
+        calls = []
+        environment = SimpleNamespace(load_file=lambda data, **options: calls.append((data, options)))
+        with zipfile.ZipFile(source_buffer) as archive, zipfile.ZipFile(apk_buffer) as apk:
+            load_dependencies(environment, archive, member, apk)
+            self.assertEqual([options["name"] for data, options in calls], ["share/shared.data", "common/shader.data"])
+            self.assertTrue(all(options["is_dependency"] for data, options in calls))
+            with self.assertRaises(ValueError):
+                load_dependencies(environment, archive, member)
+    def test_dependencies_keep_resource_paths_without_builder_machine_paths(self):
+        text = "ManifestFileVersion: 0\nDependencies:\n- D:/build/private/StreamingAssets/common/shader.data\n- D:\\build\\StreamingAssets\\share\\share.data\n"
+        self.assertEqual(manifest_dependencies(text), ["common/shader.data", "share/share.data"])
+        self.assertEqual(manifest_dependencies("Dependencies: []"), [])
+        with self.assertRaises(ValueError):
+            manifest_dependencies("Dependencies:\n- D:/build/StreamingAssets/../private.data")
     def test_explicit_versions_preserve_both_entries_with_stable_distinct_keys(self):
         rows = [SimpleNamespace(filename="folder/spineaniprefab.data"), SimpleNamespace(filename="folder/spineaniprefab .data")]
         with self.assertRaises(ValueError):

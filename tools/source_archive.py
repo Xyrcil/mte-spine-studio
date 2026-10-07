@@ -68,6 +68,47 @@ def source_versions(key, rows, include_all=False):
     return [(f"{key}/archive-{index}", row, index) for index, row in enumerate(ordered, 1)]
 
 
+def manifest_dependencies(text):
+    result, active = [], False
+    for line in text.splitlines():
+        if line.strip() == "Dependencies:":
+            active = True
+            continue
+        if not active or not line.startswith("-"):
+            continue
+        value = line[1:].strip().replace("\\", "/")
+        parts = re.split(r"/StreamingAssets/", value, maxsplit=1, flags=re.IGNORECASE)
+        relative = parts[-1]
+        if ":" in relative or "\\" in relative or any(part in ("", ".", "..") for part in relative.split("/")):
+            raise ValueError("Invalid manifest dependency")
+        if not relative.endswith(".data"):
+            raise ValueError("Unsupported manifest dependency")
+        result.append(relative.lower())
+    return result
+
+
+def load_dependencies(environment, archive, member, apk=None):
+    prefix = member.split("/vercache_demo/", 1)[0] + "/vercache_demo/"
+    source_names = {name.lower(): name for name in archive.namelist()}
+    apk_names = {name.lower(): name for name in apk.namelist()} if apk else {}
+    pending, loaded = [(archive, member)], set()
+    while pending:
+        container, name = pending.pop()
+        manifest = name + ".manifest"
+        if manifest not in container.namelist():
+            continue
+        for relative in manifest_dependencies(container.read(manifest).decode("utf-8")):
+            if relative in loaded:
+                continue
+            loaded.add(relative)
+            source_name, apk_name = source_names.get((prefix + relative).lower()), apk_names.get("assets/" + relative)
+            dependency, dependency_name = (archive, source_name) if source_name else (apk, apk_name)
+            if not dependency or not dependency_name:
+                raise ValueError("Original dependency is absent: " + relative)
+            environment.load_file(decode_bundle(dependency.read(dependency_name)), name=relative, is_dependency=True)
+            pending.append((dependency, dependency_name))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
@@ -124,6 +165,11 @@ def main():
             extractor = BundleExtractor(environment, destination)
             if shader_bytes:
                 environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
+            if args.apk:
+                with zipfile.ZipFile(args.apk) as apk:
+                    load_dependencies(environment, archive, row.filename, apk)
+            else:
+                load_dependencies(environment, archive, row.filename)
             destination.mkdir(parents=True)
             result = sanitize_diagnostics(extractor.extract())
             result.update(id=identifier, path=destination.relative_to(args.output).as_posix(), origin="original-archive")
