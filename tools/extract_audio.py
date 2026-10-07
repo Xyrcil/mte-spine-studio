@@ -13,20 +13,14 @@ import wave
 from extract_assets import load_decoder, write_json
 
 
-def extract_one(task):
-    source_text, resource, filename, output_text, record_hash, encoder, executable = task
-    source = Path(source_text)
-    sys.path.insert(0, str(source / "tools/python-libs"))
-    import UnityPy
-    result = {"id": resource, "category": resource.split('/')[1], "name": Path(resource).name, "clips": [], "errors": [], "warnings": []}
+def audio_entry(resource):
+    return {"id": resource, "category": resource.split('/')[1], "name": Path(resource).name, "clips": [], "errors": [], "warnings": []}
+
+
+def extract_environment(environment, resource, output_text, encoder, executable, media_prefix="audio"):
+    result = audio_entry(resource)
     try:
-        raw = Path(filename).read_bytes()
-        if not raw.startswith(b"UnityFS"):
-            if record_hash is None:
-                raise ValueError("No decoding metadata for audio resource")
-            raw = load_decoder(source).xor_prefix(raw, record_hash)
-        environment = UnityPy.load(raw)
-        folder = Path(output_text) / "audio" / resource.removeprefix("SoundRes/")
+        folder = Path(output_text) / media_prefix / resource.removeprefix("SoundRes/")
         for reader in environment.objects:
             if reader.type.name != "AudioClip":
                 continue
@@ -65,6 +59,24 @@ def extract_one(task):
     except Exception as error:
         result["errors"].append(str(error))
     return result
+
+
+def extract_one(task):
+    source_text, resource, filename, output_text, record_hash, encoder, executable = task
+    source = Path(source_text)
+    sys.path.insert(0, str(source / "tools/python-libs"))
+    import UnityPy
+    try:
+        raw = Path(filename).read_bytes()
+        if not raw.startswith(b"UnityFS"):
+            if record_hash is None:
+                raise ValueError("No decoding metadata for audio resource")
+            raw = load_decoder(source).xor_prefix(raw, record_hash)
+        return extract_environment(UnityPy.load(raw), resource, output_text, encoder, executable)
+    except Exception as error:
+        result = audio_entry(resource)
+        result["errors"].append(str(error))
+        return result
 
 
 def main():

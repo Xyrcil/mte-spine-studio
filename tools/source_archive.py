@@ -49,7 +49,13 @@ def sanitize_diagnostics(value):
     if isinstance(value, list):
         return [sanitize_diagnostics(item) for item in value]
     if isinstance(value, dict):
-        return {key: re.sub(r"(?:/Users/|/home/|/private/|/tmp/|[A-Za-z]:\\)[^\n]*", "<local path>", item) if key == "error" and isinstance(item, str) else sanitize_diagnostics(item) for key, item in value.items()}
+        def clean(item):
+            if isinstance(item, str):
+                return re.sub(r"(?:/Users/|/home/|/private/|/tmp/|/var/|[A-Za-z]:\\)[^\n]*", "<local path>", item)
+            if isinstance(item, list):
+                return [clean(child) for child in item]
+            return sanitize_diagnostics(item)
+        return {key: clean(item) if key in ("error", "errors", "warnings") else sanitize_diagnostics(item) for key, item in value.items()}
     return value
 
 
