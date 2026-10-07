@@ -211,6 +211,7 @@ export class Stage extends EventTarget {
     for(const root of group.controllers||[])if(root instanceof InteractionRoot){root.rebind();root.reset();for(const member of root.layers){member.state.clearTracks();member.skeleton.setToSetupPose();initializeAnimation(member,{interactive:true});}root.initializeBackgrounds();}
     for(const root of group.controllers||[])if(root instanceof StoryCgRoot)root.reset();
     this.evaluate(0);this.fit();
+    this.dispatchEvent(new CustomEvent('scene-change',{detail:{group:group.id}}));
   }
   transformLayer(group,layer){
       layer.transform=group.world(layer.instance.transform);

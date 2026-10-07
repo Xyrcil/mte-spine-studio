@@ -55,6 +55,8 @@ function describe(group){
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const regions=group.presentation.hotspots.length+(group.controllers||[]).filter(root=>root.source.id==='hot-spring'||root.source.class==='StationDrawingAnim').reduce((count,root)=>count+root.hotspots.filter(hit=>root.source.id!=='hot-spring'||hit.role).length,0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
+  const inactiveRegions=group.presentation.hotspots.filter(hit=>hit.enabled===0||hit.enabled===false||!group.isActiveTransform(hit.transform)).length;
+  if(inactiveRegions)parts.push(`${inactiveRegions} interaction regions disabled in the source configuration`);
   if(group.presentation.previewView)parts.push(group.previewReason?`Source preview unavailable: ${group.previewReason}`:group.presentation.previewView.origin==='archive'?'Archive-client preview configuration':'Legacy-client preview configuration');
   if(group.presentation.unassignedInstances?.length)parts.push(`Unassigned source skeleton components: ${group.presentation.unassignedInstances.map(instance=>instance.name).join(', ')}`);
   if(group.presentation.nativeBehaviours?.some(row=>row.class==='SpineAniDragBone'&&row.data.m_Enabled))parts.push('Source bone dragging · original-client verification pending');
