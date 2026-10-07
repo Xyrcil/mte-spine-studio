@@ -10,6 +10,7 @@ for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromiu
   const {browser,close}=await launchTestBrowser(engine);
   try{
     const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+    page.on('console',message=>{if(message.text().startsWith('[source-check]'))console.log(engine,message.text());});
     await page.route('**/assets/**',async route=>{
       const relative=decodeURIComponent(new URL(route.request().url()).pathname.split('/assets/')[1]||'');
       if(!catalog.some(row=>relative.startsWith(row.path+'/')))return route.continue();
@@ -19,6 +20,7 @@ for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromiu
     const results=await page.evaluate(async({catalog,entries})=>{
       const {Stage}=await import('/src/engine/stage.js');const results=[];
       for(const presentation of catalog){
+        console.log('[source-check] '+presentation.id);
         const canvas=document.createElement('canvas');canvas.width=160;canvas.height=160;const stage=new Stage(canvas,{manual:true});
         try{
           const group=await stage.add(presentation,entries.filter(row=>row.bundle===presentation.id));

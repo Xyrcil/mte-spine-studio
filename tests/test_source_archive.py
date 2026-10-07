@@ -3,10 +3,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_diagnostic_paths_are_removed_without_rewriting_resource_content(self):
+        original = {"text": "/Users/example/original dialogue", "nested": [{"error": "File cab-example not found in /Users/example/project"}]}
+        result = sanitize_diagnostics(original)
+        self.assertEqual(result["text"], original["text"])
+        self.assertEqual(result["nested"][0]["error"], "File cab-example not found in <local path>")
+        self.assertIn("/Users/example/project", original["nested"][0]["error"])
+    def test_missing_batch_excludes_existing_and_ambiguous_bundles(self):
+        entries = {"Spines/painting/one": [1], "Spines/painting/two": [1], "Spines/painting/two_hx": [1, 2], "Spines/story/three": [1]}
+        self.assertEqual(missing_paintings(entries, {"spines/painting/one"}), (["Spines/painting/two"], ["Spines/painting/two_hx"]))
     def test_prefabs_and_story_cg_keep_catalogue_resource_keys(self):
         prefix = "package/files/vercache_demo/spines/"
         self.assertEqual(spine_key(prefix + "painting/301619402_spine_hx/spineaniprefab.data"), "Spines/painting/301619402_spine_hx")

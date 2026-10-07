@@ -26,9 +26,9 @@ test('material ordering preserves shared queues but does not guess mixed or miss
 });
 test('original renderer metadata covers every extracted bundle and retains mixed material queues',t=>{
   if(!fs.existsSync('public/assets/extraction.json')){t.skip('Local game resources are not installed');return;}
-  const bundles=JSON.parse(fs.readFileSync('public/assets/extraction.json')).bundles;assert.equal(bundles.filter(bundle=>bundle.id.startsWith('Spines/')).length,464);assert.ok(bundles.every(bundle=>Array.isArray(bundle.renderers)));
+  const bundles=JSON.parse(fs.readFileSync('public/assets/extraction.json')).bundles,legacy=bundles.filter(bundle=>bundle.origin!=='original-archive');assert.equal(legacy.filter(bundle=>bundle.id.startsWith('Spines/')).length,464);assert.ok(bundles.every(bundle=>Array.isArray(bundle.renderers)));
   const presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations;assert.deepEqual(presentations.map(row=>row.id).sort(),bundles.filter(row=>row.path).map(row=>row.id).sort());
-  const renderers=bundles.flatMap(bundle=>bundle.renderers);assert.equal(renderers.length,917);assert.ok(renderers.every(renderer=>renderer.errors.length===0));assert.equal(renderers.filter(renderer=>materialOrdering(renderer).renderOrderStatus==='mixed-queues').length,3);
+  const renderers=legacy.flatMap(bundle=>bundle.renderers);assert.equal(renderers.length,917);assert.ok(bundles.flatMap(bundle=>bundle.renderers).every(renderer=>renderer.errors.length===0));assert.equal(renderers.filter(renderer=>materialOrdering(renderer).renderOrderStatus==='mixed-queues').length,3);
   const instances=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations.find(p=>p.id==='Spines/painting/3016009_spine').instances;
   assert.deepEqual(Object.fromEntries(instances.map(instance=>[instance.name,instance.renderQueue])),{role2:3003,fg1:3004,fg2:3005,bg1:3000,role1:3002});
 });

@@ -2,6 +2,7 @@
 import argparse
 import collections
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -38,11 +39,26 @@ def decode_bundle(data):
     return bytes(decoded)
 
 
+def missing_paintings(entries, known):
+    known = {key.lower() for key in known}
+    candidates = sorted(key for key in entries if key.startswith("Spines/painting/") and key.lower() not in known)
+    return [key for key in candidates if len(entries[key]) == 1], [key for key in candidates if len(entries[key]) != 1]
+
+
+def sanitize_diagnostics(value):
+    if isinstance(value, list):
+        return [sanitize_diagnostics(item) for item in value]
+    if isinstance(value, dict):
+        return {key: re.sub(r"(?:/Users/|/home/|/private/|/tmp/|[A-Za-z]:\\)[^\n]*", "<local path>", item) if key == "error" and isinstance(item, str) else sanitize_diagnostics(item) for key, item in value.items()}
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--catalog", type=Path, default=Path("public/assets/presentations.json"))
     parser.add_argument("--bundle", action="append", default=[])
+    parser.add_argument("--missing-paintings", action="store_true", help="Convert all unindexed painting bundles with unambiguous source entries")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
     parser.add_argument("--apk", type=Path, help="Read original shared shaders from the client archive without extracting client code")
@@ -54,7 +70,13 @@ def main():
             key = spine_key(row.filename)
             if key:
                 entries[key].append(row)
-        if not args.bundle:
+        requested_bundles = args.bundle
+        if args.missing_paintings:
+            if args.bundle:
+                parser.error("Use --bundle or --missing-paintings, not both")
+            requested_bundles, ambiguous = missing_paintings(entries, known)
+            print(json.dumps({"selected": len(requested_bundles), "ambiguous": ambiguous}), flush=True)
+        if not requested_bundles and not args.missing_paintings:
             print(json.dumps({"candidateFiles": sum(map(len, entries.values())), "candidateKeys": len(entries), "categories": dict(collections.Counter(key.split("/")[1] for key in entries)), "unindexedCandidates": sorted(key for key in entries if key.lower() not in known), "ambiguous": {key: [row.filename.split("/vercache_demo/", 1)[1] for row in rows] for key, rows in entries.items() if len(rows) > 1}}, indent=2))
             return
         if not args.output or not args.python_libs:
@@ -69,7 +91,7 @@ def main():
                 shader_bytes = decode_bundle(apk.read("assets/common/shader.data"))
         catalog_path = args.output / "extraction.json"
         bundles = json.loads(catalog_path.read_text())["bundles"] if catalog_path.exists() else []
-        for requested in args.bundle:
+        for requested in requested_bundles:
             key = next((key for key in entries if key.lower() == requested.lower()), None)
             if key is None or len(entries[key]) != 1:
                 raise ValueError("Requested bundle is absent or ambiguous: " + requested)
@@ -82,7 +104,7 @@ def main():
             if shader_bytes:
                 environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
             destination.mkdir(parents=True)
-            result = extractor.extract()
+            result = sanitize_diagnostics(extractor.extract())
             result.update(id=key, path=destination.relative_to(args.output).as_posix(), origin="original-archive")
             bundles.append(result)
             write_json(catalog_path, {"schema": 1, "bundles": bundles})
