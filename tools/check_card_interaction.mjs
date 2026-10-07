@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser(process.argv[2]||'chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);await selectAsset(page,'Spines/painting/301619101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619101_spine');
@@ -65,4 +65,4 @@ try{
     return {layers:group().layers.length,approaches,transitions,soundNames:[...new Set(sounds)],midRevealRestore:true,sequenceReplay:true,independentExport:true};
   });
   assert.equal(result.layers,6);assert.equal(result.transitions.length,10);assert.deepEqual(errors,[]);console.log('Real card checks passed: both clothing variants, wins/losses, retained/dismissed overlays, sounds, mid-reveal restore, sequence replay, independent export seeking and game exit',result);
-}finally{await browser.close();}
+}finally{await close();}
