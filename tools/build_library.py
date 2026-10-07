@@ -290,6 +290,22 @@ def join_artwork_variants(appearances):
             row.setdefault("portraitResource", parent["portraitResource"])
 
 
+def join_cg_variants(appearances, skins):
+    by_bundle = {row.get("bundle", "").lower(): row for row in appearances}
+    for skin in skins:
+        normal, alternate = skin.get("Resources", ""), skin.get("Resources_Hx", "")
+        if not normal.startswith("Spines/storyCG/") or not alternate.startswith("Spines/storyCG/"):
+            continue
+        parent, variant = by_bundle.get(normal.lower()), by_bundle.get(alternate.lower())
+        if not parent or not variant or parent is variant:
+            continue
+        variant.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · HX variant")
+
+
+def story_roles_by_resource(rows):
+    return {row["PlotPic"].split("/")[0].lower(): row for row in rows if row.get("PlotPic") and row["PlotPic"] != "0"}
+
+
 def join_portraits(appearances, portrait_entries, source_spines, names):
     portraits = {entry["resource"]: entry for entry in portrait_entries if entry.get("usage") != "skill-emblem"}
     used = set()
@@ -337,13 +353,10 @@ def build(source, output):
         appearances.append(entry)
         used.add(bundle)
     raw_tables = source / "research/qnzl-2.0-diff-20260828/parsed/tables"
-    story_roles = {}
+    story_roles = story_roles_by_resource(records(raw_tables / "RoleRes.json"))
     for row in records(raw_tables / "RoleRes.json"):
         resource = row.get("Spine", "")
         character_id = row.get("RoleId")
-        plot = row.get("PlotPic", "")
-        if plot and plot != "0":
-            story_roles[plot.split("/")[0]] = row
         if character_id and row.get("__unnamed_2") and (character_id not in names or row["Id"] == character_id):
             names[character_id] = row["__unnamed_2"]
         if resource in ("", "0"):
@@ -361,7 +374,7 @@ def build(source, output):
         if not bundle.startswith("Spines/") or bundle in used:
             continue
         presentation = by_bundle.get(bundle)
-        appearances.append({"id": "v2-" + row["Id"], "characterId": row.get("RoleResId"), "name": row.get("__unnamed_3") or row.get("Name"), "bundle": bundle, "kind": "storyCG", "status": "available" if presentation and presentation["instances"] else "missing-spine"})
+        appearances.append({"id": "v2-" + row["Id"], "characterId": row.get("RoleResId") if row.get("RoleResId") not in (None, "", "0") else None, "name": row.get("__unnamed_3") or row.get("Name"), "bundle": bundle, "kind": "storyCG", "status": "available" if presentation and presentation["instances"] else "missing-spine"})
         used.add(bundle)
     for presentation in presentations:
         if presentation["id"] in used or not (presentation["instances"] or presentation.get("unassignedInstances")):
@@ -369,7 +382,7 @@ def build(source, output):
         filename = presentation["id"].split("/")[-1]
         character_id = filename.removesuffix("_spine").removesuffix("_spine_hx")
         name = names.get(character_id, filename)
-        story_role = (story_roles.get(filename) or story_roles.get(filename.removesuffix("_hx"))) if presentation["category"] == "story" else None
+        story_role = (story_roles.get(filename.lower()) or story_roles.get(filename.lower().removesuffix("_hx"))) if presentation["category"] == "story" else None
         appearances.append({"id": presentation["id"], "characterId": story_role.get("RoleId") if story_role else character_id if character_id in names else None, "characterName": story_role.get("__unnamed_2") if story_role else names.get(character_id), "name": filename if story_role else name, "bundle": presentation["id"], "kind": presentation["category"], "status": "available" if presentation["instances"] else "unassigned"})
     for row in appearances:
         presentation = by_bundle.get(row.get("bundle"), {})
@@ -377,6 +390,7 @@ def build(source, output):
             if field in presentation:
                 row[field] = presentation[field]
     join_artwork_variants(appearances)
+    join_cg_variants(appearances, records(raw_tables / "Skin.json"))
     portrait_path = output / "portrait-index.json"
     portrait_entries = []
     if portrait_path.is_file():

@@ -5,10 +5,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue, chinese_caption_policy
-from build_library import join_artwork_variants
+from build_library import join_artwork_variants, join_cg_variants, story_roles_by_resource
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_plot_roles_match_original_mixed_case_resource_directories(self):
+        row = {"Id": "skin", "RoleId": "actor", "PlotPic": "example_ZDYS/ui_example_SkeletonData"}
+        self.assertEqual(story_roles_by_resource([row, {"PlotPic": "0"}, {}]), {"example_zdys": row})
+    def test_cg_variants_use_declared_resource_pairs_without_guessing_paths(self):
+        parent = {"id": "cg", "bundle": "Spines/storyCG/FAMILY/asset", "kind": "storyCG", "name": "Original CG"}
+        variant = {"id": "hx", "bundle": "Spines/storyCG/family_hx/asset_hx"}
+        unknown = {"id": "unknown", "bundle": "Spines/storyCG/other_hx/asset"}
+        join_cg_variants([parent, variant, unknown], [{"Resources": parent["bundle"], "Resources_Hx": "Spines/storyCG/FAMILY_hx/asset_hx"}])
+        self.assertEqual(variant["variantOf"], "cg")
+        self.assertEqual(variant["name"], "Original CG · HX variant")
+        self.assertNotIn("variantOf", unknown)
     def test_hx_variants_join_only_an_existing_character_binding(self):
         parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait"}
         before = deepcopy(parent)
