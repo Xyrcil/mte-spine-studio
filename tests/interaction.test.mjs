@@ -16,6 +16,21 @@ test('box and polygon colliders retain offsets and include polygon edges',()=>{
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
+test('managed source controllers unlock only on the active animation end event',()=>{
+  const {root,events}=fixture();root.source.class='SpineClickAnimationRoot';
+  root.click({event:1,track:2});const active=root.primary.state.getCurrent(2),before=root.snapshot(),count=events.length;
+  for(const [animation,name] of [['animation_bg','end'],['click_01','card'],['click_01','changeto_animation2']]){
+    root.onEvent(root.primary,{animation:{name:animation}},{data:{name}});
+    assert.deepEqual(root.snapshot(),before);assert.equal(events.length,count);
+  }
+  root.onEvent(root.primary,active,{data:{name:'end'}});
+  assert.equal(root.value.playing,false);assert.equal(root.primary.state.getCurrent(2),null);assert.equal(root.primary.state.getCurrent(0).animation.name,'animation');
+});
+test('newer source controllers retain their explicit transition events',()=>{
+  const {root}=fixture();root.source.class='SpineClickAnimationRoot';root.source.data.rolePetType=0;
+  root.click({event:100,animation:'transition'});root.onEvent(root.primary,root.primary.state.getCurrent(0),{data:{name:'changeto_animation2'}});
+  assert.equal(root.value.playing,false);assert.equal(root.primary.state.getCurrent(0).animation.name,'animation2');
+});
 test('missing variants retain source voice requests and recorded toggles without playing an animation',()=>{
   for(const event of [5,102]){
     const {root,events}=fixture();for(const layer of root.layers)layer.skeleton.data.findAnimation=name=>name==='overlay'?{name,duration:2}:null;

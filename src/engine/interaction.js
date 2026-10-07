@@ -122,6 +122,7 @@ export class InteractionRoot {
     if(name.includes('sound_'))this.sound(name.replaceAll('sound_','').replace('301619402_caidan_Rshoes02','301619402_caidan_Rshoes_02'),'a_sound_ui',eventLateness(layer,track,event));
     if(!v.playing)return;
     for(const effect of this.source.data.OtherEffectList||[])if(effect.Key===name)this.emit('effect-request',{object:String(effect.Obj?.m_PathID||'0'),duration:effect.Time});
+    if(this.source.class==='SpineClickAnimationRoot'&&!Object.hasOwn(this.source.data,'rolePetType')&&(name!=='end'||track.animation?.name!==v.animation))return;
     if(name!=='end'&&name!=='card'&&!name.includes('changeto'))return;
     const eventId=v.event,variant=v.names[6]==='click_01_down_02'?2:1;
     let idle=null;

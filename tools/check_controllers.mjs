@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {InteractionRoot} from '../src/engine/interaction.js';
 import {cardOutcomeSeeds,ControllerCheckpoint} from './controller_branches.mjs';
 import {readFile,readdir} from 'node:fs/promises';
@@ -15,7 +15,7 @@ let checkpointPath;
 if(checkpointName){checkpointPath=resolve(checkpointName);const within=relative(resolve('private'),checkpointPath);assert.ok(within&&!within.startsWith('..')&&!isAbsolute(within),'Controller checkpoints must be inside private/');}
 const sourceFiles=['public/vendor/spine-webgl.js','tools/check_controllers.mjs','tools/controller_branches.mjs',...(await readdir('src/engine')).filter(name=>name.endsWith('.js')).map(name=>'src/engine/'+name)].sort();
 const runtimeSource=JSON.stringify(await Promise.all(sourceFiles.map(async path=>[path,await readFile(path,'utf8')]))),checkpoint=new ControllerCheckpoint(checkpointPath,runtimeSource);await checkpoint.open();
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.exposeFunction('mteControllerStore',(operation,...values)=>{assert.ok(['begin','enqueue','next','finish','status'].includes(operation));return checkpoint[operation](...values);});
@@ -72,4 +72,4 @@ try{
   }
   assert.deepEqual(errors,[]);const failures=results.flatMap(result=>result.failures.map(failure=>({bundle:result.bundle,...failure})));
   assert.equal(failures.length,0,JSON.stringify(failures.slice(0,3)));console.log('Controller check run ended', {bundles:results.length,states:results.reduce((sum,result)=>sum+result.states,0),transitions:results.reduce((sum,result)=>sum+result.transitions,0),unfinished:results.filter(result=>!result.complete).map(result=>result.bundle),limited:results.filter(result=>result.limited).map(result=>result.bundle)});
-}finally{await browser.close();}
+}finally{await close();}
