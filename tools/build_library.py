@@ -274,6 +274,20 @@ def join_hot_springs(appearances, roles, names):
             appearance.update(hotSpringRoleId=role["id"], characterId=role["id"], characterName=names.get(role["id"], role["id"]))
 
 
+def join_artwork_variants(appearances):
+    by_bundle = {row.get("bundle"): row for row in appearances if row.get("characterId")}
+    for row in appearances:
+        bundle = row.get("bundle", "")
+        if not bundle.startswith("Spines/painting/") or not bundle.endswith("_hx"):
+            continue
+        parent = by_bundle.get(bundle.removesuffix("_hx"))
+        if not parent:
+            continue
+        row.update(variantOf=parent["id"], characterId=parent["characterId"], characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · HX variant")
+        if parent.get("portraitResource"):
+            row.setdefault("portraitResource", parent["portraitResource"])
+
+
 def join_portraits(appearances, portrait_entries, source_spines, names):
     portraits = {entry["resource"]: entry for entry in portrait_entries if entry.get("usage") != "skill-emblem"}
     used = set()
@@ -355,6 +369,7 @@ def build(source, output):
         name = names.get(character_id, filename)
         story_role = (story_roles.get(filename) or story_roles.get(filename.removesuffix("_hx"))) if presentation["category"] == "story" else None
         appearances.append({"id": presentation["id"], "characterId": story_role.get("RoleId") if story_role else character_id if character_id in names else None, "characterName": story_role.get("__unnamed_2") if story_role else names.get(character_id), "name": filename if story_role else name, "bundle": presentation["id"], "kind": presentation["category"], "status": "available" if presentation["instances"] else "unassigned"})
+    join_artwork_variants(appearances)
     portrait_path = output / "portrait-index.json"
     portrait_entries = []
     if portrait_path.is_file():

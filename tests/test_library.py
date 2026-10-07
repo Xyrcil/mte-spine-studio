@@ -1,12 +1,26 @@
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue, chinese_caption_policy
+from build_library import join_artwork_variants
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_hx_variants_join_only_an_existing_character_binding(self):
+        parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait"}
+        before = deepcopy(parent)
+        variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
+        unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
+        join_artwork_variants([parent, variant, unknown])
+        self.assertEqual(parent, before)
+        self.assertEqual(variant["variantOf"], "skin")
+        self.assertEqual(variant["characterId"], "actor")
+        self.assertEqual(variant["kind"], "skin")
+        self.assertEqual(variant["portraitResource"], "portrait")
+        self.assertNotIn("variantOf", unknown)
     def test_chinese_caption_policy_exposes_only_required_configuration(self):
         result = chinese_caption_policy([{"id": 9991139, "int_value": 3, "string_value": "[3016119,3016049,3014019]", "private": "Excluded"}])
         self.assertEqual(result, {"schema": 1, "players": [3016119, 3016049, 3014019], "duration": 3})

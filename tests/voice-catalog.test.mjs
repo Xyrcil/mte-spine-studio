@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {voiceAppearance,mainViewVoiceBinding} from '../src/engine/voice-catalog.js';
 import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding,mainViewTouchVoices,mainViewIdleVoices} from '../src/engine/voice-catalog.js';
 const library={appearances:[{id:'skin',characterId:'actor',bundle:'Spines/skin'}],voices:[{id:'1',targetId:'actor',title:'Login',resourceName:'Voice_Login',text:'Hello'},{id:'2',targetId:'skin',title:'Costume',resourceName:'Voice_Skin',text:'Hello again'},{id:'3',targetId:'other',title:'Other',resourceName:'Other'}],storyVoices:[{id:'1',resourceName:'Voice_Plot_1',text:'Story text'},{id:'2',resourceName:'',text:'Unvoiced text'}]};
+test('artwork variants share declared parent voices without changing their authored source',()=>{
+  const source=structuredClone(library);source.appearances.push({id:'hx',variantOf:'skin',characterId:'actor',bundle:'Spines/skin_hx'});
+  const object={bundle:'Spines/skin_hx',sourceSkinId:'authored_other_role'},before=structuredClone(object);
+  assert.equal(voiceAppearance(source,object).id,'skin');assert.deepEqual(voiceCatalog(source,[object]).map(row=>row.id),['1','2']);assert.deepEqual(object,before);
+  source.appearances[0].id='301600901';source.appearances[1].variantOf='301600901';assert.equal(mainViewVoiceBinding(source,object).modelId,'301600901');
+  source.appearances[0].variantOf='hx';assert.equal(voiceAppearance(source,object),null);assert.deepEqual(voiceCatalog(source,[object]),[]);
+  source.appearances[1].variantOf='missing';assert.equal(voiceAppearance(source,object),null);
+});
 test('station voice scope uses source skin remapping and exact voice IDs, not resource prefixes',()=>{
   const source={...structuredClone(library),stationDrawings:{drawings:[{id:'drawing',skinId:'skin',gospelId:'actor',peopleId:'',voiceIds:['3','missing']}]}};
   source.appearances.push({id:'station',stationDrawingId:'drawing',bundle:'Spines/drawing/station/drawing',characterId:'actor'});
