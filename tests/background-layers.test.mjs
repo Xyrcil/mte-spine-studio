@@ -24,3 +24,11 @@ test('scene links round-trip and reject missing owners, chains and attached port
 test('duplicating a character preserves its backgrounds and remaps sound owners without changing the source',()=>{
   const actor=owner(),background={...image(),parentId:actor.id},original=scene([background,actor]);original.audio={ambientTracks:[{id:actor.id},{id:background.id}],effectTracks:[{group:background.id}]};let id=0;const {scene:copy,copy:character}=duplicateSceneObject(original,actor.id,()=>`copy-${id++}`);assert.equal(character.x,actor.x+1);const attached=copy.objects.find(row=>row.parentId===character.id);assert.ok(attached);assert.equal(attached.x,background.x);assert.equal(copy.audio.ambientTracks.length,4);assert.equal(copy.audio.effectTracks.at(-1).group,attached.id);assert.equal(original.objects.length,2);
 });
+test('character duplication keeps preview tiers and source checkpoints while retaining one main-view speaker',()=>{
+  const actor={...owner(),appearanceId:'skin',hotSpringLevel:4,hotSpringFavorLevel:0,interactions:[{id:'station',state:{kind:'station-drawing',schema:1,random:123,selected:-1}}]},background={...image(),parentId:actor.id},original=scene([background,actor]);
+  original.mainViewSpeech={schema:1,group:actor.id,language:'a_sound_voiceeff_ch',localized:false,wordsVisible:true,random:123,captionOnly:{name:'Voice_3016119_Touch_Hand',duration:3}};
+  original.mainViewSpeechClock={schema:1,visible:true,canClick:false,wordsRemaining:null,idleRemaining:119,random:123,shieldTimers:[{player:3016119,name:'Voice_3016119_Touch_Hand',remaining:2}],lastShieldPlayer:3016119};
+  let index=0;const {scene:copy,copy:duplicate}=duplicateSceneObject(original,actor.id,()=>`copy-${index++}`);
+  assert.equal(duplicate.hotSpringLevel,4);assert.equal(duplicate.hotSpringFavorLevel,0);assert.equal(duplicate.appearanceId,'skin');assert.deepEqual(duplicate.interactions,actor.interactions);assert.equal(copy.mainViewSpeech.group,actor.id);assert.deepEqual(copy.mainViewSpeechClock,original.mainViewSpeechClock);assert.deepEqual(validateScene(copy),copy);
+  duplicate.interactions[0].state.random=456;assert.equal(original.objects[1].interactions[0].state.random,123);assert.equal(copy.objects[1].interactions[0].state.random,123);
+});
