@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {exportPlan,frameSources,exportCamera,clipSample} from '../src/engine/export-plan.js';
+import {exportPlan,frameSources,exportCamera,clipSample,exportRenderSize} from '../src/engine/export-plan.js';
 import {omittedVisualWarnings} from '../src/engine/export-source.js';
 const settings=()=>({format:'mp4',width:320,height:240,scale:1,fps:10,speed:1,start:0,end:1,loops:2,loopMode:'repeat',fade:.2,background:'#191b20',transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}});
+test('export supersampling preserves output size and respects device and memory limits',()=>{
+  const plan=exportPlan(settings());assert.deepEqual(exportRenderSize(plan,8192),{width:640,height:480,scale:2});assert.equal(plan.width,320);
+  assert.deepEqual(exportRenderSize(plan,512),{width:320,height:240,scale:1});
+  assert.equal(exportRenderSize({width:3840,height:2160},8192).scale,1);
+  assert.equal(exportRenderSize({width:2048,height:2048},8192).scale,2);
+  assert.throws(()=>exportRenderSize(plan,128),/rendering limit/);
+});
 test('source preview exports preserve the captured viewport after host layout changes',()=>{
   const camera={x:1,y:2,width:12,height:8,sourcePreview:{aspect:1.5}},plan=exportPlan(settings());
   assert.deepEqual(exportCamera(camera,2.5,plan),exportCamera({...camera,sourcePreview:undefined},1.5,plan));

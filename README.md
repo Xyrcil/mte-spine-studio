@@ -423,6 +423,9 @@ instead of an indefinitely loading canvas.
 Rendering uses WebGL 1 when available and falls back to WebGL 2 on browsers
 that expose only that context. This keeps the same artwork renderer and export
 features; it does not substitute a static preview.
+Exports smooth edges with fixed 2× supersampling without changing the selected
+output dimensions. Large outputs fall back to native resolution and show a
+smoothing warning when device or memory limits prevent supersampling.
 Character and story voices can be selected for export. Optional burned-in
 subtitles retain the source line, wrap to fit the output and follow the selected
 voice's offset, duration, speed and repeat settings. They use whole-line timing,

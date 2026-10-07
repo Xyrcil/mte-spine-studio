@@ -1,7 +1,7 @@
 import {Output,BufferTarget,StreamTarget,Mp4OutputFormat,WebMOutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
 import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
-import {exportPlan,frameSources,exportCamera} from './export-plan.js';
+import {exportPlan,frameSources,exportCamera,exportRenderSize} from './export-plan.js';
 import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay,aacGaplessMetadata,normalizeDecodedAac} from './audio-delay.js';
@@ -20,9 +20,10 @@ export class RenderSession {
   constructor(scene,catalog,entries,imageAssets,sourceAspect,plan,signal){
     this.scene=exportScene(scene,Boolean(plan.useSequence));this.catalog=catalog;this.entries=entries;this.plan=plan;this.signal=signal;
     this.canvas=document.createElement('canvas');this.canvas.width=plan.width;this.canvas.height=plan.height;
-    this.stage=new Stage(this.canvas,{manual:true,transparent:Boolean(plan.transparent)});this.stage.imageAssets=new Map(imageAssets);
+    this.stage=new Stage(this.canvas,{manual:true,antialias:!plan.supersampling,transparent:Boolean(plan.transparent)});this.stage.imageAssets=new Map(imageAssets);
+    try{const size=exportRenderSize(plan,this.stage.gl.getParameter(this.stage.gl.MAX_RENDERBUFFER_SIZE));this.renderScale=plan.supersampling?size.scale:1;this.canvas.width=plan.width*this.renderScale;this.canvas.height=plan.height*this.renderScale;}catch(error){this.stage.dispose();throw error;}
     this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
-    const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
+    const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip?Object.fromEntries(Object.entries(bounds.clip).map(([key,value])=>[key,value*this.renderScale])):null;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
   }
   async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
@@ -85,11 +86,11 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   scene=exportScene(scene,Boolean(settings.useSequence));
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=await exportVideoSupport(settings,scene.speed);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
-  const session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,plan,signal):null;
+  const renderPlan={...plan,supersampling:true},session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal):null;
   const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
   let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
   const tracks=[];
-  let interactionClips=[],interactionVoices=[],interactionCaptions=[],interactionStops=[],captionStops=[],captionStarts=[],warnings=[];
+  let interactionClips=[],interactionVoices=[],interactionCaptions=[],interactionStops=[],captionStops=[],captionStarts=[],warnings=session.renderScale===1?['Edge smoothing is limited at this output size; reduce the dimensions for 2× supersampling']:[];
   let captionDuration=0,captionLayout;
   const sceneCaptions=[];
   let audioDelay=0,encodedFrames=0;
@@ -161,8 +162,8 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
     for(let i=0;i<plan.frames;i++){
       checkpoint(signal);if(zipError)throw zipError;
       const frames=frameSources(plan,i);await session.seek(plan.start+frames[0].frame/plan.fps*plan.speed);
-      ctx.clearRect(0,0,plan.width,plan.height);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=frames[0].weight;ctx.drawImage(session.canvas,0,0);
-      if(frames.length===2){await head.seek(plan.start+frames[1].frame/plan.fps*plan.speed);ctx.globalCompositeOperation='lighter';ctx.globalAlpha=frames[1].weight;ctx.drawImage(head.canvas,0,0);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
+      ctx.clearRect(0,0,plan.width,plan.height);ctx.globalCompositeOperation='source-over';ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.globalAlpha=frames[0].weight;ctx.drawImage(session.canvas,0,0,plan.width,plan.height);
+      if(frames.length===2){await head.seek(plan.start+frames[1].frame/plan.fps*plan.speed);ctx.globalCompositeOperation='lighter';ctx.globalAlpha=frames[1].weight;ctx.drawImage(head.canvas,0,0,plan.width,plan.height);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
       let captionOffset=0;
       if(captionLayout&&subtitleActive(i/plan.fps,captionDuration,{offset:settings.audioOffset||0,rate:settings.audioFollowSpeed?plan.speed:1,repeat:Boolean(settings.audioRepeat)})){drawSubtitle(ctx,captionLayout,plan.width,plan.height);captionOffset=captionLayout.height+plan.height*.015;}
       for(const caption of sceneCaptions){const weight=sceneCaptionWeight(plan,i/plan.fps,caption);if(weight>0){drawSubtitle(ctx,caption.layout,plan.width,plan.height,captionOffset,weight);captionOffset+=caption.layout.height+plan.height*.015;}}

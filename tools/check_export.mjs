@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {Input,BufferSource,ALL_FORMATS} from 'mediabunny';
 import {unzipSync} from 'fflate';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
@@ -54,4 +54,4 @@ try{
     const colors=[];for(const [x,y] of [[0,0],[.5,.5]]){const settings={...window.mteExporter.settings(),format:'png',width:100,height:100,scale:1,start:0,end:1,loops:1,loopMode:'repeat',fit:'cover',crop:{x,y,width:.5,height:.5},transparent:false};const out=await exportMedia({scene,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:1,settings}),image=await createImageBitmap(out.blob),canvas=document.createElement('canvas');canvas.width=100;canvas.height=100;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);colors.push([...ctx.getImageData(50,50,1,1).data]);image.close();}return colors;
   });assert.deepEqual(cropTest,[[255,0,0,255],[255,255,0,255]]);
   console.log('Export browser checks passed: MP4/WebM frame counts and audio, transparent PNG, ZIP sequence, cancellation and scene isolation');
-}finally{await browser.close();}
+}finally{await close();}

@@ -49,8 +49,13 @@ try{
         const audio=window.mteAudio,provider=interactionExportProvider(library,audio,sequence.initial,{includeSubtitles:false}),voice=library.voices.find(row=>row.id===conversations.at(-1).voice),clip=audio.resolve(voice.resourceName,sequence.initial.audio.language),context=new AudioContext({sampleRate:48000});
         const {aacGaplessMetadata,normalizeDecodedAac}=await import('/src/engine/audio-delay.js'),referenceBytes=await (await fetch(audio.base+clip.path)).arrayBuffer(),timing=aacGaplessMetadata(referenceBytes);
         const reference=normalizeDecodedAac(context,await context.decodeAudioData(referenceBytes),timing);
-        const render=new RenderSession({...snapshot,sequence},presentations,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...plan,end:3.2}),expectedFrames=[];
-        try{await render.initialize();for(const at of [0,1.1]){await render.seek(at);const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const ctx=canvas.getContext('2d');ctx.drawImage(render.canvas,0,0);expectedFrames.push(ctx.getImageData(0,0,160,120).data);}}finally{render.dispose();}
+        const render=new RenderSession({...snapshot,sequence},presentations,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...plan,end:3.2,supersampling:true}),expectedFrames=[];
+        try{
+          await render.initialize();for(const at of [0,1.1]){await render.seek(at);const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const ctx=canvas.getContext('2d');ctx.imageSmoothingQuality='high';ctx.drawImage(render.canvas,0,0,160,120);expectedFrames.push(ctx.getImageData(0,0,160,120).data);}
+          if(render.renderScale!==2||render.stage.gl.getContextAttributes().antialias)throw new Error('Fixed export supersampling unavailable');
+          const read=()=>{const gl=render.stage.gl,data=new Uint8Array(render.canvas.width*render.canvas.height*4);gl.readPixels(0,0,render.canvas.width,render.canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);return data;},referenceFrame=read();
+          for(let repeat=0;repeat<16;repeat++){await render.seek(1.1);if(!read().every((value,index)=>value===referenceFrame[index]))throw new Error('Stationary export frame changed without a simulation step');}
+        }finally{render.dispose();}
         try{for(const format of ['mp4','webm']){
           try{await exportVideoSupport({...plan,format,width:160,height:120,fps:10});}catch(error){
             if(error.message!==`${format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`)throw error;

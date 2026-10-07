@@ -47,7 +47,7 @@ export class Stage extends EventTarget {
     this.options=options;
     this.mainViewSpeech=new MainViewSpeech(this);
     this.mainViewSpeechClock=new MainViewSpeechClock({onHideWords:late=>{this.mainViewSpeech.hideWords(late);this.dispatchEvent(new CustomEvent('main-view-words-hidden'));},onIdle:(index,late)=>{this.mainViewSpeech.idle(index,late);this.dispatchEvent(new CustomEvent('main-view-idle',{detail:{index}}));}});
-    const contextOptions={alpha:true, antialias:true, preserveDrawingBuffer:true};
+    const contextOptions={alpha:true, antialias:options.antialias!==false, preserveDrawingBuffer:true};
     this.gl = canvas.getContext('webgl',contextOptions)||canvas.getContext('webgl2',contextOptions);
     if (!this.gl) throw new Error('WebGL is unavailable');
     this.renderer = new (s().webgl.SceneRenderer)(canvas, this.gl);

@@ -1,4 +1,10 @@
 const number=(value,label,min,max)=>{if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max)throw new Error(`Invalid ${label}`);return value;};
+export function exportRenderSize(plan,maxSide,maxPixels=16*1024*1024){
+  number(maxSide,'device render size',2,65536);
+  if(plan.width>maxSide||plan.height>maxSide)throw new Error('Output dimensions exceed this device’s rendering limit');
+  const scale=plan.width*2<=maxSide&&plan.height*2<=maxSide&&plan.width*plan.height*4<=maxPixels?2:1;
+  return {width:plan.width*scale,height:plan.height*scale,scale};
+}
 export function exportPlan(value,sceneSpeed=1){
   const width=number(value.width,'width',2,8192),height=number(value.height,'height',2,8192),scale=number(value.scale??1,'pixel multiplier',.25,4);
   const outputWidth=Math.round(width*scale),outputHeight=Math.round(height*scale);
