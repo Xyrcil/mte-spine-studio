@@ -17,7 +17,7 @@ export class AudioBus extends EventTarget {
     this.ambientVolume=.5;this.ambientEnabled=false;this.language='a_sound_voiceeff';this.paused=false;this.unlocked=false;this.ambients=new Map();this.ambientPreferences=new Map();this.sceneGroups=[];this.appearances=[];
     const lookup=audioResourceLookup(index,resources);this.resources=lookup.resources;this.byName=lookup.byName;
     this.element=new Audio();this.element.preload='none';
-    this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
+    this.element.addEventListener('ended',()=>{if(!this.element.ended)return;this.currentVoice=null;if(!this.externalCaption)this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));});
     this.element.addEventListener('error',()=>{if(!this.element.error||!this.currentVoice)return;this.stop();this.dispatchEvent(new CustomEvent('audio-error',{detail:'Audio playback failed'}));});
   }
   resolve(name,category='a_sound_voiceeff',exactResource=false) {
@@ -32,7 +32,8 @@ export class AudioBus extends EventTarget {
     const volume=Number(metadata?.volume??1);return {name,category:chosen,clip,volume:Number.isFinite(volume)?Math.max(0,Math.min(1,volume)):1,loop:metadata?.loop===true||metadata?.loop===1||metadata?.loop==='1'};
   }
   setSubtitle(detail){this.currentSubtitle=detail;this.dispatchEvent(new CustomEvent('subtitle',{detail}));}
-  hideSourceSubtitle(group){if(this.currentVoice?.group===group&&this.currentVoice.voice.sourceMainView){this.currentVoice.voice.subtitleHidden=true;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}}
+  showSourceCaption(group,text){if(this.currentVoice)this.currentVoice.voice.subtitleHidden=true;this.externalCaption={group,text};this.setSubtitle({title:'',text});this.dispatchEvent(new CustomEvent('voice-state'));}
+  hideSourceSubtitle(group){if(this.externalCaption?.group===group){this.externalCaption=null;this.setSubtitle(null);}if(this.currentVoice?.group===group&&this.currentVoice.voice.sourceMainView){this.currentVoice.voice.subtitleHidden=true;this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}}
   async play(voice,category='a_sound_voiceeff',{time=0,autoplay=true,group=''}={}) {
     if(!voice?.resourceName)throw new Error('No voice resource selected');
     voice={...savedVoiceRow({name:voice.resourceName,...(voice.id?{id:voice.id}:{}),...(voice.exactResource?{exactResource:true}:{})},this.voiceRows),...voice};
@@ -45,13 +46,13 @@ export class AudioBus extends EventTarget {
     this.element.src=this.base+clip.path;this.element.volume=this.volume;this.element.muted=this.muted;
     if(autoplay){this.unlocked=true;if(!await this.startVoice(token))return;}
     if(token!==this.token)return;
-    this.setSubtitle(voice.subtitleHidden?null:{title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
+    this.setSubtitle(this.externalCaption?{title:'',text:this.externalCaption.text}:voice.subtitleHidden?null:{title:voice.title,text:voice.text});this.dispatchEvent(new CustomEvent('voice-state'));
   }
   async startVoice(token){
     try{if(token===this.token&&this.currentVoice?.pauseTime!==undefined&&this.element.readyState>0)this.element.currentTime=Math.min(this.currentVoice.pauseTime,this.element.duration);await this.element.play();if(token===this.token&&!this.paused)delete this.currentVoice?.pauseTime;return token===this.token;}
     catch(error){if(token!==this.token||this.paused&&error.name==='AbortError')return false;if(error.name!=='NotAllowedError')this.stop();throw error;}
   }
-  stop() {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}
+  stop() {this.token++;this.voiceMetadataAbort?.abort();this.currentVoice=null;this.externalCaption=null;this.element.pause();this.element.removeAttribute('src');this.element.load();this.setSubtitle(null);this.dispatchEvent(new CustomEvent('voice-state'));}
   async playEffect(name,category='a_sound_ui',time=0,autoplay=true,group=''){
     const info=this.soundInfo(name,category),clip=info.clip;if(!clip)throw new Error(`Sound unavailable: ${name}`);
     if(this.effects.size>=12)this.releaseEffect(this.effects.values().next().value);
@@ -71,7 +72,7 @@ export class AudioBus extends EventTarget {
   releaseEffect(element){if(!this.effects.delete(element))return;element.pause();element.removeAttribute('src');element.load();this.dispatchEvent(new CustomEvent('effect-state'));}
   stopEffects(){for(const element of [...this.effects])this.releaseEffect(element);}
   pause() {const voiceWasPlaying=this.currentVoice&&!this.element.paused,effectsWerePlaying=[...this.effects].some(effect=>!effect.paused);if(this.currentVoice&&(voiceWasPlaying||this.currentVoice.pauseTime===undefined)){const position=this.element.currentTime||this.currentVoice.time;this.currentVoice.pauseTime=this.currentVoice.time=position;}this.paused=true;this.element.pause();for(const effect of this.effects)effect.pause();for(const channel of this.ambients.values())channel.element.pause();if(voiceWasPlaying)this.dispatchEvent(new CustomEvent('voice-state'));if(effectsWerePlaying)this.dispatchEvent(new CustomEvent('effect-state'));}
-  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>this.startEffect(effect)),this.activateAmbients()]);if(token===this.token&&this.currentVoice){this.setSubtitle(this.currentVoice.voice.subtitleHidden?null:{title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
+  async resume() {this.paused=false;this.unlocked=true;const token=this.token;await Promise.all([...(this.currentVoice&&!this.element.ended?[this.startVoice(token)]:[]),...[...this.effects].map(effect=>this.startEffect(effect)),this.activateAmbients()]);if(token===this.token&&(this.currentVoice||this.externalCaption)){this.setSubtitle(this.externalCaption?{title:'',text:this.externalCaption.text}:this.currentVoice.voice.subtitleHidden?null:{title:this.currentVoice.voice.title,text:this.currentVoice.voice.text});this.dispatchEvent(new CustomEvent('voice-state'));}}
   setVolume(value) {this.volume=Math.max(0,Math.min(1,value));this.element.volume=this.volume;}
   setEffectVolume(value){this.effectVolume=Math.max(0,Math.min(1,value));for(const effect of this.effects)effect.volume=this.effectVolume*(effect.resourceVolume??1);}
   setMuted(value) {this.muted=Boolean(value);this.element.muted=this.muted;for(const effect of this.effects)effect.muted=this.muted;for(const channel of this.ambients.values())channel.element.muted=this.muted;}

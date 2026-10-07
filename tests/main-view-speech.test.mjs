@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Stage} from '../src/engine/stage.js';
-import {MainViewSpeech,validateMainViewSpeech} from '../src/engine/main-view-speech.js';
+import {MainViewSpeech,validateMainViewSpeech,chineseCaptionPolicy} from '../src/engine/main-view-speech.js';
 import {MainViewSpeechClock} from '../src/engine/main-view-speech-clock.js';
 import {InteractionRecorder,InteractionPlayer,validateSequence} from '../src/engine/interaction-sequence.js';
 import {validateScene} from '../src/engine/scene.js';
@@ -49,6 +49,24 @@ test('invalid source durations cannot close the click gate or create a partial w
     assert.equal(stage.triggerMainViewSpeech('actor','touch',{localized:true}).accepted,false);
     assert.equal(stage.mainViewSpeechClock.value.canClick,true);assert.equal(stage.mainViewSpeechClock.value.wordsRemaining,null);assert.equal(stage.mainViewSpeech.value.wordsVisible,false);
   }
+});
+test('source Chinese shield policy matches the resource token rather than actor identity',()=>{
+  const library={mainViewVoices:{chineseCaptions:{players:[3016119],duration:3}}};
+  assert.deepEqual(chineseCaptionPolicy(library,'SoundRes/Voice_3016119_Touch_Head','a_sound_voiceeff_ch'),{player:3016119,duration:3});
+  for(const name of ['Other_3016119_line','Voice_301611901_line','Voice_3016119x_line','Voice_2147483648_line'])assert.equal(chineseCaptionPolicy(library,name,'a_sound_voiceeff_ch'),null);
+  assert.equal(chineseCaptionPolicy(library,'Voice_3016119_line','a_sound_voiceeff'),null);
+});
+test('shielded Chinese speech emits only captions, works without audio and does not rearm idle',()=>{
+  const {stage,library}=setup(),captions=[],voices=[];library.mainViewVoices.chineseCaptions={players:[3016119],duration:3};library.mainViewVoices.voices=[{id:'shield',type:3,targetId:'2',resourceName:'Voice_3016119_Touch_Head'}];library.mainViewVoices.captions={'Voice_3016119_Touch_Head':'Visible source words'};stage.mainViewSpeech.audio.resolve=()=>null;
+  stage.addEventListener('source-caption-request',event=>captions.push(event.detail));stage.addEventListener('voice-request',event=>voices.push(event.detail));
+  assert.equal(stage.triggerMainViewSpeech('actor','touch',{language:'a_sound_voiceeff_ch'}).accepted,true);assert.equal(voices.length,0);assert.equal(captions[0].duration,3);assert.equal(captions[0].text,'Visible source words');assert.equal(stage.mainViewSpeechClock.value.wordsRemaining,null);
+  const saved=validateScene(stage.snapshot());assert.equal(saved.mainViewSpeech.captionOnly.name,'Voice_3016119_Touch_Head');assert.equal(JSON.stringify(saved).includes('Visible source words'),false);
+  stage.evaluateFrame(3);assert.equal(stage.mainViewSpeechClock.value.canClick,true);assert.equal(stage.mainViewSpeechClock.value.idleRemaining,117);assert.equal(stage.mainViewSpeech.value.wordsVisible,false);
+  stage.mainViewSpeech.restore(saved.mainViewSpeech);stage.mainViewSpeechClock.restore(saved.mainViewSpeechClock);stage.mainViewSpeech.emitCaption();assert.equal(captions.length,2);
+});
+test('suppressed duplicate shield captions remain visible and serializable without a replacement timer',()=>{
+  const {stage,library,group}=setup();library.mainViewVoices.chineseCaptions={players:[3016119],duration:3};stage.mainViewSpeech.value.group=group.id;stage.mainViewSpeech.value.language='a_sound_voiceeff_ch';stage.mainViewSpeechClock.show();
+  const row={resourceName:'Voice_3016119_Touch_Head'};stage.mainViewSpeech.request(group,row);stage.mainViewSpeech.request(group,row);assert.equal(stage.mainViewSpeechClock.shieldTimers.length,0);assert.equal(stage.mainViewSpeech.value.wordsVisible,true);assert.equal(validateScene(stage.snapshot()).mainViewSpeech.captionOnly.name,row.resourceName);
 });
 test('removing the selected speaker clears its reference while retaining the random stream',()=>{
   const {stage}=setup();stage.release=()=>{};stage.triggerMainViewSpeech('actor','touch');const random=stage.mainViewSpeech.value.random;stage.remove('actor');assert.equal(stage.mainViewSpeech.value.group,'');assert.equal(stage.mainViewSpeech.value.random,random);assert.equal(stage.mainViewSpeechClock.active,false);assert.equal(validateScene(stage.snapshot()).objects.length,0);

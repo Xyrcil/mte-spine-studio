@@ -303,6 +303,7 @@ export class Stage extends EventTarget {
       if(this.camera.sourcePreview&&!this.options?.manual)this.resize();this.draw();
     }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(previousSpeechClock)this.mainViewSpeechClock.restore(previousSpeechClock);if(previousSpeech)this.mainViewSpeech.restore(previousSpeech);if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
+    this.mainViewSpeech?.emitCaption();
     this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }
   recoverRendering(){

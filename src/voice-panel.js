@@ -1,4 +1,5 @@
 import {voiceCatalog,hotSpringRole,stationVoiceBinding,mainViewVoiceBinding} from './engine/voice-catalog.js';
+import {chineseCaptionPolicy} from './engine/main-view-speech.js';
 
 export function createVoicePanel(presentation,library,audio,editor,message,stage){
   document.querySelector('#voice-panel')?.remove();document.querySelector('#hot-spring-controls')?.remove();document.querySelector('#main-view-controls')?.remove();if(!audio)return;
@@ -36,7 +37,7 @@ export function createVoicePanel(presentation,library,audio,editor,message,stage
   sourceSound.onclick=async()=>{try{await audio.playEffect(role.ambientSound,sound.category,0,true,selectedGroup()?.id);editor.changed({audioOnly:true});}catch(error){message(error.message);}};
   language.value=audio.language;field('voice-volume').value=audio.volume;field('effect-volume').value=audio.effectVolume;
   function selection(){return rows.find(row=>row.id===list.value);}
-  function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value,row.exactResource);field('play-voice').disabled=!clip;field('voice-availability').textContent=row?clip?row.subtitleStatus==='missing'?'Audio available · Original subtitle unavailable':'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices';}
+  function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value,row.exactResource),policy=row&&chineseCaptionPolicy(library,row.resourceName,language.value);field('play-voice').disabled=!clip;field('voice-availability').textContent=(row?clip?row.subtitleStatus==='missing'?'Audio available · Original subtitle unavailable':'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices')+(policy?` · Source mode: subtitle only (${policy.duration} s). This button previews stored audio.`:'');}
   function refresh(){const previous=list.value;levelLabel.hidden=sourceNote.hidden=sourceSound.hidden=field('voice-scope').value!=='hot-spring';favorLabel.hidden=favorNote.hidden=!favorProfile||field('voice-scope').value!=='main-view-touch';if(selectedGroup()?.hotSpringLevel!==undefined)level.value=String(selectedGroup().hotSpringLevel);if(selectedGroup()?.hotSpringFavorLevel!==undefined)favor.value=String(selectedGroup().hotSpringFavorLevel);rows=voiceCatalog(library,[{...presentation,hotSpringLevel:Number(level.value)||1,hotSpringFavorLevel:favorProfile?Number(favor.value):undefined}],field('voice-scope').value,field('voice-search').value);list.replaceChildren();
     for(const row of rows){const option=new Option(`${row.label}${audio.resolve(row.resourceName,language.value,row.exactResource)?'':' · Missing track'}`,row.id);list.append(option);}
     if(rows.some(row=>row.id===previous))list.value=previous;else{const first=rows.find(row=>audio.resolve(row.resourceName,language.value,row.exactResource));if(first)list.value=first.id;}

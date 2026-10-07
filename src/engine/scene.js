@@ -65,7 +65,7 @@ export function validateScene(value) {
   if(value.materialTime!==undefined&&finite(value.materialTime,'material time')<0)throw new Error('Invalid material time');
   const speech=value.mainViewSpeech===undefined?undefined:validateMainViewSpeech(value.mainViewSpeech);if(speech?.group&&!objects.some(object=>object.id===speech.group))throw new Error('Invalid main-view speaker');
   if(speech&&(speech.group||speech.wordsVisible)&&value.mainViewSpeechClock===undefined)throw new Error('Missing main-view speech clock');
-  if(speech?.wordsVisible&&(!speech.group||value.mainViewSpeechClock.wordsRemaining===null&&!value.mainViewSpeechClock.shieldTimers?.length))throw new Error('Invalid main-view subtitle timer');
+  if(speech?.wordsVisible&&(!speech.group||value.mainViewSpeechClock.wordsRemaining===null&&!value.mainViewSpeechClock.shieldTimers?.length&&!speech.captionOnly))throw new Error('Invalid main-view subtitle timer');
   return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(speech?{mainViewSpeech:speech}:{}),...(value.mainViewSpeechClock!==undefined?{mainViewSpeechClock:validateMainViewSpeechClock(value.mainViewSpeechClock)}:{}),...(value.materialTime!==undefined?{materialTime:value.materialTime}:{}),...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
 }
 

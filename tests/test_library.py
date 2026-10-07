@@ -3,10 +3,16 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue, chinese_caption_policy
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_chinese_caption_policy_exposes_only_required_configuration(self):
+        result = chinese_caption_policy([{"id": 9991139, "int_value": 3, "string_value": "[3016119,3016049,3014019]", "private": "Excluded"}])
+        self.assertEqual(result, {"schema": 1, "players": [3016119, 3016049, 3014019], "duration": 3})
+        self.assertEqual(chinese_caption_policy([])["players"], [])
+        with self.assertRaises(ValueError):
+            chinese_caption_policy([{"id": 9991139, "int_value": -1, "string_value": "[3016119]"}])
     def test_source_hot_spring_speech_requires_membership_and_preserves_tiers_and_first_visible_subtitle(self):
         result = hot_spring_speech_catalogue([{"id": 12, "gospel_id": 2}, {"id": 14, "gospel_id": 4}], [{"id": 12, "hs_phonetics_unlock": "a,b;c"}, {"id": 13, "hs_phonetics_unlock": "excluded"}], [{"file_name": "a", "show_type": 0, "voice_text": "Hidden"}, {"file_name": "a", "show_type": 1, "voice_text": "First"}, {"file_name": "a", "show_type": 1, "voice_text": "Second"}])
         self.assertEqual(result["profiles"], [{"id": "12", "roleId": "2", "tiers": [["a", "b"], ["c"]]}, {"id": "14", "roleId": "4", "tiers": []}])

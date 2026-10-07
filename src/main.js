@@ -136,6 +136,7 @@ stage.addEventListener('voice-request',event=>{
 });
 stage.addEventListener('voice-stop-request',event=>{if(audio?.currentVoice?.group===event.detail.group)audio.stop();});
 stage.addEventListener('voice-caption-hide-request',event=>audio?.hideSourceSubtitle(event.detail.group));
+stage.addEventListener('source-caption-request',event=>{if(audio)audio.showSourceCaption(event.detail.group,event.detail.text);});
 stage.addEventListener('speech-unavailable',event=>message(`Source speech unavailable (${event.detail.language}): ${event.detail.resourceName}`));
 try {
   await resourceCache.ready;

@@ -3,6 +3,10 @@ import {resolveInteractionVoice,explicitInteractionEffect} from './interaction-a
 export function interactionExportProvider(library,audio,scene,{includeAudio=true,includeSubtitles=true}={}){
   const language=scene.audio?.language||'a_sound_voiceeff';
   return request=>{
+    if(request.captionOnly){
+      const text=library.mainViewVoices?.captions?.[request.name]||'';
+      return {caption:{text,duration:request.duration,includeSubtitles},warnings:includeSubtitles&&!text?['Source caption text is unavailable']:[]};
+    }
     const warnings=[];
     const effect=explicitInteractionEffect(request,audio);
     const requestedLanguage=request.language||language;

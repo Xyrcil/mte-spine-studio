@@ -14,6 +14,17 @@ def records(path):
     return data.get("records", data.get("rows", []))
 
 
+def chinese_caption_policy(rows):
+    row = next((row for row in rows if str(row["id"]) == "9991139"), None)
+    if row is None:
+        return {"schema": 1, "players": [], "duration": 0}
+    players = json.loads(row["string_value"])
+    duration = row["int_value"]
+    if not isinstance(players, list) or any(type(value) is not int or value < -2147483648 or value > 2147483647 for value in players) or type(duration) is not int or not 0 <= duration <= 86400:
+        raise ValueError("Invalid source Chinese caption policy")
+    return {"schema": 1, "players": list(dict.fromkeys(players)), "duration": duration}
+
+
 def main_view_voice_catalogue(rows, skins=(), station_ids=()):
     rows = list(rows)
     captions = {}
@@ -378,6 +389,10 @@ def build(source, output):
                                           {identifier for drawing in station_drawings["drawings"] for identifier in drawing["voiceIds"]})
     favor_speech = hot_spring_speech_catalogue(source_hot_springs.values(), skins.values(), voices.values())
     main_voices.update(hotSpringProfiles=favor_speech["profiles"], favorVoices=favor_speech["voices"])
+    globals_by_id = {}
+    for root in roots:
+        globals_by_id.update({str(row["id"]): row for row in records(root / "a_global.json") if str(row["id"]) == "9991139"})
+    main_voices["chineseCaptions"] = chinese_caption_policy(globals_by_id.values())
     write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "mainViewVoices": main_voices, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 

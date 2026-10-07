@@ -3,9 +3,15 @@ import {audioResourceLookup} from './audio.js';
 
 const languages=['a_sound_voiceeff','a_sound_voiceeff_ch'];
 const usableClip=clip=>clip&&Number.isFinite(clip.duration)&&clip.duration>=0&&clip.duration<=86400;
+export function chineseCaptionPolicy(library,name,language){
+  if(language!=='a_sound_voiceeff_ch')return null;
+  const token=name.split('/').at(-1).split('_'),player=token[0]==='Voice'&&/^[+-]?\d+$/.test(token[1]||'')?Number(token[1]):NaN,policy=library.mainViewVoices?.chineseCaptions;
+  return Number.isInteger(player)&&player>=-2147483648&&player<=2147483647&&policy?.players.includes(player)&&Number.isFinite(policy.duration)&&policy.duration>=0&&policy.duration<=86400?{player,duration:policy.duration}:null;
+}
 export function validateMainViewSpeech(value){
   if(value?.schema!==1||typeof value.group!=='string'||value.group.length>512||!languages.includes(value.language)||typeof value.localized!=='boolean'||typeof value.wordsVisible!=='boolean'||!Number.isInteger(value.random)||value.random<1||value.random>4294967295)throw new Error('Invalid main-view speech state');
-  return {schema:1,group:value.group,language:value.language,localized:value.localized,wordsVisible:value.wordsVisible,random:value.random};
+  const caption=value.captionOnly;if(caption!==undefined&&(typeof caption?.name!=='string'||!caption.name||caption.name.length>512||!Number.isFinite(caption.duration)||caption.duration<0||caption.duration>86400))throw new Error('Invalid source caption-only state');
+  return {schema:1,group:value.group,language:value.language,localized:value.localized,wordsVisible:value.wordsVisible,random:value.random,...(caption?{captionOnly:{name:caption.name,duration:caption.duration}}:{})};
 }
 
 export class MainViewSpeech {
@@ -32,9 +38,15 @@ export class MainViewSpeech {
   choose(count){let random=this.value.random;random^=random<<13;random^=random>>>17;random^=random<<5;this.value.random=random>>>0;return Math.floor(this.value.random/4294967296*count);}
   emit(name,detail){this.stage.dispatchEvent(new CustomEvent(name,{detail}));}
   request(group,row,lateness=0){
-    const resourceName=row.resourceName,clip=this.audio?.resolve(resourceName,this.value.language,true);
+    const resourceName=row.resourceName,policy=chineseCaptionPolicy(this.library,resourceName,this.value.language);
+    if(policy){
+      const started=this.stage.mainViewSpeechClock.shieldStarted(policy.player,resourceName,policy.duration);
+      if(started){this.value.wordsVisible=true;this.value.captionOnly={name:resourceName,duration:policy.duration};this.emitCaption(lateness);}
+      return {accepted:true,animation:resourceName};
+    }
+    const clip=this.audio?.resolve(resourceName,this.value.language,true);
     if(!usableClip(clip)){this.emit('speech-unavailable',{resourceName,language:this.value.language});return {accepted:false,reason:'Source speech or its timing metadata is unavailable for this language'};}
-    this.value.wordsVisible=true;this.stage.mainViewSpeechClock.soundStarted(clip.duration);
+    delete this.value.captionOnly;this.value.wordsVisible=true;this.stage.mainViewSpeechClock.soundStarted(clip.duration);
     this.emit('voice-request',{group:group.id,...(row.id?{sourceVoiceId:row.id}:{sourceResource:resourceName}),sourceCaption:true,language:this.value.language,lateness});
     return {accepted:true,animation:resourceName};
   }
@@ -56,7 +68,7 @@ export class MainViewSpeech {
     if(operation==='start'){if(!clock.active)clock.finish();return {accepted:true,animation:''};}
     const pool=this.pool(group);if(!pool.length)return {accepted:false,reason:'The original touch pool has no unlocked lines'};
     const row=pool[this.choose(pool.length)],clip=this.audio?.resolve(row.resourceName,language,true);
-    if(!usableClip(clip))return this.request(group,row);
+    if(!usableClip(clip)&&!chineseCaptionPolicy(this.library,row.resourceName,language))return this.request(group,row);
     clock.requestClick();return this.request(group,row);
   }
   idle(index,lateness=0){
@@ -65,9 +77,10 @@ export class MainViewSpeech {
     this.request(group,{resourceName:`Voice_${target}_Greetings_Idel_0${index}`},lateness);
   }
   hideWords(lateness=0){if(!this.value.wordsVisible)return;this.value.wordsVisible=false;this.emit('voice-caption-hide-request',{group:this.value.group,lateness});}
+  emitCaption(lateness=0){const caption=this.value.captionOnly;if(caption&&this.value.wordsVisible)this.emit('source-caption-request',{group:this.value.group,name:caption.name,duration:caption.duration,text:this.library.mainViewVoices?.captions?.[caption.name]||'',lateness});}
   detach(groupId){if(this.value.group!==groupId)return;this.stage.mainViewSpeechClock.hide();this.stage.mainViewSpeechClock.stopWords();this.stage.mainViewSpeechClock.clearShields();this.emit('voice-stop-request',{group:groupId});this.value.group='';}
   advance(){if(this.value.group&&!this.stage.groups.some(row=>row.id===this.value.group&&row.visible))this.stage.mainViewSpeechClock.hide();}
-  snapshot(){return {...this.value};}
+  snapshot(){return {...this.value,...(this.value.captionOnly?{captionOnly:{...this.value.captionOnly}}:{})};}
   restore(value){this.value=validateMainViewSpeech(value);}
 }
 

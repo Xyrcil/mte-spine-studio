@@ -11,6 +11,12 @@ class FakeAudio extends EventTarget{
 }
 const voices=[{id:'1',resourceName:'spoken',title:'Voice',text:'Original source subtitle'}];
 function setup(){const bus=new AudioBus({entries:[{name:'spoken',category:'a_sound_voiceeff_ch',errors:[],clips:[{path:'spoken.m4a'}]}]},[],'/assets/',voices),group={id:'actor',visible:true};bus.syncAmbients([group],[]);return {bus,group};}
+test('caption-only playback leaves prior audio running and survives its end and resume',async()=>{
+  const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
+  try{const {bus,group}=setup();await bus.play(voices[0],'a_sound_voiceeff_ch',{group:group.id});const calls=bus.element.playCalls;bus.showSourceCaption(group.id,'Only captions');assert.equal(bus.element.paused,false);assert.equal(bus.element.playCalls,calls);
+    bus.element.ended=true;bus.element.dispatchEvent(new Event('ended'));assert.equal(bus.currentSubtitle.text,'Only captions');await bus.resume();assert.equal(bus.currentSubtitle.text,'Only captions');bus.hideSourceSubtitle(group.id);assert.equal(bus.currentSubtitle,null);bus.dispose();
+  }finally{globalThis.Audio=previous;}
+});
 test('source subtitle hiding preserves native speech and stays hidden across pause and restore',async()=>{
   const previous=globalThis.Audio;globalThis.Audio=FakeAudio;
   try{const {bus,group}=setup();bus.voiceRows=bus.voiceRows.map(row=>({...row,mainViewText:'Source caption'}));await bus.play({...voices[0],sourceMainView:true,text:'Source caption'},'a_sound_voiceeff_ch',{group:group.id});bus.hideSourceSubtitle(group.id);assert.equal(bus.element.paused,false);assert.ok(bus.currentVoice);assert.equal(bus.currentSubtitle,null);
