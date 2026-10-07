@@ -20,6 +20,7 @@ for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromiu
     const results=await page.evaluate(async({catalog,entries})=>{
       const {Stage}=await import('/src/engine/stage.js');const results=[];
       for(const presentation of catalog){
+        if(!presentation.instances.length){if(!presentation.unassignedInstances?.length)throw new Error('Source bundle has no drawable or unassigned skeleton');console.log('[source-check] Unassigned template: '+presentation.id);continue;}
         console.log('[source-check] '+presentation.id);
         const canvas=document.createElement('canvas');canvas.width=160;canvas.height=160;const stage=new Stage(canvas,{manual:true});
         try{

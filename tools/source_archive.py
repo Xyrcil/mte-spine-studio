@@ -39,6 +39,16 @@ def decode_bundle(data):
     return bytes(decoded)
 
 
+def output_destination(root, identifier):
+    destination = Path(root)
+    for part in ("spines", *PurePosixPath(identifier.removeprefix("Spines/")).parts):
+        matches = [child.name for child in destination.iterdir() if child.name.casefold() == part.casefold()] if destination.is_dir() else []
+        if len(matches) > 1:
+            raise ValueError("Ambiguous output directory casing")
+        destination /= matches[0] if matches else part
+    return destination
+
+
 def missing_paintings(entries, known):
     known = {key.lower() for key in known}
     candidates = sorted(key for key in entries if key.startswith("Spines/painting/") and key.lower() not in known)
@@ -87,7 +97,7 @@ def manifest_dependencies(text):
     return result
 
 
-def load_dependencies(environment, archive, member, apk=None):
+def load_dependencies(environment, archive, member, apk=None, additional=()):
     prefix = member.split("/vercache_demo/", 1)[0] + "/vercache_demo/"
     source_names = {name.lower(): name for name in archive.namelist()}
     apk_names = {name.lower(): name for name in apk.namelist()} if apk else {}
@@ -95,9 +105,10 @@ def load_dependencies(environment, archive, member, apk=None):
     while pending:
         container, name = pending.pop()
         manifest = name + ".manifest"
-        if manifest not in container.namelist():
-            continue
-        for relative in manifest_dependencies(container.read(manifest).decode("utf-8")):
+        dependencies = manifest_dependencies(container.read(manifest).decode("utf-8")) if manifest in container.namelist() else []
+        if container is archive and name == member:
+            dependencies.extend(manifest_dependencies("Dependencies:\n" + "\n".join("- " + value for value in additional)))
+        for relative in dependencies:
             if relative in loaded:
                 continue
             loaded.add(relative)
@@ -116,6 +127,7 @@ def main():
     parser.add_argument("--bundle", action="append", default=[])
     parser.add_argument("--missing-paintings", action="store_true", help="Convert all unindexed painting bundles with unambiguous source entries")
     parser.add_argument("--all-versions", action="store_true", help="Preserve every source entry of an explicitly selected ambiguous bundle")
+    parser.add_argument("--dependency", action="append", default=[], help="Add a verified relative resource dependency when the original manifest is absent")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
     parser.add_argument("--apk", type=Path, help="Read original shared shaders from the client archive without extracting client code")
@@ -157,7 +169,7 @@ def main():
                 raise ValueError("Requested bundle is absent: " + requested)
             selected.extend((identifier, row, version, key) for identifier, row, version in source_versions(key, entries[key], args.all_versions))
         for identifier, row, version, key in selected:
-            destination = args.output / "spines" / identifier.removeprefix("Spines/")
+            destination = output_destination(args.output, identifier)
             if destination.exists():
                 raise ValueError("Conversion will not overwrite an existing bundle: " + key)
             raw = decode_bundle(archive.read(row))
@@ -167,9 +179,9 @@ def main():
                 environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
             if args.apk:
                 with zipfile.ZipFile(args.apk) as apk:
-                    load_dependencies(environment, archive, row.filename, apk)
+                    load_dependencies(environment, archive, row.filename, apk, args.dependency)
             else:
-                load_dependencies(environment, archive, row.filename)
+                load_dependencies(environment, archive, row.filename, additional=args.dependency)
             destination.mkdir(parents=True)
             result = sanitize_diagnostics(extractor.extract())
             result.update(id=identifier, path=destination.relative_to(args.output).as_posix(), origin="original-archive")

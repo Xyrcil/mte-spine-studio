@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit,firefox} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const engine=process.argv[2]||'chromium',type={chromium,webkit,firefox}[engine];assert.ok(type,'Choose chromium, webkit or firefox');
-const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+const engine=process.argv[2]||'chromium',original=process.argv.includes('--original');
+const {browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   page.on('console',message=>{if(message.text().startsWith('[hot-spring-check]'))console.log(message.text());});
   const houses=await page.evaluate(async()=>{const library=await fetch('/assets/library.json').then(r=>r.json());return library.hotSpringHouses;});assert.equal(houses.length,3);
   for(const house of houses){
-    const id=`${house.bundle}/${house.id}`;await selectAsset(page,id);await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id,id);
+    const id=original?`Spines/ui/onsen/${house.id}/${house.id}`:`${house.bundle}/${house.id}`;await selectAsset(page,id);await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id,id);
     const result=await page.evaluate(async()=>{
       const stage=window.mteStudio,group=stage.groups[0];stage.paused=true;
       const library=await fetch('/assets/library.json').then(r=>r.json()),catalog=await fetch('/assets/presentations.json').then(r=>r.json()),entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,{expandHotSpringPresentations}=await import('/src/engine/hot-spring.js'),presentations=expandHotSpringPresentations(catalog.presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);
@@ -44,13 +44,18 @@ try{
       const mediaChecks=[];
       console.log(`[hot-spring-check] ${group.presentation.id}: preparing media reference`);
       {
-        const {exportMedia}=await import('/src/engine/export.js'),{Input,BlobSource,ALL_FORMATS,AudioSampleSink,VideoSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs'),sequence=structuredClone(lastSequence);
+        const {exportMedia,exportVideoSupport}=await import('/src/engine/export.js'),{Input,BlobSource,ALL_FORMATS,AudioSampleSink,VideoSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs'),sequence=structuredClone(lastSequence);
         sequence.actions.at(-1).at=2.2;sequence.duration=3.2;
         const audio=window.mteAudio,provider=interactionExportProvider(library,audio,sequence.initial,{includeSubtitles:false}),voice=library.voices.find(row=>row.id===conversations.at(-1).voice),clip=audio.resolve(voice.resourceName,sequence.initial.audio.language),context=new AudioContext({sampleRate:48000});
-        const reference=await context.decodeAudioData(await (await fetch(audio.base+clip.path)).arrayBuffer());
+        const {aacGaplessMetadata,normalizeDecodedAac}=await import('/src/engine/audio-delay.js'),referenceBytes=await (await fetch(audio.base+clip.path)).arrayBuffer(),timing=aacGaplessMetadata(referenceBytes);
+        const reference=normalizeDecodedAac(context,await context.decodeAudioData(referenceBytes),timing);
         const render=new RenderSession({...snapshot,sequence},presentations,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...plan,end:3.2}),expectedFrames=[];
         try{await render.initialize();for(const at of [0,1.1]){await render.seek(at);const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const ctx=canvas.getContext('2d');ctx.drawImage(render.canvas,0,0);expectedFrames.push(ctx.getImageData(0,0,160,120).data);}}finally{render.dispose();}
         try{for(const format of ['mp4','webm']){
+          try{await exportVideoSupport({...plan,format,width:160,height:120,fps:10});}catch(error){
+            if(error.message!==`${format.toUpperCase()} encoding is unavailable at these settings. Try another format or PNG sequence.`)throw error;
+            console.log(`[hot-spring-check] ${group.presentation.id}: ${format} encoder unavailable in this browser`);mediaChecks.push({format,available:false,reason:error.message});continue;
+          }
           console.log(`[hot-spring-check] ${group.presentation.id}: encoding ${format}`);
           const media=await exportMedia({scene:{...snapshot,sequence},catalog:presentations,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{format,useSequence:true,width:160,height:120,fps:10,start:0,end:3.2,speed:1,loops:1,loopMode:'repeat',background:'#191b20',fit:'contain',crop:{x:0,y:0,width:1,height:1}},interactionProvider:provider});
           if(!media.warnings.includes(group.dialogueTypography?.slots.length===2&&!group.dialogueTypography.reason?'Dialogue uses original fonts with browser rasterization; original-client visual verification is pending':root.dialoguePanelAvailable?'Original hot spring dialogue typography is not restored':group.presentation.hotSpringHouse.decoration?'Original hot spring dialogue panel layout is not restored':'Original hot spring dialogue decorations are not rendered'))throw new Error('Missing conversation layout notice');
@@ -83,4 +88,4 @@ try{
     await page.waitForFunction(()=>window.mteStudio.groups[0].controllers.at(-1).value.phase==='dialogue'&&window.mteAudio.currentVoice&&window.mteAudio.element.currentTime>.03);assert.ok(await page.locator('#subtitle').textContent());await page.locator('#hot-spring-close').click();await page.waitForFunction(()=>window.mteStudio.groups[0].controllers.at(-1).value.phase==='idle');assert.equal(await page.evaluate(()=>window.mteAudio.currentVoice),null);await page.locator('#sequence-stop').click();assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence.actions.map(action=>action.hit)),[position.target,'close']);
   }
   assert.deepEqual(errors,[]);console.log(`${engine}: three real hot spring houses loaded, restored and rendered independently`);
-}finally{await browser.close();}
+}finally{await close();}

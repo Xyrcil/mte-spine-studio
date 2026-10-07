@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import {standaloneInstances,completeSkeletonInstances,materialOrdering,skeletonDisplaySettings} from '../tools/presentation_helpers.mjs';
+test('indexed bundle paths match directory casing on case-sensitive web hosts',t=>{
+  if(!fs.existsSync('public/assets/extraction.json')){t.skip('Local game resources are not installed');return;}
+  for(const bundle of JSON.parse(fs.readFileSync('public/assets/extraction.json')).bundles){
+    if(!bundle.path)continue;
+    let directory='public/assets';
+    for(const segment of bundle.path.split('/')){
+      assert.ok(fs.readdirSync(directory).includes(segment),`${bundle.id}: incorrect directory casing in ${bundle.path}`);
+      directory=path.join(directory,segment);
+    }
+  }
+});
 test('unassigned source components do not block available artwork and unbound assets remain selectable',()=>{
   const entries=[{id:'one',name:'Bound',status:'parsed',skins:['default'],animations:[{name:'animation'}]},{id:'two',name:'Alternative',status:'parsed',skins:['default'],animations:[{name:'idle'}]}];
   const bound={id:'component',skeletonId:'one',status:'parsed',active:true},empty={id:'empty',skeletonId:null,status:'unassigned',name:'role2'};
@@ -61,5 +73,6 @@ test('station drawing catalogue preserves exact assets, source pairs and templat
   const raw=JSON.parse(fs.readFileSync('public/assets/'+template.path+'/hierarchy.json'));
   assert.deepEqual(receiver.colliders,raw.filter(row=>row.type.endsWith('Collider2D')&&String(row.data.m_GameObject.m_PathID)===receiver.gameObject).map(({id,type,data})=>({id,type,data})));
   assert.equal(receiver.colliders.length,1);assert.equal(receiver.colliders[0].type,'BoxCollider2D');
-  assert.ok(presentations.filter(row=>row.id!==catalogue.template).every(row=>!row.nativeBehaviours.some(receiver=>receiver.class==='StationDrawingAnim')));
+  assert.ok(presentations.filter(row=>row.origin!=='original-archive'&&row.id!==catalogue.template).every(row=>!row.nativeBehaviours.some(receiver=>receiver.class==='StationDrawingAnim')));
+  const originalTemplate=presentations.find(row=>row.id==='Spines/drawing/spinedrawprefab');if(originalTemplate){assert.equal(originalTemplate.instances.length,0);assert.equal(originalTemplate.unassignedInstances.length,1);}
 });

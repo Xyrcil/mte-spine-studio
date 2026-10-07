@@ -80,11 +80,16 @@ test('hot spring houses select their own hierarchy without mutating the source b
   const rows=expandHotSpringPresentations([source],[{id:'1',bundle:'onsen',roleIds:['role']},{id:'missing',bundle:'onsen',roleIds:[]}]);
   assert.equal(rows.length,2);assert.equal(rows[1].resourceBundle,'onsen');assert.deepEqual(rows[1].instances,[source.instances[0]]);assert.equal(rows[1].images.length,1);
   assert.equal(rows[1].hierarchy.find(node=>node.id==='r').data.m_IsActive,true);assert.deepEqual(source,before);
+  const original={...structuredClone(source),id:'Spines/ui/onsen/1',origin:'original-archive'};
+  const variants=expandHotSpringPresentations([source,original],[{id:'1',bundle:'onsen',roleIds:['role']}]);
+  assert.deepEqual(variants.filter(row=>row.hotSpringHouse).map(row=>row.resourceBundle),['onsen','Spines/ui/onsen/1']);
 });
 test('real hot spring tables produce three isolated houses with their declared roles',()=>{
   if(!fs.existsSync('public/assets/library.json'))return;
   const library=JSON.parse(fs.readFileSync('public/assets/library.json')),source=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations;
   if(!library.hotSpringHouses)return;
-  const rows=expandHotSpringPresentations(source,library.hotSpringHouses).filter(row=>row.hotSpringHouse);assert.equal(rows.length,3);
+  const rows=expandHotSpringPresentations(source,library.hotSpringHouses).filter(row=>row.hotSpringHouse);assert.equal(rows.filter(row=>row.origin!=='original-archive').length,3);
+  const originals=source.filter(row=>row.origin==='original-archive'&&library.hotSpringHouses.some(house=>row.id.toLowerCase()===`spines/ui/onsen/${house.id}`));
+  assert.deepEqual(rows.filter(row=>row.origin==='original-archive').map(row=>row.resourceBundle).sort(),originals.map(row=>row.id).sort());
   for(const row of rows){assert.ok(row.instances.length);const names=row.hierarchy.filter(node=>node.type==='GameObject').map(node=>node.data.m_Name);assert.ok(row.hotSpringHouse.roleIds.every(id=>names.includes(id)));assert.ok(library.hotSpringHouses.filter(house=>house.id!==row.hotSpringHouse.id).every(house=>!names.includes(house.id)));}
 });

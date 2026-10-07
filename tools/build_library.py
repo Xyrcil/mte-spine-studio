@@ -269,7 +269,7 @@ def hot_spring_houses(rows):
 
 def join_hot_springs(appearances, roles, names):
     for appearance in appearances:
-        role = next((row for row in roles if appearance.get("bundle") in (row["bundle"], row["bundle"] + "_hx")), None)
+        role = next((row for row in roles if appearance.get("bundle") in (row["bundle"], row["bundle"] + "_hx") or appearance.get("bundle", "").lower() == "spines/ui/onsen/" + row["skinId"]), None)
         if role:
             appearance.update(hotSpringRoleId=role["id"], characterId=role["id"], characterName=names.get(role["id"], role["id"]))
 
@@ -401,8 +401,11 @@ def build(source, output):
     join_hot_springs(appearances, hot_springs, names)
     houses = hot_spring_houses(records(raw_tables / "HotSpringHouse.json"))
     for house in houses:
-        if any(node["type"] == "GameObject" and node["data"].get("m_Name") == house["id"] for node in by_bundle.get(house["bundle"], {}).get("hierarchy", [])):
-            appearances.append({"id": "onsen-house-" + house["id"], "bundle": house["bundle"] + "/" + house["id"], "name": "Hot spring house " + house["id"], "kind": "ui", "status": "available", "displayKind": "spine", "spineStatus": "available", "hotSpringRoleIds": house["roleIds"], "ambientSound": "UI_Onsen_amb"})
+        sources = [row for row in presentations if row["id"] == house["bundle"] or row.get("origin") == "original-archive" and row["id"].lower() == "spines/ui/onsen/" + house["id"]]
+        for presentation in sources:
+            if any(node["type"] == "GameObject" and node["data"].get("m_Name") == house["id"] for node in presentation.get("hierarchy", [])):
+                original = presentation.get("origin") == "original-archive"
+                appearances.append({"id": "onsen-house-" + house["id"] + ("-original" if original else ""), "bundle": presentation["id"] + "/" + house["id"], "name": "Hot spring house " + house["id"] + (" · Original archive" if original else ""), "kind": "ui", "status": "available", "displayKind": "spine", "spineStatus": "available", "hotSpringRoleIds": house["roleIds"], "ambientSound": "UI_Onsen_amb"})
     voice_rows = [{"id": key, "targetId": str(row["target_id"]), "title": row["voice_title"], "text": row["voice_text"], "resourceName": row["file_name"], "type": row["type"], "groupId": row.get("group_id"), "targetType": row.get("target_type")} for key, row in voices.items()]
     story_rows = [{"id": key, "text": row["voice_text"], "resourceName": row["file_name"]} for key, row in stories.items()]
     raw_voice_rows = records(raw_tables / "VoiceRole.json")

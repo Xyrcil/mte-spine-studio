@@ -41,7 +41,8 @@ export function expandHotSpringPresentations(presentations,houses=[],roles=[],vo
     }
   }
   for(const house of houses){
-    const source=presentations.find(row=>row.id===house.bundle);if(!source)continue;
+    const sources=presentations.filter(row=>row.id===house.bundle||row.origin==='original-archive'&&row.id.toLowerCase()===`spines/ui/onsen/${house.id}`);
+    for(const source of sources){
     const root=source.hierarchy.find(node=>node.type==='GameObject'&&node.data.m_Name===house.id),transforms=source.hierarchy.filter(node=>node.type.includes('Transform'));
     const rootTransform=transforms.find(node=>String(node.data.m_GameObject?.m_PathID)===root?.id);if(!rootTransform)continue;
     const nodes=new Map(source.hierarchy.map(node=>[node.id,node])),selected=new Set();
@@ -58,6 +59,7 @@ export function expandHotSpringPresentations(presentations,houses=[],roles=[],vo
       instances:source.instances.filter(row=>selected.has(row.transform)),hotspots:source.hotspots.filter(row=>selected.has(row.transform)),controllers:source.controllers.filter(row=>gameObjects.has(row.gameObject)),
       effects:(source.effects||[]).filter(row=>selected.has(row.transform)),images:[...(source.images||[]).filter(row=>selected.has(row.transform)),...(decoration?.images||[]),...(dialoguePanel?.images||[])],canvasGroups:(source.canvasGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID))),
       visualAnimations:[...animations,...(source.visualAnimations||[]).filter(node=>node.type==='AnimationClip'&&clips.has(node.id))],sortingGroups:(source.sortingGroups||[]).filter(node=>gameObjects.has(String(node.data.m_GameObject?.m_PathID)))});
+    }
   }
   return result;
 }

@@ -4,12 +4,20 @@ from pathlib import Path
 from types import SimpleNamespace
 import io
 import zipfile
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_output_paths_preserve_existing_directory_casing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "spines/ui/Onsen").mkdir(parents=True)
+            self.assertEqual(output_destination(root, "Spines/ui/onsen/199970301"), root / "spines/ui/Onsen/199970301")
+            self.assertEqual(output_destination(root, "Spines/ui/mailspine/new"), root / "spines/ui/mailspine/new")
+
     def test_dependency_closure_loads_shared_files_once_and_falls_back_to_apk(self):
         source_buffer, apk_buffer = io.BytesIO(), io.BytesIO()
         member = "package/files/vercache_demo/spines/painting/model/spineaniprefab.data"
@@ -28,6 +36,9 @@ class SourceArchiveTests(unittest.TestCase):
             self.assertTrue(all(options["is_dependency"] for data, options in calls))
             with self.assertRaises(ValueError):
                 load_dependencies(environment, archive, member)
+            calls.clear()
+            load_dependencies(environment, archive, "package/files/vercache_demo/no-manifest.data", apk, ["share/shared.data"])
+            self.assertEqual(len(calls), 2)
     def test_dependencies_keep_resource_paths_without_builder_machine_paths(self):
         text = "ManifestFileVersion: 0\nDependencies:\n- D:/build/private/StreamingAssets/common/shader.data\n- D:\\build\\StreamingAssets\\share\\share.data\n"
         self.assertEqual(manifest_dependencies(text), ["common/shader.data", "share/share.data"])
