@@ -427,7 +427,7 @@ export class Stage extends EventTarget {
     gl.disable(gl.SCISSOR_TEST);
   }
   tick(time) {
-    const delta=Math.min((time-this.previous)/1000,.1); this.previous=time;
+    const delta=Math.max(0,Math.min((time-this.previous)/1000,.1)); this.previous=Math.max(this.previous,time);
     if(!this.recoveryPending){this.evaluate(this.paused ? 0 : delta*this.speed);this.draw();}
     this.frame=requestAnimationFrame(next => this.tick(next));
   }

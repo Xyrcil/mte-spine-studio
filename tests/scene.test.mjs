@@ -27,6 +27,18 @@ test('shared source speech timers round-trip independently of animation and audi
   const saved=structuredClone(value);clock.advance(300);clock.restore(saved.mainViewSpeechClock);assert.equal(clock.value.wordsRemaining,3.25);assert.equal(clock.value.canClick,false);
   assert.throws(()=>validateScene({...value,mainViewSpeechClock:{...clock.snapshot(),idleRemaining:121}}),/speech clock/);
 });
+test('older animation frame timestamps cannot reverse or double-count source timers',()=>{
+  const previousFrame=globalThis.requestAnimationFrame;globalThis.requestAnimationFrame=()=>1;
+  try{
+    const stage=Object.setPrototypeOf(new EventTarget(),Stage.prototype),clock=new MainViewSpeechClock();clock.soundStarted(1);
+    Object.assign(stage,{previous:1000,speed:1,paused:false,groups:[],materialTime:0,mainViewSpeechClock:clock,draw:()=>{}});
+    stage.tick(999);assert.equal(clock.value.wordsRemaining,1);assert.equal(stage.previous,1000);
+    stage.tick(1050);assert.equal(clock.value.wordsRemaining,.95);
+    stage.tick(1040);assert.equal(clock.value.wordsRemaining,.95);assert.equal(stage.previous,1050);
+    stage.tick(1100);assert.ok(Math.abs(clock.value.wordsRemaining-.9)<1e-9);assert.ok(Math.abs(stage.materialTime-.1)<1e-9);
+    stage.tick(5000);assert.ok(Math.abs(clock.value.wordsRemaining-.8)<1e-9);
+  }finally{if(previousFrame===undefined)delete globalThis.requestAnimationFrame;else globalThis.requestAnimationFrame=previousFrame;}
+});
 test('source hot spring favor previews retain locked state separately from conversation levels',()=>{
   const value=scene();value.objects[0].hotSpringFavorLevel=0;value.objects[0].hotSpringLevel=5;assert.deepEqual(validateScene(value),value);
   for(const level of [-1,6,.5,'1']){value.objects[0].hotSpringFavorLevel=level;assert.throws(()=>validateScene(value),/favor level/);}
