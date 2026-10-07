@@ -27,6 +27,7 @@ export function validateScene(value) {
     if(object.parentId!==undefined)result.parentId=text(object.parentId,'background owner');
     if(result.scale<=0||result.opacity<0||result.opacity>1)throw new Error('Invalid object scale or opacity');
     if(object.hotSpringLevel!==undefined){if(!Number.isInteger(object.hotSpringLevel)||object.hotSpringLevel<1||object.hotSpringLevel>5)throw new Error('Invalid hot spring level');result.hotSpringLevel=object.hotSpringLevel;}
+    if(object.hotSpringFavorLevel!==undefined){if(!Number.isInteger(object.hotSpringFavorLevel)||object.hotSpringFavorLevel<0||object.hotSpringFavorLevel>5)throw new Error('Invalid hot spring favor level');result.hotSpringFavorLevel=object.hotSpringFavorLevel;}
     if(object.kind==='spine') {
       result.bundle=text(object.bundle,'bundle');
       if(object.appearanceId!==undefined)result.appearanceId=text(object.appearanceId,'appearance ID');

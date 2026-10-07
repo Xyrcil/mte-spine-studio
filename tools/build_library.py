@@ -27,6 +27,27 @@ def main_view_voice_catalogue(rows):
     return {"schema": 1, "touchType": 3, "voices": result}
 
 
+def hot_spring_speech_catalogue(houses, skins, voices):
+    by_skin = {str(row["id"]): row for row in skins}
+    subtitles = {}
+    for row in voices:
+        if row.get("show_type") == 1:
+            subtitles.setdefault(row["file_name"], row["voice_text"])
+    profiles, resources = [], {}
+    for house in houses:
+        identifier = str(house["id"])
+        skin = by_skin.get(identifier)
+        groups = (skin.get("hs_phonetics_unlock") or "").split(";") if skin else []
+        tiers = [group.split(",") if group else [] for group in groups]
+        profiles.append({"id": identifier, "roleId": str(house["gospel_id"]), "tiers": tiers})
+        for group in tiers:
+            for resource in group:
+                resources.setdefault(resource, {"id": "favor:" + resource, "resourceName": resource,
+                                               "title": resource, "text": subtitles.get(resource, ""),
+                                               "exactResource": True, "subtitleStatus": "available" if resource in subtitles else "missing"})
+    return {"profiles": profiles, "voices": list(resources.values())}
+
+
 def station_drawing_catalogue(sources, entries):
     """Retain exact station drawing references without synthesizing interactions."""
     merged = {}
@@ -264,9 +285,9 @@ def build(source, output):
     presentations = json.loads((output / "presentations.json").read_text())["presentations"]
     by_bundle = {entry["id"]: entry for entry in presentations}
     roots = [source / "generated/content", source / "qnzl-2.0-poc/generated/content"]
-    people, skins, voices, stories = {}, {}, {}, {}
+    people, skins, voices, stories, source_hot_springs = {}, {}, {}, {}, {}
     for root in roots:
-        for table, destination in (("a_people", people), ("a_gospel", people), ("a_gospel_skin", skins), ("a_sound_voice", voices), ("a_sound_voice_story", stories)):
+        for table, destination in (("a_people", people), ("a_gospel", people), ("a_gospel_skin", skins), ("a_sound_voice", voices), ("a_sound_voice_story", stories), ("a_hs_gospel", source_hot_springs)):
             destination.update({str(row["id"]): row for row in records(root / f"{table}.json")})
     characters = [{"id": key, "name": row.get("people_name") or row.get("gospel_name") or key} for key, row in people.items()]
     names = {row["id"]: row["name"] for row in characters}
@@ -343,7 +364,10 @@ def build(source, output):
     characters = [{"id": key, "name": name} for key, name in names.items()]
     runtime_entries = json.loads((output / "runtime-index.json").read_text())["entries"]
     station_drawings = station_drawing_catalogue([(origin, records(root / "a_station_drawing.json")) for origin, root in zip(("legacy", "archive"), roots)], runtime_entries)
-    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "mainViewVoices": main_view_voice_catalogue(voices.values()), "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
+    main_voices = main_view_voice_catalogue(voices.values())
+    favor_speech = hot_spring_speech_catalogue(source_hot_springs.values(), skins.values(), voices.values())
+    main_voices.update(hotSpringProfiles=favor_speech["profiles"], favorVoices=favor_speech["voices"])
+    write_json(output / "library.json", {"schema": 1, "characters": characters, "appearances": appearances, "voices": voice_rows, "storyVoices": story_rows, "mainViewVoices": main_voices, "soundResources": sounds, "hotSpringRoles": hot_springs, "hotSpringHouses": houses, "skillDisplay": skill_display_catalogue(source, portrait_entries), "artworkViews": artwork_view_catalogue(source), "stationDrawings": station_drawings, "unresolvedV2VoiceRows": unresolved})
     print({"characters": len(characters), "appearances": len(appearances), "missingSpines": sum(row.get("spineStatus") == "missing-source" for row in appearances), "staticPreviews": sum(row.get("displayKind") == "static-preview" for row in appearances), "portraitOnly": sum(row.get("displayKind") == "static" for row in appearances), "voices": len(voice_rows), "storyVoices": len(story_rows), "unresolvedV2Voices": len(unresolved)})
 
 

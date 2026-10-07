@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding} from '../src/engine/voice-catalog.js';
+import {voiceCatalog,savedVoiceRow,hotSpringRole,stationVoiceBinding,mainViewTouchVoices} from '../src/engine/voice-catalog.js';
 const library={appearances:[{id:'skin',characterId:'actor',bundle:'Spines/skin'}],voices:[{id:'1',targetId:'actor',title:'Login',resourceName:'Voice_Login',text:'Hello'},{id:'2',targetId:'skin',title:'Costume',resourceName:'Voice_Skin',text:'Hello again'},{id:'3',targetId:'other',title:'Other',resourceName:'Other'}],storyVoices:[{id:'1',resourceName:'Voice_Plot_1',text:'Story text'},{id:'2',resourceName:'',text:'Unvoiced text'}]};
 test('station voice scope uses source skin remapping and exact voice IDs, not resource prefixes',()=>{
   const source={...structuredClone(library),stationDrawings:{drawings:[{id:'drawing',skinId:'skin',gospelId:'actor',peopleId:'',voiceIds:['3','missing']}]}};
@@ -24,6 +24,14 @@ test('main-view touch pool uses source type and target rather than the newer app
   source.appearances.push({id:'station',stationDrawingId:'drawing',characterId:'actor'});
   assert.deepEqual(voiceCatalog(source,[{appearanceId:'station'}],'main-view-touch').map(row=>row.resourceName),['original']);
   assert.equal(savedVoiceRow({name:'original',id:'1',exactResource:true},[{id:'1',resourceName:'replacement',alias:'original',text:'Replacement'},source.mainViewVoices.voices[0]]).text,'Original');
+});
+test('hot spring source overrides include earlier favor tiers and never fall back while locked',()=>{
+  const source={appearances:[{id:'12',characterId:'2',ownVoice:false}],voices:[],storyVoices:[],mainViewVoices:{hotSpringProfiles:[{id:'12',tiers:[['a','b'],['c']]}],favorVoices:['a','b','c'].map(name=>({id:'favor:'+name,resourceName:name,exactResource:true})),voices:[{id:'fallback',targetId:'2',type:3,resourceName:'normal'}]}};
+  assert.deepEqual(mainViewTouchVoices(source,{appearanceId:'12',hotSpringFavorLevel:0}),[]);
+  assert.deepEqual(mainViewTouchVoices(source,{appearanceId:'12',hotSpringFavorLevel:1}).map(row=>row.resourceName),['a','b']);
+  assert.deepEqual(mainViewTouchVoices(source,{appearanceId:'12',hotSpringFavorLevel:2}).map(row=>row.resourceName),['a','b','c']);
+  assert.deepEqual(voiceCatalog(source,[{appearanceId:'12',hotSpringFavorLevel:0}],'main-view-touch'),[]);
+  source.hotSpringRoles=[{skinId:'12'}];delete source.mainViewVoices.hotSpringProfiles;assert.deepEqual(mainViewTouchVoices(source,{appearanceId:'12'}),[]);
 });
 test('local source voice catalogue preserves references reassigned by the newer tables',t=>{
   if(!fs.existsSync('public/assets/library.json')){t.skip('Local game resources are not installed');return;}

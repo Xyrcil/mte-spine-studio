@@ -3,10 +3,18 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue
+from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_source_hot_spring_speech_requires_membership_and_preserves_tiers_and_first_visible_subtitle(self):
+        result = hot_spring_speech_catalogue([{"id": 12, "gospel_id": 2}, {"id": 14, "gospel_id": 4}], [{"id": 12, "hs_phonetics_unlock": "a,b;c"}, {"id": 13, "hs_phonetics_unlock": "excluded"}], [{"file_name": "a", "show_type": 0, "voice_text": "Hidden"}, {"file_name": "a", "show_type": 1, "voice_text": "First"}, {"file_name": "a", "show_type": 1, "voice_text": "Second"}])
+        self.assertEqual(result["profiles"], [{"id": "12", "roleId": "2", "tiers": [["a", "b"], ["c"]]}, {"id": "14", "roleId": "4", "tiers": []}])
+        self.assertEqual([row["resourceName"] for row in result["voices"]], ["a", "b", "c"])
+        self.assertEqual(result["voices"][0]["text"], "First")
+        self.assertEqual(result["voices"][1]["subtitleStatus"], "missing")
+        self.assertTrue(all(row["exactResource"] for row in result["voices"]))
+
     def test_main_view_voice_catalogue_retains_original_type_and_exact_source_without_private_fields(self):
         def row(identifier, resource, kind):
             return {"id": identifier, "target_id": 7, "file_name": resource, "type": kind,

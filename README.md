@@ -404,6 +404,9 @@ object when saved or exported.
 The **Main-view touch pool** keeps the original interaction classification and
 audio references separate from newer voice application metadata. Source clips
 and subtitles retain their identity through scene recovery and export.
+For source hot spring models, this pool follows favor tiers and includes earlier
+unlocks. Locked previews do not fall back to ordinary touch lines. Favor preview
+settings are saved separately from conversation levels; no account data is used.
 Missing Spine bundles remain marked even when a static preview is available.
 Media export renders an independent scene with fixed timestamps. It supports
 MP4, WebM, transparent PNG and PNG sequences, resolution and pixel multiplier,

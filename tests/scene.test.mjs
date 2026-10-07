@@ -21,6 +21,10 @@ test('derived scene artwork retains its explicit appearance association',()=>{co
 test('scene word checkpoints retain coroutine progress without copying source labels',()=>{const value=scene(),state={kind:'skill-words',schema:1,count:13,clock:.4,step:1,nextUpdate:.41,playing:true};value.objects[0].interactions=[{id:'skill-words',state}];assert.deepEqual(validateScene(value),value);value.objects[0].interactions[0].state={...state,text:'Do not persist source labels'};assert.equal(validateScene(value).objects[0].interactions[0].state.text,undefined);value.objects[0].interactions[0].state.step=99;assert.throws(()=>validateScene(value),/word checkpoint/);});
 test('native event cursors round-trip through scenes and reject invalid indices',()=>{const value=scene();value.objects[0].nativeAnimations=[{schema:1,id:'animation',clip:'clip',time:1,playing:true,eventCursor:2}];assert.deepEqual(validateScene(value),value);value.objects[0].nativeAnimations[0].eventCursor=-1;assert.throws(()=>validateScene(value),/event checkpoint/);});
 test('scene round trip preserves transforms and animation time',()=>assert.deepEqual(validateScene(scene()),scene()));
+test('source hot spring favor previews retain locked state separately from conversation levels',()=>{
+  const value=scene();value.objects[0].hotSpringFavorLevel=0;value.objects[0].hotSpringLevel=5;assert.deepEqual(validateScene(value),value);
+  for(const level of [-1,6,.5,'1']){value.objects[0].hotSpringFavorLevel=level;assert.throws(()=>validateScene(value),/favor level/);}
+});
 test('material clock round trips independently of animation tracks and old scenes remain unchanged',()=>{
   const value=scene();assert.equal(validateScene(value).materialTime,undefined);value.materialTime=7.625;assert.deepEqual(validateScene(value),value);for(const time of [-1,NaN,Infinity,'1'])assert.throws(()=>validateScene({...value,materialTime:time}),/material time/);
 });
