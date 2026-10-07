@@ -45,12 +45,12 @@ export class MainViewSpeech {
     const clock=this.stage.mainViewSpeechClock;
     if(operation==='stop'){
       if(this.value.group!==groupId)return {accepted:false,reason:'This object is not the main-view speaker'};
-      clock.hide();clock.stopWords();this.emit('voice-stop-request',{group:groupId});this.value.group='';return {accepted:true,animation:''};
+      clock.hide();clock.stopWords();clock.clearShields();this.emit('voice-stop-request',{group:groupId});this.value.group='';return {accepted:true,animation:''};
     }
     if(!['start','touch'].includes(operation))return {accepted:false,reason:'Unknown source speech command'};
     if(operation==='touch'&&!this.touchAllowed(group))return {accepted:false,reason:'The original main-view touch button is disabled or its rules are unavailable'};
     if(operation==='touch'&&!clock.value.canClick)return {accepted:false,reason:'Source speech is still playing'};
-    if(this.value.group!==groupId){const old=this.value.group;clock.hide();clock.stopWords();if(old)this.emit('voice-stop-request',{group:old});this.value.group=groupId;clock.show();clock.finish();}
+    if(this.value.group!==groupId){const old=this.value.group;clock.hide();clock.stopWords();clock.clearShields();if(old)this.emit('voice-stop-request',{group:old});this.value.group=groupId;clock.show();clock.finish();}
     else if(!clock.value.visible){clock.show();clock.finish();}
     this.value.language=language;this.value.localized=localized;
     if(operation==='start'){if(!clock.active)clock.finish();return {accepted:true,animation:''};}
@@ -65,7 +65,7 @@ export class MainViewSpeech {
     this.request(group,{resourceName:`Voice_${target}_Greetings_Idel_0${index}`},lateness);
   }
   hideWords(lateness=0){if(!this.value.wordsVisible)return;this.value.wordsVisible=false;this.emit('voice-caption-hide-request',{group:this.value.group,lateness});}
-  detach(groupId){if(this.value.group!==groupId)return;this.stage.mainViewSpeechClock.hide();this.stage.mainViewSpeechClock.stopWords();this.emit('voice-stop-request',{group:groupId});this.value.group='';}
+  detach(groupId){if(this.value.group!==groupId)return;this.stage.mainViewSpeechClock.hide();this.stage.mainViewSpeechClock.stopWords();this.stage.mainViewSpeechClock.clearShields();this.emit('voice-stop-request',{group:groupId});this.value.group='';}
   advance(){if(this.value.group&&!this.stage.groups.some(row=>row.id===this.value.group&&row.visible))this.stage.mainViewSpeechClock.hide();}
   snapshot(){return {...this.value};}
   restore(value){this.value=validateMainViewSpeech(value);}

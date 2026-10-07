@@ -27,3 +27,32 @@ test('new speech keeps the older idle timer until completion replaces it',()=>{
   clock.requestClick();clock.soundStarted(5);clock.advance(2);assert.deepEqual(events,['hide','idle']);assert.equal(clock.value.wordsRemaining,3);assert.equal(clock.value.canClick,false);
   clock.advance(3);assert.deepEqual(events,['hide','idle','hide']);assert.equal(clock.value.canClick,true);assert.equal(clock.value.idleRemaining,120);
 });
+test('subtitle-only completion reopens clicks without rearming the main-view idle timer',()=>{
+  const hides=[],clock=new MainViewSpeechClock({onHideWords:late=>hides.push(late)});clock.show();clock.finish();hides.length=0;
+  clock.requestClick();assert.equal(clock.shieldStarted(3016119,'Voice_3016119_Touch_Head',3),true);clock.advance(3.25);
+  assert.equal(clock.value.canClick,true);assert.equal(clock.value.wordsRemaining,null);assert.equal(clock.value.idleRemaining,116.75);assert.deepEqual(hides,[.25]);assert.equal(clock.shieldTimers.length,0);
+});
+test('independent subtitle-only timers can hide newer words without canceling their normal timer',()=>{
+  let hides=0;const clock=new MainViewSpeechClock({onHideWords:()=>hides++});clock.show();clock.requestClick();clock.shieldStarted(3016119,'old',3);clock.advance(1);clock.soundStarted(5);clock.advance(2);
+  assert.equal(hides,1);assert.equal(clock.value.canClick,true);assert.equal(clock.value.wordsRemaining,3);assert.equal(clock.value.idleRemaining,null);
+  clock.advance(3);assert.equal(hides,2);assert.equal(clock.value.idleRemaining,120);
+});
+test('same-player replacement cancels only that timer and duplicate names suppress the replacement',()=>{
+  const clock=new MainViewSpeechClock();clock.shieldStarted(1,'first',3);clock.shieldStarted(2,'other',3);clock.advance(.5);
+  assert.equal(clock.shieldStarted(1,'second',3),true);assert.deepEqual(clock.shieldTimers,[{player:2,name:'other',remaining:2.5},{player:1,name:'second',remaining:3}]);
+  clock.soundStarted(4);assert.equal(clock.shieldStarted(1,'second',3),false);assert.equal(clock.value.wordsRemaining,null);assert.deepEqual(clock.shieldTimers,[{player:2,name:'other',remaining:2.5}]);assert.equal(clock.lastShieldPlayer,1);
+});
+test('stopping words cancels the latest subtitle-only timer rather than all player timers',()=>{
+  let hides=0;const clock=new MainViewSpeechClock({onHideWords:()=>hides++});clock.shieldStarted(1,'first',3);clock.shieldStarted(2,'second',3);clock.soundStarted(4);clock.stopWords();
+  assert.deepEqual(clock.shieldTimers,[{player:1,name:'first',remaining:3}]);assert.equal(clock.value.wordsRemaining,null);assert.equal(clock.lastShieldPlayer,undefined);clock.advance(3);assert.equal(hides,2);
+  clock.shieldStarted(1,'new',3);clock.clearShields();assert.equal(clock.active,false);
+});
+test('subtitle-only snapshots are isolated and restore timers without emitting callbacks',()=>{
+  let hides=0;const clock=new MainViewSpeechClock({onHideWords:()=>hides++});clock.requestClick();clock.shieldStarted(3016119,'line',3);clock.advance(1);const saved=clock.snapshot();assert.deepEqual(validateMainViewSpeechClock(saved),saved);
+  const changed=clock.snapshot();changed.shieldTimers[0].remaining=100;assert.equal(clock.shieldTimers[0].remaining,2);clock.advance(2);assert.equal(hides,1);clock.restore(saved);assert.equal(hides,1);clock.advance(2);assert.equal(hides,2);
+  for(const row of [{player:1,name:'',remaining:3},{player:1,name:'line',remaining:-1},{player:2147483648,name:'line',remaining:3}])assert.throws(()=>clock.restore({...saved,shieldTimers:[row]}),/subtitle-only/);
+  assert.throws(()=>clock.restore({...saved,shieldTimers:[saved.shieldTimers[0],saved.shieldTimers[0]]}),/subtitle-only/);
+});
+test('a subtitle callback can cancel other expired timers without firing stale callbacks',()=>{
+  let hides=0;const clock=new MainViewSpeechClock({onHideWords:()=>{hides++;clock.clearShields();}});clock.shieldStarted(1,'first',3);clock.shieldStarted(2,'second',3);clock.advance(3);assert.equal(hides,1);assert.equal(clock.active,false);
+});
