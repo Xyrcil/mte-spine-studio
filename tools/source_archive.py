@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--bundle", action="append", default=[])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
+    parser.add_argument("--apk", type=Path, help="Read original shared shaders from the client archive without extracting client code")
     args = parser.parse_args()
     known = {row["id"].lower() for row in json.loads(args.catalog.read_text())["presentations"]}
     with zipfile.ZipFile(args.archive) as archive:
@@ -62,6 +63,10 @@ def main():
         sys.path.insert(0, str(args.python_libs.resolve()))
         import UnityPy
         from extract_assets import BundleExtractor, write_json
+        shader_bytes = None
+        if args.apk:
+            with zipfile.ZipFile(args.apk) as apk:
+                shader_bytes = decode_bundle(apk.read("assets/common/shader.data"))
         catalog_path = args.output / "extraction.json"
         bundles = json.loads(catalog_path.read_text())["bundles"] if catalog_path.exists() else []
         for requested in args.bundle:
@@ -73,8 +78,11 @@ def main():
                 raise ValueError("Conversion will not overwrite an existing bundle: " + key)
             raw = decode_bundle(archive.read(entries[key][0]))
             environment = UnityPy.load(raw)
+            extractor = BundleExtractor(environment, destination)
+            if shader_bytes:
+                environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
             destination.mkdir(parents=True)
-            result = BundleExtractor(environment, destination).extract()
+            result = extractor.extract()
             result.update(id=key, path=destination.relative_to(args.output).as_posix(), origin="original-archive")
             bundles.append(result)
             write_json(catalog_path, {"schema": 1, "bundles": bundles})
