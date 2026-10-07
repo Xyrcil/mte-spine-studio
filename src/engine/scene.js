@@ -10,6 +10,7 @@ import {validateSkillDisplayState} from './skill-receiver.js';
 import {validateBoneDragState} from './bone-drag-root.js';
 import {validateStoryCgState} from './story-cg.js';
 import {validateStationDrawingState} from './station-drawing.js';
+import {validateMainViewSpeechClock} from './main-view-speech-clock.js';
 import {validateBackgroundLinks} from './background-layers.js';
 import {sourcePreviewSettings} from './geometry.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
@@ -61,7 +62,7 @@ export function validateScene(value) {
   if(value.camera.sourcePreview!==undefined){const preview=value.camera.sourcePreview,group=text(preview?.group,'preview object'),aspect=finite(preview?.aspect,'preview aspect');if(aspect<=0||!objects.some(object=>object.id===group&&object.kind==='spine'))throw new Error('Invalid source preview reference');camera.sourcePreview={group,aspect,view:sourcePreviewSettings(preview.view)};}
   const speed=finite(value.speed,'playback speed');if(speed<=0)throw new Error('Playback speed must be positive');
   if(value.materialTime!==undefined&&finite(value.materialTime,'material time')<0)throw new Error('Invalid material time');
-  return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.materialTime!==undefined?{materialTime:value.materialTime}:{}),...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
+  return {schema:1,name:text(value.name||'Untitled scene','scene name'),background:value.background,camera,speed,paused:Boolean(value.paused),objects,...(value.mainViewSpeechClock!==undefined?{mainViewSpeechClock:validateMainViewSpeechClock(value.mainViewSpeechClock)}:{}),...(value.materialTime!==undefined?{materialTime:value.materialTime}:{}),...(value.audio!==undefined?{audio:validateSoundScene(value.audio,objects)}:{}),...(value.sequence!==undefined?{sequence:validateSequence(value.sequence)}:{})};
 }
 
 export class History {

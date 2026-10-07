@@ -20,6 +20,7 @@ import {hasMaterialDistortion} from './material-distortion.js';
 import {DistortionRenderer} from './distortion-renderer.js';
 import {StoryCgRoot,isStoryCg} from './story-cg.js';
 import {StationDrawingRoot} from './station-drawing.js';
+import {MainViewSpeechClock} from './main-view-speech-clock.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -43,6 +44,7 @@ export class Stage extends EventTarget {
     super();
     this.canvas = canvas;
     this.options=options;
+    this.mainViewSpeechClock=new MainViewSpeechClock({onHideWords:()=>this.dispatchEvent(new CustomEvent('main-view-words-hidden')),onIdle:index=>this.dispatchEvent(new CustomEvent('main-view-idle',{detail:{index}}))});
     const contextOptions={alpha:true, antialias:true, preserveDrawingBuffer:true};
     this.gl = canvas.getContext('webgl',contextOptions)||canvas.getContext('webgl2',contextOptions);
     if (!this.gl) throw new Error('WebGL is unavailable');
@@ -184,6 +186,7 @@ export class Stage extends EventTarget {
     if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
   }
   evaluateFrame(delta) {
+    this.mainViewSpeechClock?.advance(delta);
     if(delta>0)this.materialTime=(this.materialTime??0)+delta;
     for(const group of this.groups)if(group.visible)for(const native of group.nativeAnimations||[])if(native.model&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject.m_PathID))?.id))native.model.advance(delta);
     if(delta>0)for(const group of this.groups)if(group.visible)for(const effect of group.effects||[])if(effect.model&&group.isActiveTransform(effect.source.transform))effect.model.advance(delta);
@@ -240,7 +243,7 @@ export class Stage extends EventTarget {
   }
   snapshot(name='Untitled scene') {
     if(this.recoveryPending&&this.recoverySnapshot)return {...structuredClone(this.recoverySnapshot),name};
-    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.groups.some(group=>group.layers?.some(layer=>hasMaterialDistortion(layer.entry)))?{materialTime:this.materialTime??0}:{}),...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
+    return {schema:1,name,background:this.background,camera:structuredClone(this.camera),speed:this.speed,paused:this.paused,...(this.mainViewSpeechClock&&(this.mainViewSpeechClock.value.visible||this.mainViewSpeechClock.active||!this.mainViewSpeechClock.value.canClick||this.mainViewSpeechClock.value.random!==0x12345678)?{mainViewSpeechClock:this.mainViewSpeechClock.snapshot()}:{}),...(this.groups.some(group=>group.layers?.some(layer=>hasMaterialDistortion(layer.entry)))?{materialTime:this.materialTime??0}:{}),...(this.sequence?{sequence:structuredClone(this.sequence)}:{}),...(this.captureAudio?{audio:this.captureAudio()}:{}),objects:this.groups.map(group=>{
       const row={id:group.id,kind:group.kind,name:group.name,x:group.x,y:group.y,scale:group.scale,rotation:group.rotation,opacity:group.opacity,flipX:group.flipX,flipY:group.flipY,visible:group.visible,locked:group.locked};
       if(group.parentId!==undefined)row.parentId=group.parentId;
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
@@ -253,7 +256,7 @@ export class Stage extends EventTarget {
     if(this.contextLost||this.disposed)throw new Error('Rendering context is unavailable');
     const contextEpoch=this.contextEpoch;
     scene=validateScene(scene);
-    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused,previousMaterialTime=this.materialTime;this.paused=true;
+    const old=[...this.groups],camera={...this.camera},previousPaused=this.paused,previousMaterialTime=this.materialTime,previousSpeechClock=this.mainViewSpeechClock?.snapshot();this.paused=true;
     this.loadingRestorePaused=previousPaused;
     const created=[];
     try {
@@ -290,9 +293,10 @@ export class Stage extends EventTarget {
       for(const group of old)if(!created.includes(group))this.release(group);
       this.groups=created;this.camera={...scene.camera};this.background=scene.background;this.speed=scene.speed;this.paused=scene.paused;
       this.materialTime=scene.materialTime??0;
+      if(this.mainViewSpeechClock){if(scene.mainViewSpeechClock)this.mainViewSpeechClock.restore(scene.mainViewSpeechClock);else this.mainViewSpeechClock.reset();}
       for(const group of created)for(const layer of group.layers)this.transformLayer(group,layer);
       if(this.camera.sourcePreview&&!this.options?.manual)this.resize();this.draw();
-    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
+    }catch(error){for(const group of created)if(!old.includes(group))this.release(group);this.groups=old;this.camera=camera;this.paused=previousPaused;this.materialTime=previousMaterialTime;if(previousSpeechClock)this.mainViewSpeechClock.restore(previousSpeechClock);if(this.camera.sourcePreview&&!this.options?.manual)this.resize();throw error;}finally{delete this.loadingRestorePaused;}
     this.applyAudio?.(scene.audio);
     this.sequence=scene.sequence;this.dispatchEvent(new CustomEvent('sequence-loaded'));
   }

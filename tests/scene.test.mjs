@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {validateScene,History} from '../src/engine/scene.js';
 import {Stage,objectTransform,disposeRestoredContextResources} from '../src/engine/stage.js';
 import {InteractionRoot} from '../src/engine/interaction.js';
+import {MainViewSpeechClock} from '../src/engine/main-view-speech-clock.js';
 const scene=()=>({schema:1,name:'Scene',camera:{x:0,y:0,width:10,height:10},background:'#191b20',speed:1,paused:true,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:1,y:2,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[{id:'body',active:true,tracks:[{index:0,name:'Idle',time:2,loop:true,timeScale:1}]}]}]});
 test('recovery disposal skips invalid pre-loss handles and restores deletion methods even on failure',()=>{
   const valid={},stale={},deleted=[],prototype={},gl=Object.create(prototype);
@@ -21,6 +22,11 @@ test('derived scene artwork retains its explicit appearance association',()=>{co
 test('scene word checkpoints retain coroutine progress without copying source labels',()=>{const value=scene(),state={kind:'skill-words',schema:1,count:13,clock:.4,step:1,nextUpdate:.41,playing:true};value.objects[0].interactions=[{id:'skill-words',state}];assert.deepEqual(validateScene(value),value);value.objects[0].interactions[0].state={...state,text:'Do not persist source labels'};assert.equal(validateScene(value).objects[0].interactions[0].state.text,undefined);value.objects[0].interactions[0].state.step=99;assert.throws(()=>validateScene(value),/word checkpoint/);});
 test('native event cursors round-trip through scenes and reject invalid indices',()=>{const value=scene();value.objects[0].nativeAnimations=[{schema:1,id:'animation',clip:'clip',time:1,playing:true,eventCursor:2}];assert.deepEqual(validateScene(value),value);value.objects[0].nativeAnimations[0].eventCursor=-1;assert.throws(()=>validateScene(value),/event checkpoint/);});
 test('scene round trip preserves transforms and animation time',()=>assert.deepEqual(validateScene(scene()),scene()));
+test('shared source speech timers round-trip independently of animation and audio positions',()=>{
+  const value=scene(),clock=new MainViewSpeechClock();clock.show();clock.requestClick();clock.soundStarted(4);clock.advance(.75);value.mainViewSpeechClock=clock.snapshot();assert.deepEqual(validateScene(value),value);
+  const saved=structuredClone(value);clock.advance(300);clock.restore(saved.mainViewSpeechClock);assert.equal(clock.value.wordsRemaining,3.25);assert.equal(clock.value.canClick,false);
+  assert.throws(()=>validateScene({...value,mainViewSpeechClock:{...clock.snapshot(),idleRemaining:121}}),/speech clock/);
+});
 test('source hot spring favor previews retain locked state separately from conversation levels',()=>{
   const value=scene();value.objects[0].hotSpringFavorLevel=0;value.objects[0].hotSpringLevel=5;assert.deepEqual(validateScene(value),value);
   for(const level of [-1,6,.5,'1']){value.objects[0].hotSpringFavorLevel=level;assert.throws(()=>validateScene(value),/favor level/);}
