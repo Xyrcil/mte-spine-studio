@@ -7,10 +7,29 @@ import zipfile
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination, scene_metadata_changes, installed_scene_version
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_comparison_uses_exact_archive_version_when_no_primary_is_installed(self):
+        key = "Spines/painting/model"
+        first = {"id": key + "/archive-1", "sourceBundle": key, "sourceVersion": 1}
+        second = {"id": key + "/archive-2", "sourceBundle": key, "sourceVersion": 2}
+        self.assertEqual(installed_scene_version(key, 2, [first, second]), second)
+        self.assertIsNone(installed_scene_version(key, 3, [first, second]))
+        primary = {"id": key}
+        self.assertEqual(installed_scene_version(key, 2, [first, second, primary]), primary)
+
+    def test_scene_comparison_ignores_script_addresses_but_retains_authored_changes(self):
+        def scene(script, assembly="client.dll", enabled=1):
+            return [{"id": script, "type": "MonoScript", "data": {"m_ClassName": "ClickRoot", "m_Namespace": "", "m_AssemblyName": assembly}}, {"id": "root", "type": "MonoBehaviour", "data": {"m_Script": {"m_FileID": 0, "m_PathID": script}, "m_Enabled": enabled}}]
+        self.assertEqual(scene_metadata_changes(scene("new"), scene("old")), [])
+        self.assertEqual(scene_metadata_changes(scene("new", enabled=0), scene("old"))[0]["fields"], ["m_Enabled"])
+        self.assertEqual(scene_metadata_changes(scene("new", "other.dll"), scene("old"))[0]["fields"], ["m_Script"])
+        added = scene("new") + [{"id": "area", "type": "BoxCollider2D", "data": {}}]
+        self.assertEqual(scene_metadata_changes(added, scene("old"))[0]["status"], "added")
+        self.assertEqual(scene_metadata_changes(scene("old"), added)[0]["status"], "removed")
+
     def test_named_original_variant_preserves_its_resource_identity(self):
         row = SimpleNamespace(filename="source.data")
         self.assertEqual(source_versions("Spines/painting/model", [row], variant="original"), [("Spines/painting/model/original", row, "original")])

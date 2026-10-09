@@ -82,6 +82,77 @@ def source_versions(key, rows, include_all=False, variant=None):
     return [(f"{key}/archive-{index}", row, index) for index, row in enumerate(ordered, 1)]
 
 
+def scene_metadata_changes(original, installed):
+    def normalized(nodes):
+        scripts = {node["id"]: {key: node["data"].get(key) for key in ("m_ClassName", "m_Namespace", "m_AssemblyName")} for node in nodes if node["type"] == "MonoScript"}
+        result = {}
+        for node in nodes:
+            if node["type"] == "MonoScript":
+                continue
+            data = dict(node["data"])
+            if node["type"] == "AnimationClip":
+                data.pop("packedCurves", None)
+            pointer = data.get("m_Script")
+            if pointer and pointer.get("m_FileID") == 0 and str(pointer.get("m_PathID")) in scripts:
+                data["m_Script"] = scripts[str(pointer["m_PathID"])]
+            result[(node["id"], node["type"])] = data
+        return result
+    left, right = normalized(original), normalized(installed)
+    changes = []
+    for key in sorted(left.keys() | right.keys()):
+        if key not in left or key not in right:
+            changes.append({"id": key[0], "type": key[1], "status": "removed" if key not in left else "added"})
+        elif left[key] != right[key]:
+            fields = sorted(name for name in left[key].keys() | right[key].keys() if name not in left[key] or name not in right[key] or left[key][name] != right[key][name])
+            changes.append({"id": key[0], "type": key[1], "status": "changed", "fields": fields})
+    return changes
+
+
+def installed_scene_version(key, version, presentations):
+    primary = next((row for row in presentations if row["id"].lower() == key.lower()), None)
+    if primary:
+        return primary
+    return next((row for row in presentations if row.get("sourceBundle", "").lower() == key.lower() and row.get("sourceVersion") == version), None)
+
+
+def compare_scene_metadata(archive, entries, catalog_path, requested, python_libs):
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(python_libs.resolve()))
+    import UnityPy
+    from extract_assets import precise_references
+    catalog = json.loads(catalog_path.read_text())["presentations"]
+    wanted = {value.lower() for value in requested}
+    if wanted.difference(key.lower() for key in entries):
+        raise ValueError("Requested comparison bundle is absent")
+    types = {"GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController", "CanvasGroup", "SortingGroup"}
+    counts = collections.Counter()
+    for key, versions in sorted(entries.items()):
+        if wanted and key.lower() not in wanted:
+            continue
+        for version, member in enumerate(sorted(versions, key=lambda row: row.filename), 1):
+            installed = installed_scene_version(key, version, catalog)
+            if not installed or not installed.get("path"):
+                counts["withoutInstalledVersion"] += 1
+                print(json.dumps({"bundle": key, "version": version, "status": "without-installed-version"}), flush=True)
+                continue
+            try:
+                location = (catalog_path.parent / installed["path"] / "hierarchy.json").resolve()
+                location.relative_to(catalog_path.parent.resolve())
+                baseline = json.loads(location.read_text())
+                environment = UnityPy.load(decode_bundle(archive.read(member)))
+                nodes = [{"id": str(reader.path_id), "type": reader.type.name, "data": precise_references(reader.read_typetree())} for reader in environment.objects if reader.type.name in types]
+                changes = scene_metadata_changes(nodes, baseline)
+                counts["compared"] += 1
+                counts["changed" if changes else "equal"] += 1
+                print(json.dumps({"bundle": key, "version": version, "installed": installed["id"], "changes": changes}), flush=True)
+            except Exception as error:
+                counts["failed"] += 1
+                print(json.dumps(sanitize_diagnostics({"bundle": key, "version": version, "error": str(error)})), flush=True)
+    print(json.dumps({"scope": "scene-metadata-only", "summary": dict(counts)}), flush=True)
+    if counts["failed"]:
+        raise RuntimeError("Some original scene metadata could not be compared")
+
+
 def manifest_dependencies(text):
     result, active = [], False
     for line in text.splitlines():
@@ -132,6 +203,7 @@ def main():
     parser.add_argument("--missing-paintings", action="store_true", help="Convert all unindexed painting bundles with unambiguous source entries")
     parser.add_argument("--all-versions", action="store_true", help="Preserve every source entry of an explicitly selected ambiguous bundle")
     parser.add_argument("--variant", help="Keep an explicitly selected original bundle under a separate named variant")
+    parser.add_argument("--compare-scenes", action="store_true", help="Compare original scene metadata without exporting textures or replacing resources")
     parser.add_argument("--dependency", action="append", default=[], help="Add a verified relative resource dependency when the original manifest is absent")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
@@ -149,6 +221,11 @@ def main():
             if key:
                 entries[key].append(row)
         requested_bundles = args.bundle
+        if args.compare_scenes:
+            if not args.python_libs or args.output or args.missing_paintings or args.all_versions or args.variant:
+                parser.error("--compare-scenes requires --python-libs and does not accept conversion options")
+            compare_scene_metadata(archive, entries, args.catalog, requested_bundles, args.python_libs)
+            return
         if args.missing_paintings:
             if args.bundle:
                 parser.error("Use --bundle or --missing-paintings, not both")
