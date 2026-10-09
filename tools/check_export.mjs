@@ -6,7 +6,7 @@ import {launchTestBrowser} from './test_browser.mjs';
 const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
+  await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
   await page.getByRole('button',{name:'Pause',exact:true}).click();const original=await page.evaluate(()=>window.mteEditor.snapshot());
   await page.getByRole('button',{name:'Export',exact:true}).click();
   for(const [id,value] of [['width','320'],['height','240'],['scale','2'],['fps','10'],['end','1']])await page.locator(`#export-${id}`).fill(value);

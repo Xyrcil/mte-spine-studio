@@ -25,14 +25,14 @@ export class RenderSession {
     this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
     const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip?Object.fromEntries(Object.entries(bounds.clip).map(([key,value])=>[key,value*this.renderScale])):null;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
   }
-  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
+  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);this.materialTimeOrigin=this.stage.materialTime;if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
   async seek(target,onAdvance){
     if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');
     checkpoint(this.signal);
     if(target<this.time-1e-9){await this.initialize();this.time=0;}
     let steps=0;
     while(target-this.time>1e-9){const delta=Math.min(1/120,target-this.time);this.pendingTime=this.time+delta;this.stage.evaluate(delta);if(this.playbackError)throw this.playbackError;this.time+=delta;if(++steps%300===0){onAdvance?.(this.time);await yieldBrowser();checkpoint(this.signal);}}
-    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.stage.evaluate(0);if(this.playbackError)throw this.playbackError;this.stage.draw();
+    if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.time=target;this.pendingTime=target;this.stage.materialTime=this.materialTimeOrigin+target;this.stage.evaluate(0);if(this.playbackError)throw this.playbackError;this.stage.draw();
   }
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }
@@ -87,7 +87,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=await exportVideoSupport(settings,scene.speed);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
   const renderPlan={...plan,supersampling:true},session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal):null;
-  const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d');
+  const canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d',{alpha:Boolean(plan.transparent)});
   let output,source,audioSource,decoder,zip,zipBytes=0,writeQueue=Promise.resolve(),zipError,chunks=[],audioUntil=0,abortOutput,fileWriter,abortWrite;
   const tracks=[];
   let interactionClips=[],interactionVoices=[],interactionCaptions=[],interactionStops=[],captionStops=[],captionStarts=[],warnings=session.renderScale===1?['Edge smoothing is limited at this output size; reduce the dimensions for 2× supersampling']:[];

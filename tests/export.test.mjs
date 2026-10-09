@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {exportPlan,frameSources,exportCamera,clipSample,exportRenderSize} from '../src/engine/export-plan.js';
 import {omittedVisualWarnings} from '../src/engine/export-source.js';
+import {RenderSession} from '../src/engine/export.js';
+
+test('export material clocks depend on the source time and requested frame, not the seek path',async()=>{
+  const fixture=()=>Object.assign(Object.create(RenderSession.prototype),{time:0,pendingTime:0,materialTimeOrigin:2.11,stage:{materialTime:2.11,evaluate(delta){this.materialTime+=delta;},draw(){}},async initialize(){this.time=0;this.pendingTime=0;this.materialTimeOrigin=2.11;this.stage.materialTime=2.11;}});
+  for(const target of [.3875,.575,.7625,.95,1.1375,1.325,1.5125]){
+    const direct=fixture(),stepped=fixture();await direct.seek(target);
+    for(let time=.2;time<target;time+=.1875)await stepped.seek(time);
+    await stepped.seek(target);
+    assert.equal(direct.stage.materialTime,2.11+target);assert.equal(stepped.stage.materialTime,direct.stage.materialTime);assert.equal(stepped.time,target);
+    await stepped.seek(.2);assert.equal(stepped.stage.materialTime,2.11+.2);
+    await stepped.seek(target);assert.equal(stepped.stage.materialTime,direct.stage.materialTime);
+  }
+});
 const settings=()=>({format:'mp4',width:320,height:240,scale:1,fps:10,speed:1,start:0,end:1,loops:2,loopMode:'repeat',fade:.2,background:'#191b20',transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}});
 test('export supersampling preserves output size and respects device and memory limits',()=>{
   const plan=exportPlan(settings());assert.deepEqual(exportRenderSize(plan,8192),{width:640,height:480,scale:2});assert.equal(plan.width,320);
