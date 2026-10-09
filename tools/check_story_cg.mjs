@@ -5,7 +5,7 @@ const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser
 const trajectories=process.argv.includes('--trajectories');
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
+  await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async({engine,trajectories})=>{
     const {Stage}=await import('/src/engine/stage.js'),{InteractionRecorder,InteractionPlayer}=await import('/src/engine/interaction-sequence.js'),{createSceneFile,readSceneFile}=await import('/src/engine/scene-file.js'),{exportMedia,RenderSession}=await import('/src/engine/export.js'),{exportPlan}=await import('/src/engine/export-plan.js');
     const catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;

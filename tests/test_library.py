@@ -5,10 +5,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue, chinese_caption_policy
-from build_library import join_artwork_variants, join_cg_variants, story_roles_by_resource
+from build_library import join_artwork_variants, join_story_variants, story_roles_by_resource
 
 
 class PortraitLibraryTests(unittest.TestCase):
+    def test_station_source_references_do_not_become_ambiguous_when_archives_are_added(self):
+        row = {"id": "drawing", "drawing": "ui_jq_lihui_actor"}
+        entry = {"id": "asset", "name": "ui_jq_lihui_actor_SkeletonData", "bundle": "Spines/story/actor", "status": "parsed", "animations": [{"name": "stand"}]}
+        archive = {**entry, "bundle": "Spines/story/actor/original"}
+        unrelated = {**entry, "bundle": "Spines/story/unrelated"}
+        drawing = station_drawing_catalogue([("original", [row])], [archive, unrelated, entry])["drawings"][0]
+        self.assertEqual(drawing["skeleton"], {"bundle": entry["bundle"], "id": entry["id"]})
+        self.assertEqual(drawing["warnings"], [])
+        missing = station_drawing_catalogue([("original", [row])], [unrelated])["drawings"][0]
+        self.assertIsNone(missing["skeleton"])
     def test_plot_roles_match_original_mixed_case_resource_directories(self):
         row = {"Id": "skin", "RoleId": "actor", "PlotPic": "example_ZDYS/ui_example_SkeletonData"}
         self.assertEqual(story_roles_by_resource([row, {"PlotPic": "0"}, {}]), {"example_zdys": row})
@@ -16,7 +26,7 @@ class PortraitLibraryTests(unittest.TestCase):
         parent = {"id": "cg", "bundle": "Spines/storyCG/FAMILY/asset", "kind": "storyCG", "name": "Original CG"}
         variant = {"id": "hx", "bundle": "Spines/storyCG/family_hx/asset_hx"}
         unknown = {"id": "unknown", "bundle": "Spines/storyCG/other_hx/asset"}
-        join_cg_variants([parent, variant, unknown], [{"Resources": parent["bundle"], "Resources_Hx": "Spines/storyCG/FAMILY_hx/asset_hx"}])
+        join_story_variants([parent, variant, unknown], [{"Resources": parent["bundle"], "Resources_Hx": "Spines/storyCG/FAMILY_hx/asset_hx"}])
         self.assertEqual(variant["variantOf"], "cg")
         self.assertEqual(variant["name"], "Original CG · HX variant")
         self.assertNotIn("variantOf", unknown)
@@ -24,20 +34,40 @@ class PortraitLibraryTests(unittest.TestCase):
         parent = {"id": "cg", "bundle": "Spines/storyCG/WQ_1/asset", "kind": "storyCG", "name": "WQ scene", "status": "unassigned"}
         original = {"id": "original", "bundle": "Spines/storyCG/wq_1/asset/original", "sourceBundle": "Spines/storyCG/wq_1/asset", "sourceVersion": "original", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/storyCG/other/original", "sourceBundle": "Spines/storyCG/other", "sourceVersion": "original"}
-        join_cg_variants([parent, original, unknown], [])
+        join_story_variants([parent, original, unknown], [])
         self.assertEqual(original["variantOf"], "cg")
         self.assertEqual(original["name"], "WQ scene · Original archive")
         self.assertEqual(original["status"], "available")
         self.assertIsNone(original["characterId"])
         self.assertNotIn("variantOf", unknown)
-    def test_hx_variants_join_only_an_existing_character_binding(self):
+    def test_story_archive_versions_keep_the_declared_character_binding(self):
+        parent = {"id": "story", "bundle": "Spines/story/tianshi2", "kind": "story", "name": "Original story", "characterId": "actor", "characterName": "Alice"}
+        variants = [{"id": "version-" + str(version), "bundle": parent["bundle"] + "/archive-" + str(version), "sourceBundle": parent["bundle"], "sourceVersion": version, "status": "available"} for version in (1, 2)]
+        join_story_variants([parent, *variants], [])
+        for version, variant in enumerate(variants, 1):
+            self.assertEqual(variant["variantOf"], "story")
+            self.assertEqual(variant["characterId"], "actor")
+            self.assertEqual(variant["characterName"], "Alice")
+            self.assertEqual(variant["name"], "Original story · Archive variant " + str(version))
+            self.assertEqual(variant["kind"], "story")
+            self.assertEqual(variant["status"], "available")
+    def test_original_artwork_preserves_its_source_hot_spring_role(self):
+        role = {"id": "actor", "skinId": "skin", "bundle": "Spines/painting/model"}
+        appearances = [{"bundle": role["bundle"] + "/original", "sourceBundle": role["bundle"]}, {"bundle": role["bundle"] + "_hx/original", "sourceBundle": role["bundle"] + "_hx"}, {"bundle": "unrelated/original", "sourceBundle": "Spines/painting/unrelated"}]
+        join_hot_springs(appearances, [role], {"actor": "Alice"})
+        for appearance in appearances[:2]:
+            self.assertEqual(appearance["hotSpringRoleId"], "actor")
+            self.assertEqual(appearance["characterName"], "Alice")
+        self.assertNotIn("hotSpringRoleId", appearances[2])
+    def test_hx_variants_join_only_an_existing_source_binding(self):
         parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait"}
         before = deepcopy(parent)
         variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
         archived = {"id": "archive", "bundle": "Spines/painting/skin_spine_hx/archive-1", "sourceBundle": "Spines/painting/skin_spine_hx", "sourceVersion": 1}
         original = {"id": "original", "bundle": "Spines/painting/skin_spine/original", "sourceBundle": "Spines/painting/skin_spine", "sourceVersion": "original"}
-        join_artwork_variants([parent, variant, unknown, archived, original])
+        original_hx = {"id": "original-hx", "bundle": "Spines/painting/skin_spine_hx/original", "sourceBundle": "Spines/painting/skin_spine_hx", "sourceVersion": "original"}
+        join_artwork_variants([parent, variant, unknown, archived, original, original_hx])
         self.assertEqual(parent, before)
         self.assertEqual(variant["variantOf"], "skin")
         self.assertEqual(variant["characterId"], "actor")
@@ -50,6 +80,14 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(original["characterId"], "actor")
         self.assertEqual(original["portraitResource"], "portrait")
         self.assertEqual(original["name"], "Summer · Original archive")
+        self.assertEqual(original_hx["name"], "Summer · HX variant · Original archive")
+    def test_original_artwork_keeps_its_source_label_without_guessing_a_character(self):
+        parent = {"id": "unassigned", "bundle": "Spines/painting/model", "kind": "painting", "name": "model"}
+        original = {"id": "original", "bundle": parent["bundle"] + "/original", "sourceBundle": parent["bundle"], "sourceVersion": "original"}
+        join_artwork_variants([parent, original])
+        self.assertEqual(original["variantOf"], "unassigned")
+        self.assertEqual(original["name"], "model · Original archive")
+        self.assertIsNone(original["characterId"])
     def test_chinese_caption_policy_exposes_only_required_configuration(self):
         result = chinese_caption_policy([{"id": 9991139, "int_value": 3, "string_value": "[3016119,3016049,3014019]", "private": "Excluded"}])
         self.assertEqual(result, {"schema": 1, "players": [3016119, 3016049, 3014019], "duration": 3})

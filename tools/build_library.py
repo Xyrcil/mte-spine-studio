@@ -82,6 +82,8 @@ def station_drawing_catalogue(sources, entries):
     for identifier, (origin, row) in merged.items():
         resource = row.get("drawing") or ""
         matches = by_name.get(resource + "_SkeletonData", []) if resource else []
+        bundle = "Spines/story/" + resource.removeprefix("ui_jq_lihui_")
+        matches = [entry for entry in matches if entry.get("bundle", "").lower() == bundle.lower()]
         entry = matches[0] if len(matches) == 1 else None
         actions = (row.get("action_list") or "").split(";") if row.get("action_list") else []
         expressions = (row.get("expression_list") or "").split(";") if row.get("expression_list") else []
@@ -269,13 +271,14 @@ def hot_spring_houses(rows):
 
 def join_hot_springs(appearances, roles, names):
     for appearance in appearances:
-        role = next((row for row in roles if appearance.get("bundle") in (row["bundle"], row["bundle"] + "_hx") or appearance.get("bundle", "").lower() == "spines/ui/onsen/" + row["skinId"]), None)
+        bundle = appearance.get("sourceBundle") or appearance.get("bundle", "")
+        role = next((row for row in roles if bundle in (row["bundle"], row["bundle"] + "_hx") or bundle.lower() == "spines/ui/onsen/" + row["skinId"]), None)
         if role:
             appearance.update(hotSpringRoleId=role["id"], characterId=role["id"], characterName=names.get(role["id"], role["id"]))
 
 
 def join_artwork_variants(appearances):
-    by_bundle = {row.get("bundle"): row for row in appearances if row.get("characterId")}
+    by_bundle = {row["bundle"]: row for row in appearances if row.get("bundle")}
     for row in appearances:
         bundle = row.get("sourceBundle") or row.get("bundle", "")
         if not bundle.startswith("Spines/painting/"):
@@ -287,14 +290,14 @@ def join_artwork_variants(appearances):
         if not parent:
             continue
         label = "HX variant" if hx else "Original archive" if row.get("sourceVersion") == "original" else "Archive variant " + str(row.get("sourceVersion"))
-        row.update(variantOf=parent["id"], characterId=parent["characterId"], characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
+        row.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
         if hx and row.get("sourceVersion"):
-            row["name"] += " · Archive variant " + str(row["sourceVersion"])
+            row["name"] += " · " + ("Original archive" if row["sourceVersion"] == "original" else "Archive variant " + str(row["sourceVersion"]))
         if parent.get("portraitResource"):
             row.setdefault("portraitResource", parent["portraitResource"])
 
 
-def join_cg_variants(appearances, skins):
+def join_story_variants(appearances, skins):
     by_bundle = {row.get("bundle", "").lower(): row for row in appearances}
     for skin in skins:
         normal, alternate = skin.get("Resources", ""), skin.get("Resources_Hx", "")
@@ -306,7 +309,7 @@ def join_cg_variants(appearances, skins):
         variant.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · HX variant")
     for variant in appearances:
         source = variant.get("sourceBundle", "")
-        if not source.startswith("Spines/storyCG/") or source.lower() == variant.get("bundle", "").lower():
+        if not source.startswith(("Spines/storyCG/", "Spines/story/")) or source.lower() == variant.get("bundle", "").lower():
             continue
         parent = by_bundle.get(source.lower())
         if parent:
@@ -402,7 +405,7 @@ def build(source, output):
             if field in presentation:
                 row[field] = presentation[field]
     join_artwork_variants(appearances)
-    join_cg_variants(appearances, records(raw_tables / "Skin.json"))
+    join_story_variants(appearances, records(raw_tables / "Skin.json"))
     portrait_path = output / "portrait-index.json"
     portrait_entries = []
     if portrait_path.is_file():

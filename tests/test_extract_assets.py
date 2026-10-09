@@ -11,6 +11,27 @@ from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_external_skeletons_are_exported_by_reference_without_importing_dependency_scenes(self):
+        owner_file, dependency_file = SimpleNamespace(name="scene"), SimpleNamespace(name="role")
+        owner = SimpleNamespace(path_id=1, assets_file=owner_file, type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: {"skeletonDataAsset": {"m_FileID": 1, "m_PathID": 99}})
+        target = SimpleNamespace(path_id=99, assets_file=dependency_file, type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: {"m_Name": "role", "skeletonJSON": {"m_FileID": 0, "m_PathID": 60}, "atlasAssets": []})
+        text = SimpleNamespace(read=lambda: SimpleNamespace(m_Script='{"skeleton":{"spine":"3.8.99"}}'))
+        with tempfile.TemporaryDirectory() as directory:
+            extractor = BundleExtractor(SimpleNamespace(objects=[owner]), Path(directory))
+            extractor.resolve = lambda reader, pointer: target if reader is owner else text
+            result = extractor.extract()
+            self.assertEqual(result["errors"], [])
+            self.assertEqual([row["id"] for row in result["skeletons"]], ["99"])
+            rows = json.loads((Path(directory) / "hierarchy.json").read_text())
+            self.assertEqual(rows[0]["skeletonReference"], {"assetId": "99", "serializedFile": "role"})
+            self.assertEqual(rows[0]["data"]["skeletonDataAsset"], {"m_FileID": 1, "m_PathID": "99"})
+            self.assertEqual(extractor.objects, [owner])
+            self.assertEqual(len(extractor.extract()["skeletons"]), 1)
+            target.path_id = 1
+            result = extractor.extract()
+            self.assertEqual(result["skeletons"], [])
+            self.assertIn("collides", result["errors"][0]["error"])
+
     def test_astc_source_mips_use_compressed_block_offsets_not_resized_base_images(self):
         self.assertEqual(astc_mip_layout(16, 8, 5, 51), [(0, 16, 8, 0, 32), (1, 8, 4, 32, 16), (2, 4, 2, 48, 16), (3, 2, 1, 64, 16), (4, 1, 1, 80, 16)])
         self.assertEqual(astc_mip_layout(9, 7, 1, 49), [(0, 9, 7, 0, 64)])

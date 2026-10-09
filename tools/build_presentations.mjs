@@ -33,7 +33,7 @@ for (const bundle of extraction.bundles) {
     const gameObject = byId.get(owner);
     if (!owner || owner === '0') continue;
     if (node.data.skeletonDataAsset) {
-      const skeleton = skeletons.get(idOf(node.data.skeletonDataAsset));
+      const skeleton = skeletons.get(node.skeletonReference?.assetId??idOf(node.data.skeletonDataAsset));
       const renderer = components.get(owner)?.find(item => item.type === 'MeshRenderer');
       const ordering=materialOrdering(bundle.renderers?.find(row=>row.id===renderer?.id));
       instances.push({id: node.id, gameObject: owner, name: gameObject?.data.m_Name, active: gameObject?.data.m_IsActive, skeletonId: skeleton?.id || null,...skeletonDisplaySettings(className(node),node.data,canvasPixelsPerUnit(owner)), skin: node.data.initialSkinName,timeScale: node.data.timeScale, flipX: Boolean(node.data.initialFlipX), flipY: Boolean(node.data.initialFlipY), sortingOrder: renderer?.data.m_SortingOrder || 0,...ordering, transform: transforms.get(owner)?.id, status: skeleton?.status || (String(node.data.skeletonDataAsset.m_PathID)==='0'?'unassigned':'missing-reference')});

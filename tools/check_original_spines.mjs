@@ -9,7 +9,10 @@ const entries=JSON.parse(await readFile(root+'/runtime-index.json','utf8')).entr
 for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromium','firefox','webkit']){
   const {browser,close}=await launchTestBrowser(engine);
   try{
-    const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+    const page=await browser.newPage(),errors=[],pending=new Map();page.on('pageerror',error=>errors.push(error.message));
+    page.on('request',request=>pending.set(request,new URL(request.url()).pathname));
+    page.on('requestfinished',request=>pending.delete(request));
+    page.on('requestfailed',request=>{pending.delete(request);console.error(engine,'Source request failed',new URL(request.url()).pathname,request.failure()?.errorText);});
     page.on('console',message=>{if(message.text().startsWith('[source-check]'))console.log(engine,message.text());});
     await page.route('**/assets/**',async route=>{
       const relative=decodeURIComponent(new URL(route.request().url()).pathname.split('/assets/')[1]||'');
@@ -20,7 +23,10 @@ for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromiu
     const results=await page.evaluate(async({catalog,entries})=>{
       const {Stage}=await import('/src/engine/stage.js');const results=[];
       for(const presentation of catalog){
-        if(!presentation.instances.length){if(!presentation.unassignedInstances?.length)throw new Error('Source bundle has no drawable or unassigned skeleton');console.log('[source-check] Unassigned template: '+presentation.id);continue;}
+        if(!presentation.instances.length){
+          if(!presentation.unassignedInstances?.length&&entries.some(entry=>entry.bundle===presentation.id))throw new Error('Source skeleton was omitted from its presentation');
+          console.log('[source-check] '+(presentation.unassignedInstances?.length?'Unassigned template: ':'No source skeleton: ')+presentation.id);continue;
+        }
         console.log('[source-check] '+presentation.id);
         const canvas=document.createElement('canvas');canvas.width=160;canvas.height=160;const stage=new Stage(canvas,{manual:true});
         try{
@@ -37,7 +43,7 @@ for(const engine of process.argv.slice(3).length?process.argv.slice(3):['chromiu
         }finally{stage.dispose();stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
       }
       return {silent:window.__mteSilentTest,results};
-    },{catalog,entries});
+    },{catalog,entries}).catch(error=>{console.error(engine,'Pending source requests',[...pending.values()]);throw error;});
     assert.deepEqual(errors,[]);assert.equal(results.silent,true);
     for(const row of results.results){assert.equal(row.origin,'original-archive');assert.deepEqual(row.materialErrors,[]);assert.ok(row.colored>100);assert.ok(row.poses>=row.animations);}
     console.log(engine,JSON.stringify(results.results));

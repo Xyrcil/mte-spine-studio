@@ -14,6 +14,17 @@ test('indexed bundle paths match directory casing on case-sensitive web hosts',t
     }
   }
 });
+test('original CG external skeleton pointers resolve to the exported source asset',t=>{
+  if(!fs.existsSync('public/assets/presentations.json')){t.skip('Local game resources are not installed');return;}
+  const presentation=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations.find(row=>row.id==='Spines/storyCG/by_1_by/by_1_by/original');
+  if(!presentation){t.skip('Original external-skeleton CG is not installed');return;}
+  const nodes=JSON.parse(fs.readFileSync(path.join('public/assets',presentation.path,'hierarchy.json'))),role=presentation.instances.find(instance=>instance.name==='role1'),node=nodes.find(node=>node.id===role.id);
+  assert.equal(presentation.instances.length,3);assert.ok(node.data.skeletonDataAsset.m_FileID>0);
+  assert.equal(role.status,'parsed');assert.equal(role.skeletonId,node.skeletonReference.assetId);
+  assert.ok(nodes.find(target=>target.id===role.skeletonId)?.data.skeletonJSON);
+  const entry=JSON.parse(fs.readFileSync('public/assets/runtime-index.json')).entries.find(entry=>entry.bundle===presentation.id&&entry.id===role.skeletonId);
+  assert.equal(entry.status,'parsed');assert.ok(fs.existsSync(path.join('public/assets',entry.path,entry.skeleton)));
+});
 test('unassigned source components do not block available artwork and unbound assets remain selectable',()=>{
   const entries=[{id:'one',name:'Bound',status:'parsed',skins:['default'],animations:[{name:'animation'}]},{id:'two',name:'Alternative',status:'parsed',skins:['default'],animations:[{name:'idle'}]}];
   const bound={id:'component',skeletonId:'one',status:'parsed',active:true},empty={id:'empty',skeletonId:null,status:'unassigned',name:'role2'};

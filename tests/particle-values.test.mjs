@@ -58,5 +58,5 @@ test('all extracted particle scalar and gradient profiles produce finite repeata
     for(const child of Object.values(value))walk(child);
   }
   const effects=catalog.presentations.flatMap(presentation=>presentation.effects||[]);for(const effect of effects)walk(effect.data);
-  assert.equal(effects.length,5);assert.ok(profiles>100);console.log(`Validated ${profiles} native particle value profiles`);
+  assert.equal(catalog.presentations.filter(presentation=>presentation.origin!=='original-archive').flatMap(presentation=>presentation.effects||[]).length,5);assert.ok(profiles>100);console.log(`Validated ${profiles} native particle value profiles`);
 });

@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import {readFile,stat,mkdtemp,rm} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {chromium,webkit} from '@playwright/test';
-import {launchTestBrowser} from './test_browser.mjs';
+import {launchTestBrowser,silentMedia} from './test_browser.mjs';
 import {expectedPackPaths,PACK_CATALOGS,resourceType} from '../src/engine/resource-pack.js';
 import {selectAsset} from './select_asset.mjs';
 import {buildAssetLibrary} from '../src/asset-library.js';
@@ -40,7 +40,8 @@ const full=process.argv.includes('--full'),profile=full&&engine!=='firefox'?awai
 const archiveOption=process.argv.indexOf('--archive');if(archiveOption>=0&&!process.argv[archiveOption+1])throw new Error('Archive path is required');
 const fullArchive=resolve(archiveOption>=0?process.argv[archiveOption+1]:'private/mte-resources.zip');
 const launched=profile?null:await launchTestBrowser(engine);
-const context=profile?await ({chromium,webkit}[engine]).launchPersistentContext(profile,{...(engine==='chromium'?{channel:'chrome'}:{}),headless:true,viewport:{width:1440,height:1000}}):await launched.browser.newContext({viewport:{width:1440,height:1000}});
+const context=profile?await ({chromium,webkit}[engine]).launchPersistentContext(profile,{...(engine==='chromium'?{channel:'chrome',args:['--mute-audio']}:{}),headless:true,viewport:{width:1440,height:1000}}):await launched.browser.newContext({viewport:{width:1440,height:1000}});
+await context.addInitScript(silentMedia);
 async function setOffline(value){
   if(engine!=='webkit'){await context.setOffline(value);return;}
   // WebKit offline emulation blocks even service-worker responses (Playwright #42775).

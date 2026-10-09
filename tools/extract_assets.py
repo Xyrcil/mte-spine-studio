@@ -397,7 +397,8 @@ class BundleExtractor:
         skeletons = []
         hierarchy = []
         errors = []
-        for reader in self.objects:
+        readers = list(self.objects)
+        for reader in readers:
             if reader.type.name in ("GameObject", "Transform", "RectTransform", "MeshRenderer", "BoxCollider2D", "PolygonCollider2D", "CircleCollider2D", "MonoBehaviour", "MonoScript", "ParticleSystem", "ParticleSystemRenderer", "Animation", "AnimationClip", "Animator", "AnimatorController", "AnimatorOverrideController", "CanvasGroup", "SortingGroup"):
                 try:
                     data = self.tree(reader)
@@ -409,6 +410,20 @@ class BundleExtractor:
                         except (ValueError, KeyError, TypeError, struct.error) as exc:
                             errors.append({"id": str(reader.path_id), "type": "PackedAnimation", "error": str(exc)})
                     node = {"id": str(reader.path_id), "type": reader.type.name, "data": data}
+                    pointer = data.get("skeletonDataAsset", {})
+                    if reader.type.name == "MonoBehaviour" and pointer.get("m_FileID") and pointer.get("m_PathID"):
+                        try:
+                            skeleton = self.resolve(reader, pointer)
+                            if skeleton.type.name != "MonoBehaviour" or "skeletonJSON" not in self.tree(skeleton):
+                                raise ValueError("External skeleton reference does not resolve to a SkeletonDataAsset")
+                            matches = [item for item in readers if item.path_id == skeleton.path_id]
+                            if any(item.assets_file is not skeleton.assets_file for item in matches):
+                                raise ValueError("External skeleton ID collides with a different serialized file")
+                            if not matches:
+                                readers.append(skeleton)
+                            node["skeletonReference"] = {"assetId": str(skeleton.path_id), "serializedFile": skeleton.assets_file.name}
+                        except Exception as exc:
+                            errors.append({"id": str(reader.path_id), "type": "SkeletonReference", "error": str(exc)})
                     if reader.type.name == "MonoBehaviour" and data.get("m_FontData", {}).get("m_Font", {}).get("m_PathID"):
                         try:
                             font = self.resolve(reader, data["m_FontData"]["m_Font"])

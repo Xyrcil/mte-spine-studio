@@ -47,8 +47,8 @@ test('world simulation does not move old particles when the emitter moves',()=>{
 test('unsupported enabled modules fail explicitly instead of being silently ignored',()=>{
   assert.throws(()=>model(fixture({NoiseModule:{enabled:true}})),/NoiseModule/);assert.throws(()=>model(fixture({ShapeModule:{enabled:true,type:4}})),/shape/);
 });
-test('all five original particle systems simulate and restore with finite values',t=>{
+test('all extracted particle systems simulate and restore with finite values',t=>{
   if(!fs.existsSync('public/assets/presentations.json')){t.skip('Local game resources are not installed');return;}
-  const effects=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations.flatMap(p=>p.effects||[]);assert.equal(effects.length,5);
+  const presentations=JSON.parse(fs.readFileSync('public/assets/presentations.json')).presentations,effects=presentations.flatMap(p=>p.effects||[]);assert.equal(presentations.filter(p=>p.origin!=='original-archive').flatMap(p=>p.effects||[]).length,5);
   for(const effect of effects){const value=model(effect);assert.ok(value.view().length>0);value.advance(.713);const restored=model(effect);restored.restore(value.snapshot());assert.deepEqual(restored.view(),value.view());value.advance(1);restored.advance(1);assert.deepEqual(restored.snapshot(),value.snapshot());for(const particle of value.view())assert.ok([...particle.position,...particle.velocity,...particle.rotation,...particle.size,...particle.color,particle.age,particle.frame].every(Number.isFinite));}
 });

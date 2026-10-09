@@ -3,7 +3,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-function silentMedia(){
+export function silentMedia(){
   if(window.__mteSilentTest)return;Object.defineProperty(window,'__mteSilentTest',{value:true});
   const prototype=HTMLMediaElement.prototype,muted=Object.getOwnPropertyDescriptor(prototype,'muted'),play=prototype.play;
   Object.defineProperty(prototype,'muted',{...muted,set(){muted.set.call(this,true);}});
