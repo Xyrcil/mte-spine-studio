@@ -53,5 +53,33 @@ try{
   const inactiveSaved=await page.evaluate(()=>{const stage=window.mteStudio,group=stage.groups[0];window.mteEditor.mutate(()=>stage.setLayerActive(group,group.layers[0].instance.id,false));return window.mteEditor.snapshot();});assert.equal(inactiveSaved.objects[0].layers[0].active,false);assert.equal(inactiveSaved.objects[0].interactions.find(root=>root.id==='story-cg').state.layers[0].listeners.length,0);await page.waitForTimeout(900);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups[0]?.presentation.id==='Spines/storyCG/0_2_SSZZ/0_2_SSZZ'&&!window.mteEditor.busy);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),inactiveSaved);
   await page.getByRole('button',{name:'Shake scene',exact:true}).click();assert.deepEqual(await page.evaluate(()=>window.mteStudio.groups[0].layers.map(layer=>layer.state.getCurrent(0).animation.name)),['start','shake','shake','shake','shake','shake']);
   await page.evaluate(()=>window.mteEditor.mutate(()=>window.mteStudio.setLayerActive(window.mteStudio.groups[0],window.mteStudio.groups[0].layers[0].instance.id,true)));await page.locator('#sequence-record').click();await page.locator('#pause').click();await page.getByRole('button',{name:'Next story state',exact:true}).click();await page.evaluate(()=>{for(let i=0;i<60;i++)window.mteStudio.evaluate(1/120);});await page.locator('#sequence-stop').click();const preview=await page.evaluate(()=>({sequence:window.mteSequence.sequence,snapshot:window.mteEditor.snapshot()}));await page.locator('#sequence-position').fill('.5');await page.locator('#sequence-preview').click();await page.waitForFunction(()=>!window.mteSequence.previewing&&!window.mteEditor.busy);const previewState=await page.evaluate(()=>({paused:window.mteStudio.paused,audio:window.mteEditor.snapshot().audio,tracks:window.mteStudio.groups[0].layers.map(layer=>layer.state.getCurrent(0).animation.name)}));assert.equal(previewState.paused,true);assert.equal(previewState.audio.muted,true);assert.ok(previewState.tracks.every(name=>name==='liliya'));assert.deepEqual(await page.evaluate(()=>window.mteSequence.sequence),preview.sequence);
-  assert.deepEqual(errors,[]);console.log('Real story CG integration and UI checks passed',{...result,ui:{undo:true,duplicateIsolation:true,recordedSourceButtons:true,replayLocksCommands:true,slowAutosaveReload:true,inactiveLayerAutosaveReload:true,commandsOnlyAffectActiveLayers:true,silentSourceCommandPreview:true}});
+  const archiveLoops=[];
+  for(const bundle of ['Spines/storyCG/wq_1_kesn/wq_1_kesn/original','Spines/storyCG/wq_1_kesn_bg/wq_1_kesn_bg/original']){
+    await selectAsset(page,bundle);
+    await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id&&!window.mteEditor.busy,bundle);
+    const saved=await page.evaluate(()=>{window.mteHost.pause();return window.mteEditor.snapshot();});
+    await page.evaluate(scene=>window.mteEditor.restore(scene),saved);
+    assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),saved);
+    archiveLoops.push(await page.evaluate(async({engine,bundle})=>{
+      const stage=window.mteStudio,group=stage.groups[0],root=group.controllers.find(controller=>controller.source.id==='story-cg');
+      const check=(condition,message)=>{if(!condition)throw new Error(bundle+': '+message);};
+      check(root.wq&&root.layers.length===3,'Original loop scene was not bound');
+      check(root.missingAnimations().length===0,'Original loop scene reports missing animations');
+      for(let frame=0;frame<120;frame++)stage.evaluate(1/120);
+      check(root.activeLayers().every(layer=>layer.state.getCurrent(0).animation.name==='animation'&&layer.state.getCurrent(0).loop),'Original loop changed tracks');
+      check(root.snapshot().layers.every(layer=>layer.listeners.length===0&&layer.speed===null),'Original loop registered entrance callbacks');
+      const {exportMedia}=await import('/src/engine/export.js'),{unzipSync}=await import('/node_modules/fflate/esm/browser.js');
+      const catalog=(await fetch('/assets/presentations.json').then(response=>response.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(response=>response.json())).entries;
+      const args={scene:stage.snapshot(),catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height},settings={format:'sequence',width:160,height:120,fps:8,speed:1,start:0,end:.5,loops:2,loopMode:'repeat',background:stage.background,fit:'contain',crop:{x:0,y:0,width:1,height:1}};
+      const sequence=await exportMedia({...args,settings}),frames=Object.entries(unzipSync(new Uint8Array(await sequence.blob.arrayBuffer()))).sort(([a],[b])=>a.localeCompare(b));
+      check(frames.length===8,'Loop sequence frame count differs');
+      for(let frame=0;frame<4;frame++)check(frames[frame][1].length===frames[frame+4][1].length&&frames[frame][1].every((value,index)=>value===frames[frame+4][1][index]),'Repeated loop frames differ');
+      const {Input,BlobSource,ALL_FORMATS,VideoSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs');
+      const video=await exportMedia({...args,settings:{...settings,format:engine==='firefox'?'webm':'mp4'}}),input=new Input({source:new BlobSource(video.blob),formats:ALL_FORMATS});
+      try{const track=await input.getPrimaryVideoTrack();check((await track.computePacketStats()).packetCount===8,'Loop video frame count differs');const sink=new VideoSampleSink(track);for(let frame=0;frame<8;frame++){const sample=await sink.getSample((frame+.25)/8);check(Boolean(sample),'Loop video cannot decode');sample.close();}}finally{input.dispose();}
+      stage.draw();check(stage.gl.getError()===0,'Original loop rendering failed');
+      return {bundle,layers:root.layers.length,exactRepeatFrames:4,decodedVideoFrames:8,videoBytes:video.blob.size};
+    },{engine,bundle}));
+  }
+  assert.deepEqual(errors,[]);console.log('Real story CG integration and UI checks passed',{...result,archiveLoops,ui:{undo:true,duplicateIsolation:true,recordedSourceButtons:true,replayLocksCommands:true,slowAutosaveReload:true,inactiveLayerAutosaveReload:true,commandsOnlyAffectActiveLayers:true,silentSourceCommandPreview:true}});
 }finally{await close();}

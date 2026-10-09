@@ -304,6 +304,14 @@ def join_cg_variants(appearances, skins):
         if not parent or not variant or parent is variant:
             continue
         variant.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · HX variant")
+    for variant in appearances:
+        source = variant.get("sourceBundle", "")
+        if not source.startswith("Spines/storyCG/") or source.lower() == variant.get("bundle", "").lower():
+            continue
+        parent = by_bundle.get(source.lower())
+        if parent:
+            label = "Original archive" if variant.get("sourceVersion") == "original" else "Archive variant " + str(variant.get("sourceVersion"))
+            variant.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
 
 
 def story_roles_by_resource(rows):

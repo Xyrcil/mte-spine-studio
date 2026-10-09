@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {StoryCgRoot,validateStoryCgState,isStoryCg} from '../src/engine/story-cg.js';
+import {StoryCgRoot,validateStoryCgState,isStoryCg,storyCgSourceName} from '../src/engine/story-cg.js';
 
 function fixture(wq=false){
   const calls=[],names=['start','stand','liliya','liliya2','shake','shake2','animation'];
@@ -29,6 +29,12 @@ test('explicit source commands coordinate active layers and retain independent c
 test('WQ source path loops animation without registering default event behavior',()=>{
   const {group,calls,root}=fixture(true);assert.ok(calls.every(c=>c.name==='animation'&&c.loop));root.onEvent(group.layers[0],{animation:{name:'animation'}},{stringValue:'slow'});assert.equal(group.layers[0].storyTimeScale,undefined);assert.ok(root.snapshot().layers.every(row=>row.listeners.length===0));
   const saved=root.snapshot();assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,listeners:['start']})}),/does not match/);assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,speed:1})}),/does not match/);
+});
+test('original CG resource paths retain the authored prefab name and its case-sensitive family',()=>{
+  const {group,calls}=fixture();group.presentation={id:'Spines/storyCG/wq_1_kesn/asset/original',sourceBundle:'Spines/storyCG/wq_1_kesn/asset',hierarchy:[{id:'go',type:'GameObject',data:{m_Name:'WQ_1_KESN'}},{id:'root',type:'Transform',data:{m_GameObject:{m_FileID:0,m_PathID:'go'},m_Father:{m_FileID:0,m_PathID:'0'}}}]};
+  calls.length=0;const root=new StoryCgRoot({},group);assert.equal(storyCgSourceName(group.presentation),'WQ_1_KESN');assert.equal(root.wq,true);assert.ok(calls.every(row=>row.name==='animation'&&row.loop));assert.ok(root.snapshot().layers.every(row=>!row.listeners.length));assert.deepEqual(root.missingAnimations(),[]);
+  group.presentation.hierarchy[0].data.m_Name='wq_1_kesn';assert.equal(new StoryCgRoot({},group).wq,false);
+  assert.equal(storyCgSourceName({id:'Spines/storyCG/variant/asset',sourceBundle:'Spines/storyCG/WQ_1_NF/asset'}),'WQ_1_NF');
 });
 test('story snapshots reject malformed, duplicate and foreign layer states',()=>{
   const {root}=fixture(),saved=root.snapshot();assert.deepEqual(validateStoryCgState(saved),saved);assert.throws(()=>validateStoryCgState({...saved,layers:[saved.layers[0],saved.layers[0]]}),/Invalid/);assert.throws(()=>root.check({...saved,layers:saved.layers.map((row,index)=>index?row:{...row,id:'foreign'})}),/does not match/);assert.throws(()=>validateStoryCgState({...saved,layers:[{...saved.layers[0],speed:2}]}),/Invalid/);assert.throws(()=>validateStoryCgState({...saved,layers:[{...saved.layers[0],listeners:['missing']}]}),/Invalid/);

@@ -3,6 +3,12 @@ const commands={nextState:'liliya',shake:'shake'};
 
 export function isStoryCg(presentation){return !presentation.standalone&&/^Spines\/storyCG\/[^/]+\//.test(presentation.id);}
 
+export function storyCgSourceName(presentation){
+  const hierarchy=presentation.hierarchy||[],owners=new Set(hierarchy.filter(node=>['Transform','RectTransform'].includes(node.type)&&node.data.m_Father?.m_FileID===0&&String(node.data.m_Father.m_PathID)==='0').map(node=>String(node.data.m_GameObject?.m_PathID)));
+  const roots=hierarchy.filter(node=>node.type==='GameObject'&&owners.has(node.id)&&typeof node.data.m_Name==='string');
+  return roots.length===1?roots[0].data.m_Name:(presentation.sourceBundle||presentation.id).split('/')[2];
+}
+
 export function validateStoryCgState(value){
   if(value?.kind!=='story-cg'||value.schema!==1||!Array.isArray(value.layers)||value.layers.length>1000)throw new Error('Invalid story CG state');
   const seen=new Set(),layers=value.layers.map(row=>{
@@ -15,7 +21,7 @@ export class StoryCgRoot {
   constructor(stage,group){
     this.stage=stage;this.group=group;this.source={id:'story-cg',data:{}};
     this.layers=group.layers.filter(layer=>layer.instance.renderType==='SkeletonAnimation');
-    this.wq=group.presentation.id.split('/')[2].startsWith('WQ_1');
+    this.wq=storyCgSourceName(group.presentation).startsWith('WQ_1');
     this.reset();
   }
   reset(){

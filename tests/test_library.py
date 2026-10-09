@@ -20,6 +20,16 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(variant["variantOf"], "cg")
         self.assertEqual(variant["name"], "Original CG · HX variant")
         self.assertNotIn("variantOf", unknown)
+    def test_original_cg_uses_declared_source_identity_even_when_resource_case_differs(self):
+        parent = {"id": "cg", "bundle": "Spines/storyCG/WQ_1/asset", "kind": "storyCG", "name": "WQ scene", "status": "unassigned"}
+        original = {"id": "original", "bundle": "Spines/storyCG/wq_1/asset/original", "sourceBundle": "Spines/storyCG/wq_1/asset", "sourceVersion": "original", "status": "available"}
+        unknown = {"id": "unknown", "bundle": "Spines/storyCG/other/original", "sourceBundle": "Spines/storyCG/other", "sourceVersion": "original"}
+        join_cg_variants([parent, original, unknown], [])
+        self.assertEqual(original["variantOf"], "cg")
+        self.assertEqual(original["name"], "WQ scene · Original archive")
+        self.assertEqual(original["status"], "available")
+        self.assertIsNone(original["characterId"])
+        self.assertNotIn("variantOf", unknown)
     def test_hx_variants_join_only_an_existing_character_binding(self):
         parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait"}
         before = deepcopy(parent)
