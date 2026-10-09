@@ -4,7 +4,24 @@ import {launchTestBrowser} from './test_browser.mjs';
 const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],results=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);await page.evaluate(()=>window.mteHost.pause());
+  await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);await page.evaluate(()=>window.mteHost.pause());
+  const alphaSamples=await page.evaluate(async()=>{
+    const {drawSkeletonSlots}=await import('/src/engine/material-order.js'),s=window.spine,canvas=document.createElement('canvas');canvas.width=canvas.height=8;
+    const gl=canvas.getContext('webgl',{antialias:false,preserveDrawingBuffer:true}),renderer=new s.webgl.SceneRenderer(canvas,gl,false),image=document.createElement('canvas');image.width=image.height=1;
+    const texture=new s.webgl.GLTexture(gl,image,false),atlas=new s.TextureAtlas('page.png\nsize: 1,1\nformat: RGBA8888\nfilter: Nearest,Nearest\nrepeat: none\nregion\n  rotate: false\n  xy: 0,0\n  size: 1,1\n  orig: 1,1\n  offset: 0,0\n  index: -1\n',()=>texture);
+    const data=new s.SkeletonJson(new s.AtlasAttachmentLoader(atlas)).readSkeletonData({bones:[{name:'root'}],slots:[{name:'image',bone:'root',attachment:'image'}],skins:[{name:'default',attachments:{image:{image:{path:'region',width:2,height:2}}}}]}),skeleton=new s.Skeleton(data),samples=[];
+    skeleton.color.a=.5;skeleton.updateWorldTransform();renderer.camera.viewportWidth=renderer.camera.viewportHeight=2;
+    try{for(const blend of [s.BlendMode.Normal,s.BlendMode.Additive])for(const opaque of [false,true]){
+      const colors=[];for(const pma of [false,true]){
+        texture.bind(0);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(pma?[64,32,16,128]:[128,64,32,128]));skeleton.slots[0].data.blendMode=blend;
+        gl.viewport(0,0,8,8);gl.clearColor(opaque?32/255:0,opaque?64/255:0,opaque?96/255:0,opaque?1:0);gl.clear(gl.COLOR_BUFFER_BIT);renderer.begin();drawSkeletonSlots(renderer,skeleton,[0],undefined,undefined,pma);renderer.end();
+        const pixel=new Uint8Array(4);gl.readPixels(4,4,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);colors.push([...pixel]);
+      }
+      samples.push({blend,opaque,colors,error:gl.getError()});
+    }return samples;}finally{renderer.dispose();texture.dispose();gl.getExtension('WEBGL_lose_context')?.loseContext();}
+  });
+  for(const sample of alphaSamples){assert.equal(sample.error,0);assert.ok(sample.colors[0].every((value,index)=>Math.abs(value-sample.colors[1][index])<=1),JSON.stringify(sample));assert.ok(sample.colors[1][0]>=31,JSON.stringify(sample));assert.equal(sample.colors[1][3],sample.opaque?255:64);}
+  console.log(engine+': Straight and premultiplied source textures retain matching normal/additive colors and coverage alpha',alphaSamples);
   for(const bundle of ['3013015','3014009','301601602','3013003','3013006','3014001'].map(id=>`Spines/painting/${id}_spine`).concat(['Spines/storyCG/4_18_SY/4_18_SY','Spines/painting/3014021_spine'])){
     await selectAsset(page,bundle);await page.waitForFunction(bundle=>window.mteStudio.groups[0]?.presentation.id===bundle,bundle);
     assert.doesNotMatch(await page.locator('#details').textContent(),/Material ordering unavailable:/);assert.match(await page.locator('#details').textContent(),/Material segment visual verification pending/);
@@ -21,7 +38,15 @@ try{
       stage.evaluate(.321);await stage.restore(saved,catalog,entries);const restored=pixels(),restoreEqual=restored.every((value,index)=>value===original[index]);
       const {exportMedia}=await import('/src/engine/export.js'),output=await exportMedia({scene:saved,catalog,entries,imageAssets:stage.imageAssets,sourceAspect:stage.canvas.width/stage.canvas.height,settings:{format:'png',width:stage.canvas.width,height:stage.canvas.height,scale:1,fps:30,speed:1,start:0,end:1,loops:1,loopMode:'repeat',fade:.2,background:stage.background,transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}}});
       const bitmap=await createImageBitmap(output.blob),canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;let exportError=0;
-      for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)for(let c=0;c<4;c++)exportError=Math.max(exportError,Math.abs(data[(y*canvas.width+x)*4+c]-original[((canvas.height-y-1)*canvas.width+x)*4+c]));
+      const {RenderSession}=await import('/src/engine/export.js');let previewError=0;
+      for(const supersampling of [false,true]){
+        const reference=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,{...output.plan,supersampling});
+        try{await reference.initialize();await reference.seek(0);
+          if(!supersampling){const raw=new Uint8Array(original.length);reference.stage.gl.readPixels(0,0,stage.canvas.width,stage.canvas.height,stage.gl.RGBA,stage.gl.UNSIGNED_BYTE,raw);for(let index=0;index<raw.length;index++)previewError=Math.max(previewError,Math.abs(raw[index]-original[index]));}
+          else{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(reference.canvas,0,0,canvas.width,canvas.height);const expected=ctx.getImageData(0,0,canvas.width,canvas.height).data;for(let index=0;index<data.length;index++)exportError=Math.max(exportError,Math.abs(data[index]-expected[index]));}
+        }finally{reference.dispose();}
+      }
+      if(previewError>1)throw new Error(`Preview and same-resolution export differ: ${previewError}`);
       let clock=null;if(saved.materialTime!==undefined){const {RenderSession}=await import('/src/engine/export.js'),session=new RenderSession(saved,catalog,entries,stage.imageAssets,stage.canvas.width/stage.canvas.height,output.plan);try{await session.initialize();const initial=session.stage.materialTime;await session.seek(.125);const advanced=session.stage.materialTime;await session.seek(0);clock={source:saved.materialTime,initial,advanced,rewound:session.stage.materialTime};}finally{session.dispose();}window.materialClockRecovery={saved,pixels:original};}
       const profiles=group.layers.flatMap(member=>[...(member.materialMapping?.pages?.values()||[])].flatMap(materials=>Object.values(materials).filter(material=>material.tint||material.vertexColorPower).map(material=>({tint:material.tint,vertexColorPower:material.vertexColorPower,shader:material.shader,mixed:member.materialMapping.mixed}))));window.materialRecovery={saved,pixels:original};return {bundle:group.presentation.id,sourceMatches,segments:initial.length,queues:[...new Set(initial.map(segment=>segment.queue))],frozen,restoreEqual,exportError,warning:output.warnings.some(warning=>warning.includes('original-client visual verification')),glError:stage.gl.getError(),materialDifference,colorPowerDifference,profiles,clock};
     });

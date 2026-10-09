@@ -2,10 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialTint,materialVertexColorPower,materialEffectLimitations} from '../src/engine/material-order.js';
+import {compileMaterialMapping,skeletonDrawSegments,drawSkeletonSlots,materialTint,materialVertexColorPower,materialEffectLimitations,materialPremultipliedAlpha} from '../src/engine/material-order.js';
 
 const slot=(index,blend=0)=>({data:{index,blendMode:blend},bone:{active:true},getAttachment:()=>({region:{page:{name:'page-0.png'}}})});
 function fixture(){const normal={id:'normal',renderQueue:3005},multiply={id:'multiply',renderQueue:3000};return {instance:{renderOrderStatus:'mixed-queues',renderMaterials:[normal,multiply,normal]},entry:{materialBindings:{pages:[{atlas:0,page:'page-0.png',materials:{normal,multiply}}],errors:[]}},skeleton:{drawOrder:[slot(0),slot(1,2),slot(2)]}};}
+test('original shader keywords select texture alpha per page and blend material',()=>{
+  for(const shader of ['Spine/Skeleton','Spine/Blend Modes/Skeleton PMA Additive','Spine/Blend Modes/Skeleton PMA Multiply','Spine/Blend Modes/Skeleton PMA Screen']){
+    assert.equal(materialPremultipliedAlpha({shader,keywords:[]}),true);
+    assert.equal(materialPremultipliedAlpha({shader,keywords:['_STRAIGHT_ALPHA_INPUT']}),false);
+    assert.equal(materialPremultipliedAlpha({shader,keywords:[],properties:{m_Floats:[['_StraightAlphaInput',1]]}}),true);
+    assert.equal(materialPremultipliedAlpha({shader,keywords:['_STRAIGHT_ALPHA_INPUT'],properties:{m_Floats:[['_StraightAlphaInput',0]]}}),false);
+  }
+  assert.equal(materialPremultipliedAlpha({shader:'Unknown',keywords:[]}),false);
+  assert.equal(materialPremultipliedAlpha({shader:'Spine/Skeleton'}),false);
+  const layer=fixture();delete layer.instance.renderOrderStatus;layer.instance.renderQueue=3017;
+  Object.assign(layer.entry.materialBindings.pages[0].materials.normal,{shader:'Spine/Skeleton',keywords:[]});
+  Object.assign(layer.entry.materialBindings.pages[0].materials.multiply,{shader:'Spine/Blend Modes/Skeleton PMA Multiply',keywords:['_STRAIGHT_ALPHA_INPUT']});
+  const before=JSON.stringify(layer.entry);layer.materialMapping=compileMaterialMapping(layer);
+  assert.equal(layer.materialMapping.alphaMapped,true);assert.equal(layer.materialMapping.mixed,false);
+  assert.deepEqual(skeletonDrawSegments(layer).map(row=>[row.queue,row.premultipliedAlpha||false]),[[3017,true],[3017,false],[3017,true]]);
+  assert.equal(JSON.stringify(layer.entry),before);
+});
+test('material alpha input reaches the runtime and restores its previous mode on failure',()=>{
+  const target={premultipliedAlpha:false,slotFilter:null,vertexEffect:null},skeleton={};
+  const renderer={skeletonRenderer:target,drawSkeleton(value,alpha){assert.equal(value,skeleton);assert.equal(alpha,true);target.premultipliedAlpha=alpha;throw new Error('draw failed');}};
+  assert.throws(()=>drawSkeletonSlots(renderer,skeleton,[],undefined,undefined,true),/draw failed/);
+  assert.equal(target.premultipliedAlpha,false);assert.equal(target.slotFilter,null);
+});
 test('material segments follow live blend, attachment and draw order rather than stored submesh positions',()=>{
   const layer=fixture();layer.materialMapping=compileMaterialMapping(layer);assert.equal(layer.materialMapping.reason,undefined);assert.deepEqual(skeletonDrawSegments(layer).map(row=>[row.queue,row.slots]),[[3005,[0]],[3000,[1]],[3005,[2]]]);
   layer.skeleton.drawOrder.reverse();assert.deepEqual(skeletonDrawSegments(layer).map(row=>row.slots),[[2],[1],[0]]);layer.skeleton.drawOrder[1].data.blendMode=0;assert.deepEqual(skeletonDrawSegments(layer).map(row=>row.slots),[[2,1,0]]);
@@ -39,7 +62,7 @@ test('material tint changes only selected draw colors and restores them even whe
   assert.throws(()=>drawSkeletonSlots(renderer,skeleton,[0],{r:4,g:4,b:4,a:.5}),/draw failed/);assert.deepEqual(color,{r:.2,g:.3,b:.4,a:.5});assert.equal(renderer.skeletonRenderer.slotFilter,previous);assert.equal(skeleton.slots[0].color,color);
 });
 test('vertex color power requires the active source keyword and preserves metadata and non-mixed queues',()=>{
-  const layer=fixture(),material={id:'normal',renderQueue:3004,shader:'Spine/Skeleton',keywords:['_VERTEX_COLOR_POW_ON'],properties:{m_Floats:[['_VertexColorPow',2.5]]}};delete layer.instance.renderOrderStatus;layer.instance.renderQueue=3017;layer.entry.materialBindings.pages[0].materials.normal=material;
+  const layer=fixture(),material={id:'normal',renderQueue:3004,shader:'Spine/Skeleton',keywords:['_VERTEX_COLOR_POW_ON','_STRAIGHT_ALPHA_INPUT'],properties:{m_Floats:[['_VertexColorPow',2.5]]}};delete layer.instance.renderOrderStatus;layer.instance.renderQueue=3017;layer.entry.materialBindings.pages[0].materials.normal=material;
   const before=JSON.stringify(layer.entry);layer.materialMapping=compileMaterialMapping(layer);assert.equal(layer.materialMapping.colorPowered,true);assert.deepEqual(skeletonDrawSegments(layer)[0],{material:'normal',queue:3017,slots:[0],vertexColorPower:2.5});assert.equal(JSON.stringify(layer.entry),before);
   assert.equal(materialVertexColorPower({...material,keywords:[]}),undefined);assert.throws(()=>materialVertexColorPower({...material,shader:'Unknown'}),/shader/);assert.throws(()=>materialVertexColorPower({...material,properties:{m_Floats:[['_VertexColorPow',Infinity]]}}),/invalid/);
 });
