@@ -116,6 +116,17 @@ try{
     assert.equal(await page.evaluate(()=>window.mteLibrary.rows.length),buildAssetLibrary({presentations:expanded},library).length);
     for(const name of PACK_CATALOGS){const actual=await page.evaluate(async name=>(await fetch('assets/'+name)).json(),name);assert.deepEqual(actual,catalogues[name],`Imported catalogue differs: ${name}`);}
     await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#skill-role').selectOption(skillRole.id);await page.locator('#open-skill').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.skillDisplay&&!document.querySelector('#open-skill').disabled);await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));console.log('Full converted resource archive imported, matched every indexed file and catalogue, and exported a skill offline',imported);
+    for(const bundle of ['Spines/painting/3016010_spine/original','Spines/story/miya/original','Spines/storyCG/wq_1_nf/wq_1_nf/original']){
+      await page.getByRole('button',{name:'Gallery',exact:true}).click();
+      await selectAsset(page,bundle);
+      await page.waitForFunction(id=>window.mteStudio.groups[0]?.presentation.id===id&&!window.mteEditor.busy,bundle);
+      await page.evaluate(()=>window.mteHost.pause());
+      await page.getByRole('button',{name:'Export',exact:true}).click();
+      await page.locator('#export-format').selectOption('png');
+      const output=await page.evaluate(async()=>{const result=await window.mteExporter.run();return {bytes:result?.blob?.size||0,status:document.querySelector('#export-status').textContent};});
+      assert.ok(output.bytes>1000,JSON.stringify({bundle,...output}));
+      console.log('Original variant exported offline',bundle,output.bytes);
+    }
   }
   await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#pack-remove').click();await page.waitForFunction(()=>window.mteStudio.packReloadRequired);assert.equal(await page.evaluate(()=>window.mteCache.request('PACK_STATUS')),null);assert.deepEqual(errors,[]);console.log(engine+': Local pack checks passed: code-only host, real imported Spine/audio, native images, particle media, original fonts, skill events and offline PNG, atomic replacement, missing-file rejection, cancellation, cross-tab reload, isolated cache clearing and byte ranges',first.result,native,fonts,skill);
 }finally{await context.close();if(launched)await launched.close();await new Promise(resolve=>server.close(resolve));if(profile)await rm(profile,{recursive:true});}
