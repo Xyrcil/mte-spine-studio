@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',patterns=process.argv.slice(3),{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   page.on('console',message=>{if(message.text().startsWith('[region-check]'))console.log(message.text());});
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
-  const result=await page.evaluate(async()=>{
+  const result=await page.evaluate(async patterns=>{
     const {Stage}=await import('/src/engine/stage.js'),{point,colliderContains}=await import('/src/engine/geometry.js'),catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;
     const results=[];
-    for(const presentation of catalog.filter(row=>row.controllers.some(root=>root.data.m_Enabled!==0&&root.data.m_Enabled!==false))){
+    for(const presentation of catalog.filter(row=>(!patterns.length||patterns.some(pattern=>row.id.includes(pattern)))&&row.controllers.some(root=>root.data.m_Enabled!==0&&root.data.m_Enabled!==false))){
       const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const stage=new Stage(canvas,{manual:true});
       try{
         const group=await stage.add(presentation,entries),roots=group.controllers.filter(root=>root.transformBindings),checked=[],occluded=[],inactive=[];
@@ -42,5 +42,5 @@ try{
       }finally{stage.dispose();stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
     }
     return results;
-  });assert.deepEqual(errors,[]);assert.ok(result.length);console.log('Idle-state source collider geometry and transform invariance checked',JSON.stringify({bundles:result.length,regions:result.reduce((n,row)=>n+row.regions,0),sampledHits:result.reduce((n,row)=>n+row.sampledHits,0),noSampleHit:result.filter(row=>row.noSampleHit.length),inactive:result.filter(row=>row.inactive.length)}));
-}finally{await browser.close();}
+  },patterns);assert.deepEqual(errors,[]);assert.ok(result.length);console.log('Idle-state source collider geometry and transform invariance checked',JSON.stringify({engine,bundles:result.length,regions:result.reduce((n,row)=>n+row.regions,0),sampledHits:result.reduce((n,row)=>n+row.sampledHits,0),noSampleHit:result.filter(row=>row.noSampleHit.length),inactive:result.filter(row=>row.inactive.length)}));
+}finally{await close();}

@@ -1,5 +1,11 @@
 import {stationVoiceBinding} from './engine/voice-catalog.js';
 
+export function artworkPreviewView(presentation,appearance,artworkViews){
+  const sourceId=(presentation.sourceBundle||presentation.id).match(/^Spines\/painting\/(\d+)_spine(?:_hx)?$/)?.[1];
+  const view=artworkViews?.views?.find(row=>row.id===appearance.id)||artworkViews?.views?.find(row=>row.id===sourceId);
+  return view?{...view,camera:artworkViews.camera}:undefined;
+}
+
 export function buildAssetLibrary(catalog,library){
   const presentations=new Map(catalog.presentations.filter(p=>(p.instances.length||p.unassignedInstances?.length)&&!p.skillDisplay).map(p=>[p.id,p]));
   const voices=new Set(library.voices.map(v=>String(v.targetId))),voiceIds=new Set(library.voices.map(v=>v.id)),names=new Map(library.characters.map(c=>[String(c.id),c.name]));

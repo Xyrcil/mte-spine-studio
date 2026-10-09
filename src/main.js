@@ -11,7 +11,7 @@ import {createHostApi} from './host-api.js';
 import {createCachePanel} from './cache-panel.js';
 import {createSequencePanel} from './sequence-panel.js';
 import {createCanvasInput} from './canvas-input.js';
-import {createAssetLibrary} from './asset-library.js';
+import {createAssetLibrary,artworkPreviewView} from './asset-library.js';
 import {createResourcePackPanel} from './resource-pack-panel.js';
 import {skillDisplayOptions} from './engine/skill-display.js';
 import {expandStationDrawings} from './engine/station-drawing.js';
@@ -148,7 +148,7 @@ try {
   const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles,libraryData.voices,libraryData.characters);
   const skills=skillDisplayOptions(catalog.presentations,libraryData);catalog.presentations.push(...skills.flatMap(row=>row.presentation?[row.presentation]:[]));
   catalog.presentations=expandStationDrawings(catalog.presentations,libraryData,runtime.entries);
-  for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const sourceId=presentation.id.match(/^Spines\/painting\/(\d+)_spine(?:_hx)?$/)?.[1],views=libraryData.artworkViews?.views,view=views?.find(row=>row.id===appearance.id)||views?.find(row=>row.id===sourceId);if(view)presentation.previewView={...view,camera:libraryData.artworkViews.camera};}}
+  for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const view=artworkPreviewView(presentation,appearance,libraryData.artworkViews);if(view)presentation.previewView=view;}}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
   if(audioResponse.ok){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
