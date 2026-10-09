@@ -55,6 +55,7 @@ function describe(group){
   const effects=(group.effects?.filter(effect=>effect.reason).length||0)+(group.presentation.visualAnimations?.filter(row=>row.type==='AnimationClip'&&!group.nativeAnimations?.some(native=>native.model?.clip.id===row.id)).length||0);
   const regions=group.presentation.hotspots.length+(group.controllers||[]).filter(root=>root.source.id==='hot-spring'||root.source.class==='StationDrawingAnim').reduce((count,root)=>count+root.hotspots.filter(hit=>root.source.id!=='hot-spring'||hit.role).length,0);
   const parts=[...(group.presentation.standalone?['Standalone Spine preview']:[]),`${group.presentation.instances.length} skeleton instances`,`${regions} interaction regions`];
+  parts.push(...(group.presentation.stationDrawingWarnings||[]));
   const inactiveRegions=group.presentation.hotspots.filter(hit=>hit.enabled===0||hit.enabled===false||!group.isActiveTransform(hit.transform)).length;
   if(inactiveRegions)parts.push(`${inactiveRegions} interaction regions disabled in the source configuration`);
   if(group.presentation.previewView)parts.push(group.previewReason?`Source preview unavailable: ${group.previewReason}`:group.presentation.previewView.origin==='archive'?'Archive-client preview configuration':'Legacy-client preview configuration');
@@ -98,7 +99,7 @@ async function loadAsset(label,create,loadedMessage=label){
   finally{if(request===current){request=null;finishAssetLoading();}}
 }
 function selectPortrait(appearance){return loadAsset(appearance.name||appearance.id,signal=>stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,signal,true),'Static portrait loaded');}
-function select(presentation){return loadAsset(presentation.id,signal=>stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true));}
+function select(presentation){return loadAsset(presentation.id,signal=>stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true),presentation.stationDrawingWarnings?.join(' ')||presentation.id);}
 function voicePanel(presentation) {
   createVoicePanel(presentation,libraryData,audio,editor,message,stage);
 }

@@ -7,20 +7,35 @@ export function expandStationDrawings(presentations,library,entries){
   if(!source||!instance)return presentations;
   const result=[...presentations],names=new Map(library.characters.map(row=>[row.id,row.name]));
   for(const drawing of catalogue.drawings){
-    const entry=entries.find(row=>row.id===drawing.skeleton?.id&&row.bundle===drawing.skeleton?.bundle);
-    if(!entry||entry.status!=='parsed'||drawing.warnings.length)continue;
-    const receiver=structuredClone(source),id=`${template.id}/station/${drawing.id}`;
-    if(result.some(row=>row.id===id))continue;
-    receiver.data.id=Number(drawing.id);
-    const bound={...structuredClone(instance),skeletonId:entry.id,status:'parsed',animation:'stand',loop:true};
-    // Initialize replaces the unassigned renderer materials with the selected atlas.
-    delete bound.renderMaterials;delete bound.renderOrderStatus;delete bound.renderQueue;
-    const queues=[...new Set((entry.materialBindings?.pages||[]).flatMap(page=>Object.values(page.materials).map(material=>material.renderQueue)))];
-    if(queues.length===1)bound.renderQueue=queues[0];
-    const roleId=drawing.gospelId||drawing.peopleId,appearanceId=`station-${drawing.id}`;
-    const presentation={...structuredClone(template),id,path:entry.path,resourceBundle:entry.bundle,standalone:false,category:'story',instances:[bound],unassignedInstances:[],nativeBehaviours:[receiver],stationDrawing:structuredClone(drawing),appearanceId,label:[names.get(roleId),drawing.resource,'Station'].filter(Boolean).join(' · ')};
-    result.push(presentation);
-    if(!library.appearances.some(row=>row.id===appearanceId))library.appearances.push({id:appearanceId,bundle:id,characterId:roleId,characterName:names.get(roleId),name:drawing.resource+' · Station',kind:'story',status:'available',spineStatus:'available',displayKind:'spine',stationDrawingId:drawing.id});
+    const primary=entries.find(row=>row.id===drawing.skeleton?.id&&row.bundle===drawing.skeleton?.bundle);
+    if(!primary||primary.status!=='parsed'||drawing.warnings.length)continue;
+    const variants=presentations.filter(row=>!row.stationDrawing&&row.sourceBundle?.toLowerCase()===drawing.skeleton.bundle.toLowerCase());
+    const sources=[{entry:primary},...variants.map(variant=>{const matches=entries.filter(row=>row.bundle===variant.id&&row.name===primary.name);return {variant,entry:matches.length===1?matches[0]:null};})];
+    for(const {entry,variant} of sources){
+      const available=entry?.status==='parsed'&&Array.isArray(entry.animations)?new Set(entry.animations.map(animation=>animation.name)):null;
+      const required=['stand',drawing.defaultExpression,...drawing.pairs.flatMap(pair=>[pair.action,pair.expression])].filter(Boolean),missing=available?[...new Set(required.filter(name=>!available.has(name)))]:[];
+      if(!available||missing.length){
+        if(variant){
+          const index=result.findIndex(row=>row.id===variant.id);
+          const warning=missing.length?`Station mode unavailable: missing ${missing.length===1?'animation':'animations'} ${missing.join(', ')}. Preview and export remain available.`:'Station mode unavailable: the source skeleton could not be resolved. Choose another version.';
+          result[index]={...result[index],stationDrawingWarnings:[...new Set([...(result[index].stationDrawingWarnings||[]),warning])]};
+        }
+        continue;
+      }
+      const receiver=structuredClone(source),baseId=`${template.id}/station/${drawing.id}`,id=variant?`${baseId}/variant/${variant.id}`:baseId;
+      if(result.some(row=>row.id===id))continue;
+      receiver.data.id=Number(drawing.id);
+      const bound={...structuredClone(instance),skeletonId:entry.id,status:'parsed',animation:'stand',loop:true};
+      // Initialize replaces the unassigned renderer materials with the selected atlas.
+      delete bound.renderMaterials;delete bound.renderOrderStatus;delete bound.renderQueue;
+      const queues=[...new Set((entry.materialBindings?.pages||[]).flatMap(page=>Object.values(page.materials).map(material=>material.renderQueue)))];
+      if(queues.length===1)bound.renderQueue=queues[0];
+      const roleId=drawing.gospelId||drawing.peopleId,baseAppearanceId=`station-${drawing.id}`,appearanceId=variant?`${baseAppearanceId}@${variant.id}`:baseAppearanceId;
+      const suffix=variant?variant.sourceVersion==='original'?'Original archive':variant.sourceVersion==null?'Source variant':`Archive variant ${variant.sourceVersion}`:'';
+      const presentation={...structuredClone(template),...(variant?{origin:variant.origin,sourceBundle:variant.id,sourceVersion:variant.sourceVersion,stationVariant:variant.id}:{}),id,path:entry.path,resourceBundle:entry.bundle,standalone:false,category:'story',instances:[bound],unassignedInstances:[],nativeBehaviours:[receiver],stationDrawing:{...structuredClone(drawing),skeleton:{id:entry.id,bundle:entry.bundle}},appearanceId,label:[names.get(roleId),drawing.resource,'Station',suffix].filter(Boolean).join(' · ')};
+      result.push(presentation);
+      if(!library.appearances.some(row=>row.id===appearanceId))library.appearances.push({id:appearanceId,bundle:id,characterId:roleId,characterName:names.get(roleId),name:[drawing.resource,'Station',suffix].filter(Boolean).join(' · '),kind:'story',status:'available',spineStatus:'available',displayKind:'spine',stationDrawingId:drawing.id,...(variant?{variantOf:baseAppearanceId}:{})});
+    }
   }
   return result;
 }

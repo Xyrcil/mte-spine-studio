@@ -4,6 +4,7 @@
 .asset-card{display:grid;grid-template-columns:minmax(0,1fr) 30px;gap:3px}
 .asset-card .asset{min-width:0;padding:9px}.asset-card .asset strong{overflow-wrap:anywhere;word-break:normal}
 .asset-card .asset[aria-pressed=true]{border-color:#d5c295;background:#302e25}
+.asset small.asset-warning{color:#b7bdc7}
 .asset-favorite{padding:5px 0;border-color:transparent;background:transparent;color:#aeb6c4;align-self:start}
 .asset-favorite[aria-pressed=true]{color:#e6d5ac}
 .library-pagination{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:16px}
