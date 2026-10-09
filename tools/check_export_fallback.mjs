@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   for(const mode of ['vp8','no-codecs','no-webgl','webgl2-only','dropped-frames']){
     const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -23,4 +23,4 @@ try{
     }
     assert.deepEqual(errors,[]);await page.close();console.log(`Simulated ${mode} checks passed`);
   }
-}finally{await browser.close();}
+}finally{await close();}

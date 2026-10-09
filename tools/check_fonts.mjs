@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type,'Choose chromium or webkit');
-const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium';
+const {browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async()=>{
@@ -18,4 +18,4 @@ try{
     }return results;
   });
   assert.equal(result.length,5);for(const row of result){assert.equal(row.status,'loaded');assert.ok(row.bytes>(row.name==='PERTIBD'?30_000:9_000_000));assert.ok(row.visible>100);assert.ok(row.width>0);}assert.deepEqual(errors,[]);console.log(engine+': original TMP and Unity Text font files loaded and rendered',result);
-}finally{await browser.close();}
+}finally{await close();}

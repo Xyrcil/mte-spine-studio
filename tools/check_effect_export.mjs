@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -24,4 +24,4 @@ try{
   });
   assert.equal(result.sounds,1);assert.deepEqual(result.warnings,[]);assert.ok(Math.abs(result.eventTime-.06666667014360428)<1e-8);assert.ok(result.rms>.001);assert.ok(result.earlyRms<result.rms*.1);assert.ok(result.relativeError<.3,JSON.stringify(result));assert.equal(result.muted,true);assert.equal(result.hidden,true);assert.ok(result.missingWarnings.includes('Sound unavailable: 301619402_animation'));assert.equal(result.tailSounds,1);assert.ok(result.tailRms>.001,JSON.stringify(result));assert.equal(result.cancelled,true);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),original);assert.deepEqual(errors,[]);
   console.log('Interaction effect export checks passed: event timing, captured tail, decoded repeat, visibility, mute, missing sound and cancellation',result);
-}finally{await browser.close();}
+}finally{await close();}

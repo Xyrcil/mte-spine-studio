@@ -1,8 +1,8 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -39,4 +39,4 @@ try{
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),original);assert.deepEqual(errors,[]);
   for(const variant of result.variants)assert.equal(variant.frames,variant.expected);
   console.log('Sequence export checks passed: recorded scene, exact click sound time, backward seek, identical PNG loops, decoded video/audio and rejected missing regions',result);
-}finally{await browser.close();}
+}finally{await close();}

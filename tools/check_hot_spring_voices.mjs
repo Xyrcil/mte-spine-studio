@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -28,4 +28,4 @@ try{
   await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length===1&&!window.mteEditor.busy);assert.equal(await page.locator('#hot-spring-level').inputValue(),'5');
   await page.evaluate(()=>{const stage=window.mteStudio;stage.paused=false;window.voiceGapResult=stage.interact(stage.canvas.getBoundingClientRect().left+10,stage.canvas.getBoundingClientRect().top+10);});assert.equal(await page.evaluate(()=>window.voiceGapResult.reason),'No interaction region here');
   assert.deepEqual(errors,[]);console.log('Hot spring voice checks passed: six roles, all 30 source level pools, decoded available tracks, real audio/subtitle, object attribution, undo, duplication, import, reload and explicit missing click behavior',media);
-}finally{await browser.close();}
+}finally{await close();}

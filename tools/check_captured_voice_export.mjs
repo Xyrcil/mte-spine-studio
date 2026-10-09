@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForSelector('#voice-panel');await page.getByLabel('Voice track',{exact:true}).selectOption('a_sound_voiceeff_ch');await page.getByRole('button',{name:'Play voice',exact:true}).click();await page.waitForFunction(()=>window.mteAudio.element.currentTime>.2);await page.getByRole('button',{name:'Pause',exact:true}).click();
@@ -16,4 +16,4 @@ try{
     async function pngPixels(voice){const out=await exportMedia({...args,scene:blank,settings:{...args.settings,format:'png',background:'#224466',start:0},capturedVoice:voice}),image=await createImageBitmap(out.blob),canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(40,300,560,45).data;let bright=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>160&&pixels[i+1]>160&&pixels[i+2]>160)bright++;image.close();return bright;}
     return {rms:Math.sqrt(energy/14400),relativeError:Math.sqrt(difference/Math.max(energy,1e-20)),captionBright,muteWorks,pngCaption:await pngPixels(capturedVoice),expiredCaption:await pngPixels(expiredVoice),frames:out.plan.frames};
   });assert.ok(result.rms>.001);assert.ok(result.relativeError<.4,JSON.stringify(result));assert.ok(result.captionBright>100);assert.equal(result.muteWorks,true);assert.ok(result.pngCaption>100);assert.equal(result.expiredCaption,0);assert.equal(result.frames,12);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),original);assert.deepEqual(errors,[]);console.log('Captured voice export checks passed: decoded speech, loop timing, subtitles, mute, PNG, expiration and scene isolation',result);
-}finally{await browser.close();}
+}finally{await close();}

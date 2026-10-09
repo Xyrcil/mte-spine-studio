@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
@@ -84,4 +84,4 @@ try{
   });assert.deepEqual(roundTrip.after,roundTrip.before);assert.equal(roundTrip.sounds,0);assert.equal(roundTrip.playing,true);
   assert.deepEqual(errors,[]);
   console.log('Real interaction checks passed: moving hotspots, coordinated tracks and event transitions');
-}finally{await browser.close();}
+}finally{await close();}

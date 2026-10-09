@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true}),base=process.env.MTE_CACHE_TEST_URL||'http://127.0.0.1:4174/';
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium'),base=process.env.MTE_CACHE_TEST_URL||'http://127.0.0.1:4174/';
 try{
   const context=await browser.newContext({viewport:{width:1600,height:1200}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base);await page.waitForFunction(()=>window.mteStudio?.groups.length&&navigator.serviceWorker.controller,null,{timeout:60000});await page.locator('#pause').click();
@@ -21,4 +21,4 @@ try{
   await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-use-sequence').check();for(const [key,value] of [['width','160'],['height','120'],['end','1'],['fps','10']])await page.locator(`#export-${key}`).fill(value);
   const exported=await page.evaluate(async()=>{const result=await window.mteExporter.run();if(!result)throw new Error(document.querySelector('#export-status').textContent);return {frames:result.plan.frames,bytes:result.blob.size,voices:result.interactionVoices};});assert.equal(exported.frames,10);assert.equal(exported.voices,1);assert.ok(exported.bytes>1000);assert.deepEqual(errors,[]);
   console.log('Recorded-sequence cache checks passed: unrelated current scene, recorded Chinese voice, explicit preparation with automatic caching disabled, offline reload, replay and media export',exported);
-}finally{await browser.close();}
+}finally{await close();}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForSelector('#voice-panel');
@@ -15,4 +15,4 @@ try{
   const value=await page.locator('#export-audio option').nth(1).getAttribute('value');await page.locator('#export-audio').selectOption(value);
   for(const [key,value] of [['width','160'],['height','120'],['fps','10'],['end','1']])await page.locator(`#export-${key}`).fill(value);
   const result=await page.evaluate(async()=>{const out=await window.mteExporter.run(),{Input,BlobSource,ALL_FORMATS,AudioSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs');if(!out)throw new Error(document.querySelector('#export-status').textContent);const input=new Input({source:new BlobSource(out.blob),formats:ALL_FORMATS}),track=await input.getPrimaryAudioTrack(),sample=await new AudioSampleSink(track).getSample(.5),data=sample.toAudioBuffer().getChannelData(0),rms=Math.sqrt(data.reduce((sum,v)=>sum+v*v,0)/data.length);sample.close();input.dispose();return {frames:out.plan.frames,rms};});assert.equal(result.frames,10);assert.ok(result.rms>.001);assert.deepEqual(errors,[]);console.log('Story audio browser checks passed: all source rows, search, missing language, subtitle, playback and encoded video',result);
-}finally{await browser.close();}
+}finally{await close();}

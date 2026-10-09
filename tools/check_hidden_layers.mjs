@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type);const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async()=>{
@@ -20,4 +20,4 @@ try{
       return checked;
     }finally{stage.dispose();}
   });assert.ok(result.length>=6);assert.deepEqual(errors,[]);console.log(engine+': all source-hidden layers load, rebind, restore legacy scenes and export PNG',result);
-}finally{await browser.close();}
+}finally{await close();}

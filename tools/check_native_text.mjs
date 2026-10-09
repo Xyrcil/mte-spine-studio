@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type,'Choose chromium or webkit');
-const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium';
+const {browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1200,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   page.on('console',message=>{if(message.text().startsWith('[native-text-check]'))console.log(message.text());});
@@ -33,4 +33,4 @@ try{
     }finally{stage.dispose();canvas.remove();}
   });
   assert.ok(result.slots>=2);assert.ok(result.changed>100);assert.ok(result.gradientDifference>100,JSON.stringify(result));assert.ok(result.glyphTextures>3);assert.equal(result.restored,true);assert.ok(result.exportError<=1,JSON.stringify(result));assert.equal(result.wordRows,2);assert.ok(result.wordLetters>10);assert.ok(result.wordExportError<=1,JSON.stringify(result));assert.deepEqual(errors,[]);console.log(engine+': original native text channels, gradients and generated letter rows, pause, restore and PNG parity passed',result);
-}finally{await browser.close();}
+}finally{await close();}

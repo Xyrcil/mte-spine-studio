@@ -106,11 +106,39 @@ test('portrait references reject traversal and do not embed asset bytes',()=>{
   const checked=validateScene(value);assert.equal(checked.objects[0].asset,'portraits/role/-123.png');assert.equal(checked.objects[0].src,undefined);
   value.objects[0].asset='portraits/../secret/1.png';assert.throws(()=>validateScene(value),/portrait asset/);
 });
+test('local scene deletion rejects aborted transactions and waits for committed deletion',async()=>{
+  const original=globalThis.indexedDB,transactions=[];
+  globalThis.indexedDB={open(){const request={};queueMicrotask(()=>{request.result={transaction(store,mode){assert.equal(store,'scenes');assert.equal(mode,'readwrite');const tx={objectStore(){return {delete(key){assert.equal(key,'Saved scene');}};}};transactions.push(tx);return tx;}};request.onsuccess();});return request;}};
+  const nextTransaction=async()=>{for(let turn=0;turn<20;turn++){await Promise.resolve();if(transactions.length)return transactions.shift();}assert.fail('Deletion transaction did not start');};
+  try{
+    const {deleteLocalScene}=await import('../src/engine/scene.js?storage-deletion');
+    let pending=deleteLocalScene('Saved scene'),tx=await nextTransaction();
+    assert.equal(typeof tx.onabort,'function');tx.onabort();await assert.rejects(pending,/Scene deletion aborted/);
+    pending=deleteLocalScene('Saved scene');tx=await nextTransaction();tx.error=new Error('Storage connection closed');tx.onabort();await assert.rejects(pending,/Storage connection closed/);
+    let settled=false;pending=deleteLocalScene('Saved scene').then(()=>{settled=true;});tx=await nextTransaction();await Promise.resolve();assert.equal(settled,false);tx.oncomplete();await pending;assert.equal(settled,true);
+    pending=deleteLocalScene('Saved scene');tx=await nextTransaction();tx.error=new Error('Delete request failed');tx.onerror();await assert.rejects(pending,/Delete request failed/);
+  }finally{if(original===undefined)delete globalThis.indexedDB;else globalThis.indexedDB=original;}
+});
+test('scene reads wait for completed transactions and reject aborts before or after request success',async()=>{
+  const original=globalThis.indexedDB,transactions=[];
+  globalThis.indexedDB={open(){const request={};queueMicrotask(()=>{request.result={transaction(){const read={},tx={read,objectStore(){return {get(){return read;},getAllKeys(){return read;}};}};transactions.push(tx);return tx;}};request.onsuccess();});return request;}};
+  const nextTransaction=async()=>{for(let turn=0;turn<20;turn++){await Promise.resolve();if(transactions.length)return transactions.shift();}assert.fail('Read transaction did not start');};
+  try{
+    const {loadLocalScene,listLocalScenes}=await import('../src/engine/scene.js?storage-reads');
+    for(const [operation,result,label] of [[loadLocalScene,scene(),'load'],[listLocalScenes,['autosave','Saved scene'],'listing']]){
+      for(const afterSuccess of [false,true]){const pending=operation(),tx=await nextTransaction();assert.equal(typeof tx.onabort,'function');if(afterSuccess){tx.read.result=result;tx.read.onsuccess?.();}tx.onabort();await assert.rejects(pending,new RegExp('Scene '+label+' aborted'));}
+      let settled=false;const pending=operation().then(value=>{settled=true;return value;}),tx=await nextTransaction();tx.read.result=result;tx.read.onsuccess?.();await Promise.resolve();assert.equal(settled,false);tx.oncomplete();assert.deepEqual(await pending,label==='load'?scene():['Saved scene']);
+      const failed=operation(),errorTx=await nextTransaction();errorTx.error=new Error('Storage read failed');errorTx.onerror();await assert.rejects(failed,/Storage read failed/);
+    }
+    let pending=loadLocalScene(),tx=await nextTransaction();tx.read.result=undefined;tx.oncomplete();assert.equal(await pending,null);
+    pending=loadLocalScene();tx=await nextTransaction();tx.read.result={schema:99};tx.oncomplete();await assert.rejects(pending,/Unsupported scene format/);
+  }finally{if(original===undefined)delete globalThis.indexedDB;else globalThis.indexedDB=original;}
+});
 test('local scene storage retries failed opens and reconnects after connection closure',async()=>{
   const original=globalThis.indexedDB,connections=[];let opens=0,closes=0;
   globalThis.indexedDB={open(){const request={};opens++;queueMicrotask(()=>{
     if(opens===1){request.error=new Error('Temporary storage failure');request.onerror();return;}
-    const db={close(){closes++;},transaction(){return {objectStore(){return {getAllKeys(){const result={result:['autosave','Saved scene']};queueMicrotask(()=>result.onsuccess());return result;}};}};}};connections.push(db);request.result=db;request.onsuccess();
+    const db={close(){closes++;},transaction(){const tx={objectStore(){return {getAllKeys(){const result={result:['autosave','Saved scene']};queueMicrotask(()=>{result.onsuccess?.();tx.oncomplete();});return result;}};}};return tx;}};connections.push(db);request.result=db;request.onsuccess();
   });return request;}};
   try{
     const {listLocalScenes}=await import('../src/engine/scene.js?storage-recovery');

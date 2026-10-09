@@ -41,6 +41,22 @@ test('scene file operations honor cancellation before and during processing',asy
   const exportCancel=new AbortController();await assert.rejects(createSceneFile(scene(),{format:'zip',signal:exportCancel.signal,onProgress:()=>exportCancel.abort()}),error=>error.name==='AbortError');
   const zip=await createSceneFile(scene(),{format:'zip'}),importCancel=new AbortController();await assert.rejects(readSceneFile(zip.blob,{signal:importCancel.signal,onProgress:()=>importCancel.abort()}),error=>error.name==='AbortError');
 });
+test('cancelling a stalled scene ZIP read stops its stream and releases its reader',async()=>{
+  const {blob}=await createSceneFile(scene(),{format:'zip'}),controller=new AbortController();let cancelled=0,pulled;
+  const ready=new Promise(resolve=>{pulled=resolve;}),stream=new ReadableStream({pull(){pulled();},cancel(){cancelled++;}},{highWaterMark:0});
+  blob.stream=()=>stream;
+  const pending=readSceneFile(blob,{signal:controller.signal});await ready;controller.abort();
+  let timer;try{await assert.rejects(Promise.race([pending,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Cancelled import did not stop')),1000);})]),error=>error.name==='AbortError');}
+  finally{clearTimeout(timer);}
+  assert.equal(cancelled,1);assert.equal(stream.locked,false);
+});
+test('scene ZIP stream locks are released after completion and read failure',async()=>{
+  const {blob}=await createSceneFile(scene(),{format:'zip'}),bytes=new Uint8Array(await blob.arrayBuffer());
+  for(const fail of [false,true]){const stream=new ReadableStream({start(control){if(fail)control.error(new Error('File read failed'));else{control.enqueue(bytes);control.close();}}});blob.stream=()=>stream;
+    if(fail)await assert.rejects(readSceneFile(blob),/File read failed/);else assert.deepEqual(await readSceneFile(blob),validateScene(scene()));
+    assert.equal(stream.locked,false);
+  }
+});
 test('JSON too large to reimport selects a deduplicated ZIP automatically',async()=>{
   const bytes=new Uint8Array(2*1048576);bytes.set(Uint8Array.from(atob(png),char=>char.charCodeAt(0)));const src='data:image/png;base64,'+Buffer.from(bytes).toString('base64'),value=scene();value.objects=Array.from({length:25},(_,index)=>({...image(String(index)),src}));
   await assert.rejects(createSceneFile(value,{format:'json'}),/choose ZIP/);const file=await createSceneFile(value);assert.equal(file.extension,'zip');assert.equal(file.images,1);assert.ok(file.blob.size<3*1048576);assert.deepEqual(await readSceneFile(file.blob),validateScene(value));

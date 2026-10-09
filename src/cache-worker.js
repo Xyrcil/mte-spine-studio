@@ -3,10 +3,16 @@ import {verifyPackCache} from './engine/resource-pack.js';
 const scope=self.registration.scope,prefix=`mte-studio:${new URL(scope).pathname}:`,assetName=prefix+'assets:1',shellName=prefix+'shell:'+__MTE_BUILD_ID__,dbName=prefix+'metadata';
 const MAX_ITEM=64*1024*1024,jobs=new Map();let dbPromise,settingsPromise,packPromise,writes=Promise.resolve();
 const queue=action=>writes=writes.catch(()=>{}).then(action);
-function db(){return dbPromise??=new Promise((resolve,reject)=>{const request=indexedDB.open(dbName,1);request.onupgradeneeded=()=>{request.result.createObjectStore('entries',{keyPath:'url'});request.result.createObjectStore('settings',{keyPath:'key'});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
+function db(){
+  if(!dbPromise){
+    const opening=new Promise((resolve,reject)=>{const request=indexedDB.open(dbName,1);request.onupgradeneeded=()=>{request.result.createObjectStore('entries',{keyPath:'url'});request.result.createObjectStore('settings',{keyPath:'key'});};request.onsuccess=()=>{const database=request.result,forget=()=>{if(dbPromise===pending){dbPromise=undefined;settingsPromise=undefined;packPromise=undefined;}};database.onversionchange=()=>{database.close();forget();};database.onclose=forget;resolve(database);};request.onerror=()=>reject(request.error||new Error('Cache storage could not be opened'));});
+    const pending=opening.catch(error=>{if(dbPromise===pending)dbPromise=undefined;throw error;});dbPromise=pending;
+  }
+  return dbPromise;
+}
 async function record(store,method,value){const database=await db();return new Promise((resolve,reject)=>{const transaction=database.transaction(store,method==='get'||method==='getAll'?'readonly':'readwrite'),request=transaction.objectStore(store)[method](value);let result;request.onsuccess=()=>result=request.result;transaction.oncomplete=()=>resolve(result);transaction.onerror=()=>reject(transaction.error);transaction.onabort=()=>reject(transaction.error||new Error('Cache storage transaction failed'));});}
-function settings(){return settingsPromise??=record('settings','get','config').then(row=>row||{key:'config',enabled:true,budget:256*1024*1024});}
-function localPack(){return packPromise??=record('settings','get','pack').then(row=>row||null);}
+function settings(){if(!settingsPromise){const pending=record('settings','get','config').then(row=>row||{key:'config',enabled:true,budget:256*1024*1024}).catch(error=>{if(settingsPromise===pending)settingsPromise=undefined;throw error;});settingsPromise=pending;}return settingsPromise;}
+function localPack(){if(!packPromise){const pending=record('settings','get','pack').then(row=>row||null).catch(error=>{if(packPromise===pending)packPromise=undefined;throw error;});packPromise=pending;}return packPromise;}
 async function packResponse(url,header){const pack=await localPack();if(!pack)return null;const response=await (await caches.open(pack.name)).match(url);if(!response)return new Response('File absent from imported resource pack',{status:404,headers:{'content-type':'text/plain'}});return header?cachedRange(response,header):response;}
 async function notify(message){for(const client of await self.clients.matchAll({type:'window'}))client.postMessage({type:'CACHE_NOTICE',message});}
 async function packChanged(){for(const client of await self.clients.matchAll({type:'window'}))if(client.url.startsWith(scope))client.postMessage({type:'PACK_CHANGED'});}
@@ -18,7 +24,7 @@ async function store(url,response,kind,explicit=false){
   if(kind!=='shell'&&!explicit&&!(await settings()).enabled)return false;
   if(!await valid(response,url))return false;const data=await bytes(response.clone());if(!data.length)return false;
   return queue(async()=>{
-    const config=await settings();if(kind!=='shell'&&!config.enabled&&!explicit)return false;
+    const config=kind==='shell'?null:await settings();if(kind!=='shell'&&!config.enabled&&!explicit)return false;
     const cache=await caches.open(kind==='shell'?shellName:assetName),previous=await cache.match(url);
     if(kind==='catalog'&&previous){const oldTag=previous.headers.get('etag'),newTag=response.headers.get('etag'),same=oldTag&&newTag?oldTag===newTag:await previous.clone().text()===new TextDecoder().decode(data);if(!same)await removeUrls((await record('entries','getAll')).filter(row=>row.kind==='asset').map(row=>row.url));}
     const old=kind==='shell'?null:await record('entries','get',url);
@@ -30,21 +36,28 @@ async function store(url,response,kind,explicit=false){
 }
 async function cachedRange(response,header){const blob=await response.blob(),bounds=rangeBounds(header,blob.size);if(bounds===undefined)return new Response(blob,{headers:response.headers});const headers=new Headers(response.headers);headers.set('accept-ranges','bytes');if(!bounds){headers.set('content-range',`bytes */${blob.size}`);headers.set('content-length','0');return new Response(null,{status:416,headers});}headers.set('content-range',`bytes ${bounds.start}-${bounds.end}/${blob.size}`);headers.set('content-length',String(bounds.end-bounds.start+1));return new Response(blob.slice(bounds.start,bounds.end+1),{status:206,headers});}
 async function handle(request,event,kind){
-  if(kind!=='shell'){const response=await packResponse(request.url,request.headers.get('range'));if(response)return response;}
-  const url=request.url,config=await settings(),cache=await caches.open(kind==='shell'?shellName:assetName),cached=await cache.match(url),metadata=kind==='shell'?null:await record('entries','get',url);
+  const url=request.url;let config,cache,cached,metadata;
+  try{
+    if(kind!=='shell'){const response=await packResponse(url,request.headers.get('range'));if(response)return response;}
+    config=kind==='shell'?{enabled:false}:await settings();cache=await caches.open(kind==='shell'?shellName:assetName);cached=await cache.match(url);metadata=kind==='shell'?null:await record('entries','get',url);
+  }catch{
+    event.waitUntil(notify('Local resource storage is unavailable; using online resources when possible').catch(()=>{}));
+    if(cached)return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;
+    try{return await fetch(new Request(request,{cache:'no-cache'}));}catch{return new Response('Resource unavailable: local storage could not be read and the network request failed.',{status:503,headers:{'content-type':'text/plain'}});}
+  }
   if(cached&&kind==='asset'&&Date.now()-(metadata?.checked||0)<30000){event.waitUntil(queue(()=>record('entries','put',{...metadata,used:Date.now()})).catch(()=>{}));return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;}
   try{
     const response=await fetch(new Request(request,{cache:'no-cache'}));
     if(response.status>=500)throw new Error('Resource server is unavailable');
     if(response.status===200&&!await valid(response,url)){if(cached){await notify('An invalid resource response was ignored; using the cached copy');return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;}return response;}
-    if(response.status===200){if(kind==='catalog')await store(url,response,kind);else event.waitUntil(store(url,response,kind).catch(()=>{}));}
+    if(response.status===200){if(kind==='catalog'){try{await store(url,response,kind);}catch{event.waitUntil(notify('Resource caching failed; the online catalogue remains available').catch(()=>{}));}}else event.waitUntil(store(url,response,kind).catch(()=>{}));}
     if(response.status===206&&config.enabled){const total=Number(response.headers.get('content-range')?.split('/').at(-1));if(total>0&&total<=MAX_ITEM)event.waitUntil(fetch(url,{cache:'no-cache'}).then(full=>store(url,full,kind)).catch(()=>{}));}
     return response;
   }catch(error){if(cached)return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;return new Response('Resource unavailable offline. Open it online or prepare the scene cache first.',{status:503,headers:{'content-type':'text/plain'}});}
 }
 async function warmShell(){const url=new URL('app-shell.json',scope).href,response=await fetch(url,{cache:'no-cache'});if(!response.ok)throw new Error('Offline application manifest unavailable');const manifest=await response.clone().json();if(manifest.schema!==1||!Array.isArray(manifest.files))throw new Error('Invalid offline application manifest');for(const file of manifest.files){const target=new URL(file,scope).href;if(cacheKind(target,scope)!=='shell')throw new Error('Invalid application cache resource');const item=target===url?response:await fetch(target,{cache:'no-cache'});if(!item.ok||!await store(target,item,'shell'))throw new Error('Offline application resource unavailable');}}
 self.addEventListener('install',event=>event.waitUntil(warmShell()));
-self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const name of await caches.keys())if(name.startsWith(prefix+'shell:')&&name!==shellName)await caches.delete(name);await reconcile();await self.clients.claim();})()));
+self.addEventListener('activate',event=>event.waitUntil((async()=>{try{for(const name of await caches.keys())if(name.startsWith(prefix+'shell:')&&name!==shellName)await caches.delete(name);await reconcile();}catch{await notify('Local resource storage is unavailable; online resources remain available').catch(()=>{});}await self.clients.claim();})()));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;const kind=cacheKind(event.request.url,scope);if(kind)event.respondWith(handle(event.request,event,kind));});
 self.addEventListener('message',event=>{
   if(!event.source?.url?.startsWith(scope))return;const message=event.data,port=event.ports[0];if(!message||!port)return;

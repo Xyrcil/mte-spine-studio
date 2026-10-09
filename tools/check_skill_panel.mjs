@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type);const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteSkills&&window.mteStudio.groups.length&&!window.mteEditor.busy);await page.locator('#pause').click();
   await page.locator('#skill-role').selectOption('3000001');await page.locator('#open-skill').click();await page.waitForFunction(()=>window.mteStudio.groups.length===1&&window.mteStudio.groups[0].presentation.skillDisplay);await page.waitForFunction(()=>!document.querySelector('#open-skill').disabled);assert.ok(!(await page.locator('#status').textContent()).includes('not a function'));
@@ -13,4 +13,4 @@ try{
   assert.ok(await page.locator('#voice-list option').count()>1);await page.getByRole('button',{name:'Export',exact:true}).click();assert.ok(await page.locator('#export-audio option').count()>1);await page.getByRole('button',{name:'Gallery',exact:true}).click();
   await page.locator('#skill-role').selectOption('100101');await page.locator('#skill-list').selectOption({index:0});assert.equal(await page.locator('#open-skill').isDisabled(),true);assert.match(await page.locator('#skill-availability').textContent(),/unavailable|ambiguous/);
   assert.deepEqual(errors,[]);console.log(engine+': skill selector, missing-resource feedback, replay undo and reload recovery passed',result);
-}finally{await browser.close();}
+}finally{await close();}

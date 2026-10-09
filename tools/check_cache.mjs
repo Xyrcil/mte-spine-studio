@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 const base=process.env.MTE_CACHE_TEST_URL||'http://127.0.0.1:4174/';
 try{
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -15,4 +15,4 @@ try{
   await context.setOffline(false);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
   const lru=await page.evaluate(async()=>{await window.mteCache.request('CONFIG',{enabled:true,budget:64*1048576});const root=new URL('./',location.href),index=await fetch(new URL('assets/audio-index.json',root)).then(r=>r.json()),urls=index.entries.filter(entry=>entry.category==='a_sound_bgm'&&!entry.errors.length&&entry.clips[0]?.duration>=60&&entry.clips[0]?.duration<=300).sort((a,b)=>b.clips[0].duration-a.clips[0].duration).slice(0,60).map(entry=>new URL('assets/'+entry.clips[0].path,root).href);let overflow='';try{await window.mteCache.request('PREFETCH',{id:crypto.randomUUID(),urls});}catch(error){overflow=error.message;}const status=await window.mteCache.refresh(),name=(await caches.keys()).find(name=>name.endsWith(':assets:1')),cache=await caches.open(name);return {status,overflow,firstPresent:Boolean(await cache.match(urls[0])),lastPresent:Boolean(await cache.match(urls.at(-1))),catalogPresent:Boolean(await cache.match(new URL('assets/library.json',root).href)),count:urls.length};});assert.ok(lru.count>=20);assert.match(lru.overflow,/exceed the cache budget/);assert.ok(lru.status.bytes<=64*1048576);assert.equal(lru.firstPresent,false);assert.equal(lru.lastPresent,true);assert.equal(lru.catalogPresent,true);assert.deepEqual(errors,[]);
   console.log('Production cache checks passed: offline reload, audio/video export, byte ranges, 64 MiB LRU, catalogue pinning and isolated clearing',{base,before,lru});
-}finally{await browser.close();}
+}finally{await close();}

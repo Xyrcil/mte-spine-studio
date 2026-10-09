@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium,webkit} from '@playwright/test';
-const engine=process.argv[2]||'chromium',type={chromium,webkit}[engine];assert.ok(type,'Choose chromium or webkit');
-const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+import {launchTestBrowser} from './test_browser.mjs';
+const engine=process.argv[2]||'chromium';
+const {browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
   const result=await page.evaluate(async(roleId)=>{
@@ -37,4 +37,4 @@ try{
     }finally{stage.dispose();canvas.remove();}
   },{id:process.argv[3]||'3000001',full:process.argv[4]==='full',video:process.argv[5]==='video'});
   assert.ok(result.exportError<=1,JSON.stringify(result));assert.deepEqual(errors,[]);console.log(engine+': real skill portrait sizing, paired layers, restore, PNG and duplicate isolation passed',result);
-}finally{await browser.close();}
+}finally{await close();}

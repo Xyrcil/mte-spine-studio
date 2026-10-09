@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
@@ -20,4 +20,4 @@ try{
   await page.getByRole('button',{name:'Play',exact:true}).click();await page.waitForFunction(()=>[...window.mteAudio.ambients.values()].every(channel=>!channel.element.paused));
   await page.getByRole('button',{name:'Gallery',exact:true}).click();await selectAsset(page,'Spines/painting/3014027_spine');await page.waitForFunction(()=>window.mteStudio.groups.length===1&&window.mteAudio.ambients.size===0);
   assert.deepEqual(errors,[]);console.log('Ambient checks passed: real skin sound, independent music, pause/resume, duplication, save/import/reload, mute and cleanup');
-}finally{await browser.close();}
+}finally{await close();}

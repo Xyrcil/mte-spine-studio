@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -13,4 +13,4 @@ try{
     const audioAbsent=!(await input.getPrimaryAudioTrack());input.dispose();
     const png=await exportMedia({scene,catalog:[],entries:[],imageAssets:new Map(),sourceAspect:640/360,settings:{...settings,format:'png',audioOffset:0},subtitleClip}),bitmap=await createImageBitmap(png.blob);const pngSize=[bitmap.width,bitmap.height];bitmap.close();return {regions,audioAbsent,pngSize};
   });assert.equal(result.regions[0].bright,0);assert.equal(result.regions[0].dark,0);assert.ok(result.regions[1].bright>100);assert.ok(result.regions[1].dark>1000);assert.equal(result.audioAbsent,true);assert.deepEqual(result.pngSize,[640,360]);assert.deepEqual(errors,[]);console.log('Subtitle export checks passed: decoded Chinese caption, voice offset, muted video and PNG',result);
-}finally{await browser.close();}
+}finally{await close();}

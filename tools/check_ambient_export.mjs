@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteEditor&&!window.mteEditor.busy&&window.mteStudio.groups.length);
@@ -20,4 +20,4 @@ try{
     return {rms,relativeError,silent,unchanged:JSON.stringify(scene)===JSON.stringify(window.mteEditor.snapshot()),frames:out.plan.frames};
   });
   assert.ok(result.rms>.001);assert.ok(result.relativeError<.25,JSON.stringify(result));assert.equal(result.silent,true);assert.equal(result.unchanged,true);assert.equal(result.frames,20);assert.deepEqual(errors,[]);console.log('Ambient export checks passed',result);
-}finally{await browser.close();}
+}finally{await close();}

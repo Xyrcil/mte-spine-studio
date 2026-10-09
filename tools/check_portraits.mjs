@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
@@ -27,4 +27,4 @@ try{
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),scene);
   await page.locator('#category').selectOption('portrait');assert.ok(Number((await page.locator('#library-count').textContent()).split(' ')[0])>=169);assert.equal(await page.locator('#assets img').count(),24);
   assert.deepEqual(errors,[]);console.log('Portrait browser checks passed: native size, missing-Spine label, voice, mixed scene, duplication, import failure and reload');
-}finally{await browser.close();}
+}finally{await close();}

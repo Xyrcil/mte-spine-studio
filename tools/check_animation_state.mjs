@@ -1,7 +1,7 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
-const browser=await chromium.launch({channel:'chrome',headless:true});
+import {launchTestBrowser} from './test_browser.mjs';
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
@@ -23,4 +23,4 @@ try{
     const invalid=structuredClone(scene);invalid.objects[0].x=999;invalid.objects[0].layers[0].animationState.entries.at(-1).name='Unavailable animation';let rejected=false;try{await original.restore(invalid,catalog,entries);}catch{rejected=true;}
     return {mixEntries:scene.objects[0].layers.map(layer=>layer.animationState.entries.length),error,futureError,pixelError,exportPixelError,frozen,sounds,rejected,originalX:original.groups[0].x};
   });console.log(result);assert.ok(result.mixEntries.every(count=>count>=2));assert.ok(result.error<1e-8&&result.futureError<1e-8);assert.equal(result.pixelError,0);assert.equal(result.exportPixelError,0);assert.equal(result.frozen,true);assert.equal(result.sounds,0);assert.equal(result.rejected,true);assert.equal(result.originalX,0);assert.deepEqual(errors,[]);
-}finally{await browser.close();}
+}finally{await close();}

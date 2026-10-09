@@ -1,8 +1,8 @@
 import {selectAsset} from './select_asset.mjs';
 import assert from 'node:assert/strict';
-import {chromium} from '@playwright/test';
+import {launchTestBrowser} from './test_browser.mjs';
 
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const {browser,close}=await launchTestBrowser('chromium');
 try{
   const page=await browser.newPage({viewport:{width:1600,height:1200}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -49,4 +49,4 @@ try{
   assert.ok(result.replacementError<.3,JSON.stringify(result));
   assert.deepEqual(result.missing.exportWarnings,result.missing.expectedWarnings);assert.deepEqual(result.missing.cacheWarnings,result.missing.expectedWarnings);assert.equal(result.missing.exportVoices,0);
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),original);assert.deepEqual(errors,[]);console.log('Scheduled voice export checks passed: Chinese skin voices, exact timestamps, interruption, decoded audio, caption-only PNG and muted subtitles',result);
-}finally{await browser.close();}
+}finally{await close();}

@@ -60,9 +60,10 @@ export async function readSceneFile(file,{signal,onProgress=()=>{}}={}){
       check(signal);const row=directory.get(entry.name);if(!row||seen.has(entry.name)||entry.compression!==row.method)throw new Error('Scene ZIP entries do not match its directory');seen.add(entry.name);active.add(entry);const chunks=[];let size=0,crc=0xffffffff;
       entry.ondata=(failure,data,final)=>{if(failure){error=failure;return;}try{check(signal);size+=data.length;total+=data.length;if(size>row.size||total>SCENE_FILE_LIMITS.decoded)throw new Error('Scene ZIP expanded beyond its declared size');crc=crcStep(crc,data);chunks.push(data);if(final){if(size!==row.size||((crc^0xffffffff)>>>0)!==row.crc)throw new Error('Scene ZIP entry is damaged');const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}contents.set(entry.name,bytes);chunks.length=0;active.delete(entry);onProgress({phase:'importing',files:contents.size,total:directory.size,bytes:total});}}catch(reason){error=reason;entry.terminate();}};entry.start();
     }catch(reason){error=reason;}
-  });unzip.register(UnzipInflate);const reader=file.stream().getReader();
+  });unzip.register(UnzipInflate);const reader=file.stream().getReader(),cancelRead=()=>{reader.cancel().catch(()=>{});};
+  signal?.addEventListener('abort',cancelRead,{once:true});
   try{
-    while(true){check(signal);if(error)throw error;const {done,value}=await reader.read();unzip.push(value||new Uint8Array(),done);if(error)throw error;if(done)break;await yieldBrowser();}
+    while(true){check(signal);if(error)throw error;const {done,value}=await reader.read();check(signal);unzip.push(value||new Uint8Array(),done);if(error)throw error;if(done)break;await yieldBrowser();}
     if(active.size||contents.size!==directory.size)throw new Error('Scene ZIP ended before its resources were read');
     const manifest=JSON.parse(strFromU8(contents.get('scene.json')));if(manifest?.format!=='mte-scene'||manifest.schema!==1||!Array.isArray(manifest.scene?.objects))throw new Error('Unsupported scene ZIP manifest');
     const scene=manifest.scene,sources=new Map(),used=new Set(['scene.json']);
@@ -70,5 +71,5 @@ export async function readSceneFile(file,{signal,onProgress=()=>{}}={}){
       check(signal);const path=object.embeddedImage;if(typeof path!=='string'||!imagePath.test(path)||object.src!==undefined)throw new Error('Invalid scene image reference');const bytes=contents.get(path),type=path.split('.').at(-1);if(!bytes||!rasterHeader(bytes,type))throw new Error('Scene image is missing or invalid');if(!sources.has(path)){sources.set(path,imageSource(bytes,type));await yieldBrowser();}object.src=sources.get(path);delete object.embeddedImage;used.add(path);
     }
     if(used.size!==contents.size)throw new Error('Scene ZIP contains unreferenced resources');check(signal);return validateScene(scene);
-  }finally{for(const entry of active)entry.terminate();await reader.cancel().catch(()=>{});}
+  }finally{signal?.removeEventListener('abort',cancelRead);for(const entry of active)entry.terminate();await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
