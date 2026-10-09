@@ -112,7 +112,11 @@ def installed_scene_version(key, version, presentations):
     primary = next((row for row in presentations if row["id"].lower() == key.lower()), None)
     if primary:
         return primary
-    return next((row for row in presentations if row.get("sourceBundle", "").lower() == key.lower() and row.get("sourceVersion") == version), None)
+    exact = next((row for row in presentations if row.get("sourceBundle", "").lower() == key.lower() and row.get("sourceVersion") == version), None)
+    if exact:
+        return exact
+    originals = [row for row in presentations if row.get("sourceBundle", "").lower() == key.lower() and row.get("sourceVersion") == "original"] if version == 1 else []
+    return originals[0] if len(originals) == 1 else None
 
 
 def compare_scene_metadata(archive, entries, catalog_path, requested, python_libs):
@@ -151,6 +155,114 @@ def compare_scene_metadata(archive, entries, catalog_path, requested, python_lib
     print(json.dumps({"scope": "scene-metadata-only", "summary": dict(counts)}), flush=True)
     if counts["failed"]:
         raise RuntimeError("Some original scene metadata could not be compared")
+
+
+def skeleton_media_changes(extractor, installed, root, load_image=None):
+    from extract_assets import atlas_pages
+    if load_image is None:
+        from PIL import Image
+        load_image = Image.open
+    by_id = {entry["id"]: entry for entry in installed}
+    found, changes = set(), []
+    def local(entry, path):
+        location = (root / entry["path"] / path).resolve()
+        location.relative_to(root.resolve())
+        return location
+    readers = list(extractor.objects)
+    for reader in readers:
+        if reader.type.name != "MonoBehaviour":
+            continue
+        tree = extractor.tree(reader)
+        pointer = tree.get("skeletonDataAsset", {})
+        if pointer.get("m_FileID") and pointer.get("m_PathID"):
+            target = extractor.resolve(reader, pointer)
+            if target.type.name != "MonoBehaviour" or "skeletonJSON" not in extractor.tree(target):
+                raise ValueError("External skeleton reference does not resolve to a SkeletonDataAsset")
+            matches = [item for item in readers if item.path_id == target.path_id]
+            if any(item.assets_file is not target.assets_file for item in matches):
+                raise ValueError("External skeleton ID collides with a different serialized file")
+            if not matches:
+                readers.append(target)
+        if "skeletonJSON" not in tree:
+            continue
+        identifier = str(reader.path_id)
+        found.add(identifier)
+        entry = by_id.get(identifier)
+        if not entry:
+            changes.append({"id": identifier, "kind": "unindexed-skeleton"})
+            continue
+        text = extractor.resolve(reader, tree["skeletonJSON"]).read().m_Script
+        if text.encode("utf-8", errors="surrogateescape") != local(entry, entry["skeleton"]).read_bytes():
+            changes.append({"id": identifier, "kind": "skeleton-bytes"})
+        settings = {"scale": tree.get("scale", 1), "defaultMix": tree.get("defaultMix", 0), "mixes": {name: tree.get(name, []) for name in ("fromAnimation", "toAnimation", "duration")}}
+        if any(entry.get(name) != value for name, value in settings.items()):
+            changes.append({"id": identifier, "kind": "skeleton-settings"})
+        pointers = tree.get("atlasAssets", [])
+        if len(pointers) != len(entry["atlases"]):
+            changes.append({"id": identifier, "kind": "atlas-count"})
+            continue
+        for index, pointer in enumerate(pointers):
+            atlas = extractor.resolve(reader, pointer)
+            data = extractor.tree(atlas)
+            text = extractor.resolve(atlas, data["atlasFile"]).read().m_Script
+            pages = atlas_pages(text)
+            converted = entry["atlases"][index]
+            atlas_path = PurePosixPath(entry["id"]) / converted["atlas"]
+            if len(pages) != len(converted["pages"]) or len(pages) != len(data["materials"]):
+                changes.append({"id": identifier, "kind": "atlas-pages", "atlas": index})
+                continue
+            for page, original_name in enumerate(pages):
+                text = re.sub(r"(?m)^" + re.escape(original_name) + r"\r?$", converted["pages"][page], text)
+                texture, _settings = extractor.texture(atlas, data["materials"][page])
+                source = texture.image.convert("RGBA")
+                with load_image(local(entry, str(atlas_path.parent / converted["pages"][page]))) as image:
+                    target = image.convert("RGBA")
+                    if source.size != target.size or source.tobytes() != target.tobytes():
+                        changes.append({"id": identifier, "kind": "atlas-pixels", "atlas": index, "page": page})
+            if text.encode("utf-8") != local(entry, str(atlas_path)).read_bytes():
+                changes.append({"id": identifier, "kind": "atlas-layout", "atlas": index})
+    changes.extend({"id": identifier, "kind": "not-in-original-bundle"} for identifier in sorted(by_id.keys() - found))
+    return changes
+
+
+def compare_skeleton_media(archive, entries, catalog_path, requested, python_libs, apk_path=None, additional=()):
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(python_libs.resolve()))
+    import UnityPy
+    from extract_assets import BundleExtractor
+    catalog = json.loads(catalog_path.read_text())["presentations"]
+    runtime = json.loads((catalog_path.parent / "runtime-index.json").read_text())["entries"]
+    wanted = {value.lower() for value in requested}
+    if wanted.difference(key.lower() for key in entries):
+        raise ValueError("Requested comparison bundle is absent")
+    counts = collections.Counter()
+    for key, versions in sorted(entries.items()):
+        if wanted and key.lower() not in wanted:
+            continue
+        for version, member in enumerate(sorted(versions, key=lambda row: row.filename), 1):
+            installed = installed_scene_version(key, version, catalog)
+            if not installed:
+                counts["withoutInstalledVersion"] += 1
+                print(json.dumps({"bundle": key, "version": version, "status": "without-installed-version"}), flush=True)
+                continue
+            try:
+                environment = UnityPy.load(decode_bundle(archive.read(member)))
+                if apk_path:
+                    with zipfile.ZipFile(apk_path) as apk:
+                        load_dependencies(environment, archive, member.filename, apk, additional)
+                else:
+                    load_dependencies(environment, archive, member.filename, additional=additional)
+                baseline = [entry for entry in runtime if entry["bundle"] == installed["id"]]
+                changes = skeleton_media_changes(BundleExtractor(environment, catalog_path.parent), baseline, catalog_path.parent)
+                counts["compared"] += 1
+                counts["changed" if changes else "equal"] += 1
+                print(json.dumps({"bundle": key, "version": version, "installed": installed["id"], "changes": changes}), flush=True)
+            except Exception as error:
+                counts["failed"] += 1
+                print(json.dumps(sanitize_diagnostics({"bundle": key, "version": version, "error": str(error)})), flush=True)
+    print(json.dumps({"scope": "skeleton-bytes-settings-atlas-layout-and-base-pixels", "summary": dict(counts)}), flush=True)
+    if counts["failed"]:
+        raise RuntimeError("Some original skeleton media could not be compared")
 
 
 def manifest_dependencies(text):
@@ -204,6 +316,7 @@ def main():
     parser.add_argument("--all-versions", action="store_true", help="Preserve every source entry of an explicitly selected ambiguous bundle")
     parser.add_argument("--variant", help="Keep an explicitly selected original bundle under a separate named variant")
     parser.add_argument("--compare-scenes", action="store_true", help="Compare original scene metadata without exporting textures or replacing resources")
+    parser.add_argument("--compare-media", action="store_true", help="Compare original skeleton bytes, settings, atlas layout and base texture pixels without writing resources")
     parser.add_argument("--dependency", action="append", default=[], help="Add a verified relative resource dependency when the original manifest is absent")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
@@ -221,10 +334,15 @@ def main():
             if key:
                 entries[key].append(row)
         requested_bundles = args.bundle
-        if args.compare_scenes:
-            if not args.python_libs or args.output or args.missing_paintings or args.all_versions or args.variant:
-                parser.error("--compare-scenes requires --python-libs and does not accept conversion options")
-            compare_scene_metadata(archive, entries, args.catalog, requested_bundles, args.python_libs)
+        if args.compare_scenes or args.compare_media:
+            if not args.python_libs or args.output or args.missing_paintings or args.all_versions or args.variant or args.compare_scenes and args.compare_media:
+                parser.error("Choose one comparison mode with --python-libs and without conversion options")
+            if args.compare_media:
+                compare_skeleton_media(archive, entries, args.catalog, requested_bundles, args.python_libs, args.apk, args.dependency)
+            else:
+                if args.apk or args.dependency:
+                    parser.error("Scene metadata comparison does not read media dependencies")
+                compare_scene_metadata(archive, entries, args.catalog, requested_bundles, args.python_libs)
             return
         if args.missing_paintings:
             if args.bundle:

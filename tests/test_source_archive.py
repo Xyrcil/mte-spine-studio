@@ -5,12 +5,59 @@ from types import SimpleNamespace
 import io
 import zipfile
 import tempfile
+from contextlib import nullcontext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination, scene_metadata_changes, installed_scene_version
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination, scene_metadata_changes, installed_scene_version, skeleton_media_changes
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_media_comparison_checks_bytes_settings_layout_and_pixels_without_writing(self):
+        reader = SimpleNamespace(path_id=99, type=SimpleNamespace(name="MonoBehaviour"))
+        atlas = SimpleNamespace(path_id=100)
+        skeleton_text = '{"skeleton":{"spine":"3.8.99"}}'
+        source_text = '\nsource.png\nsize: 1,1\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\n'
+        converted_text = source_text.replace('source.png', 'page-0.png')
+        tree = {"skeletonJSON": {"m_PathID": 60}, "atlasAssets": [{"m_PathID": 100}]}
+        refs = {60: SimpleNamespace(read=lambda: SimpleNamespace(m_Script=skeleton_text)), 100: atlas, 200: SimpleNamespace(read=lambda: SimpleNamespace(m_Script=source_text))}
+        source = SimpleNamespace(size=(1, 1), tobytes=lambda: b'RGBA')
+        source.convert = lambda mode: source
+        target = SimpleNamespace(size=(1, 1), tobytes=lambda: b'RGBA')
+        target.convert = lambda mode: target
+        extractor = SimpleNamespace(objects=[reader], tree=lambda item: tree if item is reader else {"atlasFile": {"m_PathID": 200}, "materials": [1]}, resolve=lambda owner, pointer: refs[pointer["m_PathID"]], texture=lambda owner, pointer: (SimpleNamespace(image=source), {}))
+        entry = {"id": "99", "path": "fixture", "skeleton": "skeleton.json", "scale": 1, "defaultMix": 0, "mixes": {name: [] for name in ("fromAnimation", "toAnimation", "duration")}, "atlases": [{"atlas": "texture.atlas", "pages": ["page-0.png"]}]}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'fixture/99').mkdir(parents=True)
+            skeleton = root / 'fixture/skeleton.json'
+            layout = root / 'fixture/99/texture.atlas'
+            skeleton.write_bytes(skeleton_text.encode())
+            layout.write_bytes(converted_text.encode())
+            compare = lambda entries: skeleton_media_changes(extractor, entries, root, lambda path: nullcontext(target))
+            self.assertEqual(compare([entry]), [])
+            skeleton.write_bytes(b'changed')
+            self.assertEqual(compare([entry])[0]["kind"], 'skeleton-bytes')
+            skeleton.write_bytes(skeleton_text.encode())
+            self.assertEqual(compare([{**entry, "scale": 2}])[0]["kind"], 'skeleton-settings')
+            target.tobytes = lambda: b'other'
+            self.assertEqual(compare([entry])[0]["kind"], 'atlas-pixels')
+            target.tobytes = lambda: b'RGBA'
+            layout.write_bytes(b'changed')
+            self.assertEqual(compare([entry])[0]["kind"], 'atlas-layout')
+            self.assertEqual(layout.read_bytes(), b'changed')
+            self.assertEqual(compare([])[0]["kind"], 'unindexed-skeleton')
+            with self.assertRaises(ValueError):
+                compare([{**entry, "path": '../escape'}])
+            layout.write_bytes(converted_text.encode())
+            owner = SimpleNamespace(path_id=1, assets_file=SimpleNamespace(name='scene'), type=SimpleNamespace(name='MonoBehaviour'))
+            reader.assets_file = SimpleNamespace(name='role')
+            refs[99] = reader
+            old_tree = extractor.tree
+            extractor.tree = lambda item: {"skeletonDataAsset": {"m_FileID": 1, "m_PathID": 99}} if item is owner else old_tree(item)
+            extractor.objects = [owner]
+            self.assertEqual(compare([entry]), [])
+            self.assertEqual(extractor.objects, [owner])
+
     def test_comparison_uses_exact_archive_version_when_no_primary_is_installed(self):
         key = "Spines/painting/model"
         first = {"id": key + "/archive-1", "sourceBundle": key, "sourceVersion": 1}
@@ -19,6 +66,10 @@ class SourceArchiveTests(unittest.TestCase):
         self.assertIsNone(installed_scene_version(key, 3, [first, second]))
         primary = {"id": key}
         self.assertEqual(installed_scene_version(key, 2, [first, second, primary]), primary)
+        original = {"id": key + "/original", "sourceBundle": key, "sourceVersion": "original"}
+        self.assertEqual(installed_scene_version(key, 1, [original]), original)
+        self.assertIsNone(installed_scene_version(key, 2, [original]))
+        self.assertEqual(installed_scene_version(key, 1, [original, first]), first)
 
     def test_scene_comparison_ignores_script_addresses_but_retains_authored_changes(self):
         def scene(script, assembly="client.dll", enabled=1):
