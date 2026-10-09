@@ -291,6 +291,9 @@ def join_artwork_variants(appearances):
             continue
         label = "HX variant" if hx else "Original archive" if row.get("sourceVersion") == "original" else "Archive variant " + str(row.get("sourceVersion"))
         row.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
+        for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack"):
+            if field in parent:
+                row[field] = parent[field]
         if hx and row.get("sourceVersion"):
             row["name"] += " · " + ("Original archive" if row["sourceVersion"] == "original" else "Archive variant " + str(row["sourceVersion"]))
         if parent.get("portraitResource"):

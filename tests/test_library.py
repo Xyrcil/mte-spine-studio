@@ -60,7 +60,7 @@ class PortraitLibraryTests(unittest.TestCase):
             self.assertEqual(appearance["characterName"], "Alice")
         self.assertNotIn("hotSpringRoleId", appearances[2])
     def test_hx_variants_join_only_an_existing_source_binding(self):
-        parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait"}
+        parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait", "ownVoice": False, "ambientSound": "waves", "idle": "idle", "touchType": 2, "storyPack": "summer-story"}
         before = deepcopy(parent)
         variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
@@ -81,6 +81,10 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(original["portraitResource"], "portrait")
         self.assertEqual(original["name"], "Summer · Original archive")
         self.assertEqual(original_hx["name"], "Summer · HX variant · Original archive")
+        for item in (variant, archived, original, original_hx):
+            for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack"):
+                self.assertEqual(item[field], parent[field])
+        self.assertNotIn("ambientSound", unknown)
     def test_original_artwork_keeps_its_source_label_without_guessing_a_character(self):
         parent = {"id": "unassigned", "bundle": "Spines/painting/model", "kind": "painting", "name": "model"}
         original = {"id": "original", "bundle": parent["bundle"] + "/original", "sourceBundle": parent["bundle"], "sourceVersion": "original"}
