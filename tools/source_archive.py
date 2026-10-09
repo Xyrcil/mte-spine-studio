@@ -157,17 +157,7 @@ def compare_scene_metadata(archive, entries, catalog_path, requested, python_lib
         raise RuntimeError("Some original scene metadata could not be compared")
 
 
-def skeleton_media_changes(extractor, installed, root, load_image=None):
-    from extract_assets import atlas_pages
-    if load_image is None:
-        from PIL import Image
-        load_image = Image.open
-    by_id = {entry["id"]: entry for entry in installed}
-    found, changes = set(), []
-    def local(entry, path):
-        location = (root / entry["path"] / path).resolve()
-        location.relative_to(root.resolve())
-        return location
+def original_skeleton_readers(extractor):
     readers = list(extractor.objects)
     for reader in readers:
         if reader.type.name != "MonoBehaviour":
@@ -183,8 +173,22 @@ def skeleton_media_changes(extractor, installed, root, load_image=None):
                 raise ValueError("External skeleton ID collides with a different serialized file")
             if not matches:
                 readers.append(target)
-        if "skeletonJSON" not in tree:
-            continue
+    return [reader for reader in readers if reader.type.name == "MonoBehaviour" and "skeletonJSON" in extractor.tree(reader)]
+
+
+def skeleton_media_changes(extractor, installed, root, load_image=None):
+    from extract_assets import atlas_pages
+    if load_image is None:
+        from PIL import Image
+        load_image = Image.open
+    by_id = {entry["id"]: entry for entry in installed}
+    found, changes = set(), []
+    def local(entry, path):
+        location = (root / entry["path"] / path).resolve()
+        location.relative_to(root.resolve())
+        return location
+    for reader in original_skeleton_readers(extractor):
+        tree = extractor.tree(reader)
         identifier = str(reader.path_id)
         found.add(identifier)
         entry = by_id.get(identifier)
@@ -225,13 +229,149 @@ def skeleton_media_changes(extractor, installed, root, load_image=None):
     return changes
 
 
-def compare_skeleton_media(archive, entries, catalog_path, requested, python_libs, apk_path=None, additional=()):
+def material_profile(profile, defaults=None):
+    properties = {}
+    for name, values in profile.get("properties", {}).items():
+        if isinstance(values, list):
+            converted = dict(values)
+            if len(converted) != len(values):
+                raise ValueError("Duplicate material property")
+            values = converted
+        if name == "m_TexEnvs":
+            active = {"_MainTex"}
+            if "_FLOW_MAP_ON" in profile.get("keywords", []):
+                active.add("_FlowMap")
+            if "_NOISE_TEX_ON" in profile.get("keywords", []):
+                active.update(("_NoiseTex", "_MaskTex"))
+            values = {key: {field: item for field, item in value.items() if field != "m_Texture" or key not in active} for key, value in values.items()}
+        if values:
+            properties[name] = values
+    if defaults:
+        properties["m_Floats"] = {**defaults, **properties.get("m_Floats", {})}
+    return {"shader": profile.get("shader"), "renderQueue": profile.get("renderQueue"), "keywords": sorted(profile.get("keywords", [])), "properties": properties}
+
+
+def skeleton_material_changes(extractor, installed, root, load_image=None, decode_mip=None):
+    from extract_assets import astc_mip_layout
+    if load_image is None:
+        from PIL import Image
+        load_image = Image.open
+    def local(entry, path):
+        location = (root / entry["path"] / path).resolve()
+        location.relative_to(root.resolve())
+        return location
+    def pixels_differ(source, entry, path):
+        source = source.convert("RGBA")
+        with load_image(local(entry, path)) as image:
+            target = image.convert("RGBA")
+            return source.size != target.size or source.tobytes() != target.tobytes()
+    by_id = {entry["id"]: entry for entry in installed}
+    changes, samplers, found = [], [], set()
+    for reader in original_skeleton_readers(extractor):
+        identifier = str(reader.path_id)
+        found.add(identifier)
+        entry = by_id.get(identifier)
+        if not entry:
+            changes.append({"id": identifier, "kind": "unindexed-material-skeleton"})
+            continue
+        source = extractor.skeleton_materials(reader)
+        if source.get("errors"):
+            raise ValueError("Original material dependencies could not be resolved")
+        target = entry.get("materialBindings", {})
+        source_pages = {(page["atlas"], page["page"]): page for page in source["pages"]}
+        target_pages = {(page["atlas"], page["page"]): page for page in target.get("pages", [])}
+        if source_pages.keys() != target_pages.keys():
+            changes.append({"id": identifier, "kind": "material-pages"})
+        tree = extractor.tree(reader)
+        for key, page in source_pages.items():
+            expected = target_pages.get(key, {}).get("materials", {})
+            if page["materials"].keys() != expected.keys():
+                changes.append({"id": identifier, "kind": "material-modes", "atlas": key[0], "page": key[1]})
+            atlas = extractor.resolve(reader, tree["atlasAssets"][key[0]])
+            atlas_tree = extractor.tree(atlas)
+            index = int(key[1].removeprefix("page-").removesuffix(".png"))
+            for mode, profile in page["materials"].items():
+                old = expected.get(mode, {})
+                if mode == "normal":
+                    material = extractor.resolve(atlas, atlas_tree["materials"][index])
+                else:
+                    pointer = next(row["material"] for row in tree["blendModeMaterials"][mode + "Materials"] if row["pageName"] == page["sourcePage"])
+                    material = extractor.resolve(reader, pointer)
+                material_tree = extractor.tree(material)
+                shader = extractor.tree(extractor.resolve(material, material_tree["m_Shader"]))
+                definitions = shader.get("m_ParsedForm", {}).get("m_PropInfo", {}).get("m_Props", [])
+                defaults = {row["m_Name"]: row["m_DefValue[0]"] for row in definitions if row["m_Type"] in (2, 3)} if profile.get("shader") == old.get("shader") else {}
+                original_profile, imported_profile = material_profile(profile, defaults), material_profile(old, defaults)
+                if original_profile != imported_profile:
+                    original_mask = original_profile["properties"].get("m_Floats", {}).get("_ColorMask")
+                    imported_mask = imported_profile["properties"].get("m_Floats", {}).get("_ColorMask")
+                    normalized = {**imported_profile, "properties": {**imported_profile["properties"], "m_Floats": {**imported_profile["properties"].get("m_Floats", {}), "_ColorMask": original_mask}}}
+                    alpha_only = {original_mask, imported_mask} == {14, 15} and normalized == original_profile
+                    changes.append({"id": identifier, "kind": "material-alpha-write-mask" if alpha_only else "material-profile", "atlas": key[0], "page": index, "mode": mode})
+                envs = dict(material_tree["m_SavedProperties"].get("m_TexEnvs", []))
+                main = envs.get("_MainTex", {}).get("m_Texture", {})
+                if main.get("m_PathID"):
+                    main_reader = extractor.resolve(material, main)
+                    main_tree = extractor.tree(main_reader)
+                    samplers.append({"id": str(main_reader.path_id), "width": main_tree.get("m_Width"), "height": main_tree.get("m_Height"), "settings": main_tree.get("m_TextureSettings"), "colorSpace": main_tree.get("m_ColorSpace"), "mipCount": main_tree.get("m_MipCount", 1)})
+                active = []
+                if "_FLOW_MAP_ON" in profile["keywords"]:
+                    active.append("_FlowMap")
+                if "_NOISE_TEX_ON" in profile["keywords"]:
+                    active.extend(("_NoiseTex", "_MaskTex"))
+                for name in active:
+                    pointer = envs.get(name, {}).get("m_Texture", {})
+                    imported = old.get("textures", {}).get(name)
+                    info = {"id": identifier, "atlas": key[0], "page": index, "mode": mode, "texture": name}
+                    if name == "_MaskTex" and not pointer.get("m_PathID"):
+                        if imported != {"default": "white"}:
+                            changes.append({**info, "kind": "auxiliary-default"})
+                        continue
+                    texture_reader = extractor.resolve(material, pointer)
+                    texture_tree = extractor.tree(texture_reader)
+                    if not imported or not imported.get("path"):
+                        changes.append({**info, "kind": "auxiliary-unindexed"})
+                        continue
+                    texture = texture_reader.read()
+                    settings = {"width": texture.m_Width, "height": texture.m_Height, "settings": texture_tree.get("m_TextureSettings"), "colorSpace": texture_tree.get("m_ColorSpace")}
+                    if any(imported.get(field) != value for field, value in settings.items()):
+                        changes.append({**info, "kind": "auxiliary-settings"})
+                    if pixels_differ(texture.image, entry, imported["path"]):
+                        changes.append({**info, "kind": "auxiliary-pixels"})
+                    count = texture_tree.get("m_MipCount", 1)
+                    mips = imported.get("mips", [])
+                    levels = {mip["level"]: mip for mip in mips}
+                    if count != imported.get("mipCount", 1) or len(levels) != len(mips) or set(levels) != set(range(1, count)):
+                        changes.append({**info, "kind": "auxiliary-mip-levels", "sourceMipCount": count, "importedMipCount": imported.get("mipCount", 1), "importedLevels": sorted(levels)})
+                    if count == 1:
+                        continue
+                    layout = astc_mip_layout(texture.m_Width, texture.m_Height, count, texture.m_TextureFormat)
+                    data = texture.get_image_data()
+                    if len(data) != sum(row[4] for row in layout) or getattr(texture, "m_ImageCount", 1) != 1 or getattr(texture, "m_PlatformBlob", None):
+                        raise ValueError("Original auxiliary mip layout is unsupported")
+                    if decode_mip is None:
+                        from UnityPy.export.Texture2DConverter import parse_image_data
+                        from UnityPy.enums import BuildTarget
+                        decode_mip = lambda data, width, height, format, owner: parse_image_data(data, width, height, format, getattr(owner, "version", (0, 0, 0, 0)), getattr(owner, "platform", BuildTarget.UnknownPlatform))
+                    for level, width, height, offset, size in layout[1:]:
+                        mip = levels.get(level)
+                        if mip and (mip.get("width") != width or mip.get("height") != height or pixels_differ(decode_mip(data[offset:offset + size], width, height, texture.m_TextureFormat, texture_reader), entry, mip["path"])):
+                            changes.append({**info, "kind": "auxiliary-mip-pixels", "level": level})
+    changes.extend({"id": identifier, "kind": "not-in-original-material-bundle"} for identifier in sorted(by_id.keys() - found))
+    return changes, samplers
+
+
+def compare_skeleton_media(archive, entries, catalog_path, requested, python_libs, apk_path=None, additional=(), materials=False):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(python_libs.resolve()))
     import UnityPy
     from extract_assets import BundleExtractor
     catalog = json.loads(catalog_path.read_text())["presentations"]
     runtime = json.loads((catalog_path.parent / "runtime-index.json").read_text())["entries"]
+    shader_bytes = None
+    if materials and apk_path:
+        with zipfile.ZipFile(apk_path) as apk:
+            shader_bytes = decode_bundle(apk.read("assets/common/shader.data"))
     wanted = {value.lower() for value in requested}
     if wanted.difference(key.lower() for key in entries):
         raise ValueError("Requested comparison bundle is absent")
@@ -247,20 +387,23 @@ def compare_skeleton_media(archive, entries, catalog_path, requested, python_lib
                 continue
             try:
                 environment = UnityPy.load(decode_bundle(archive.read(member)))
+                if shader_bytes:
+                    environment.load_file(shader_bytes, name="shared-shaders", is_dependency=True)
                 if apk_path:
                     with zipfile.ZipFile(apk_path) as apk:
                         load_dependencies(environment, archive, member.filename, apk, additional)
                 else:
                     load_dependencies(environment, archive, member.filename, additional=additional)
                 baseline = [entry for entry in runtime if entry["bundle"] == installed["id"]]
-                changes = skeleton_media_changes(BundleExtractor(environment, catalog_path.parent), baseline, catalog_path.parent)
+                extractor = BundleExtractor(environment, catalog_path.parent)
+                changes, samplers = skeleton_material_changes(extractor, baseline, catalog_path.parent) if materials else (skeleton_media_changes(extractor, baseline, catalog_path.parent), None)
                 counts["compared"] += 1
                 counts["changed" if changes else "equal"] += 1
-                print(json.dumps({"bundle": key, "version": version, "installed": installed["id"], "changes": changes}), flush=True)
+                print(json.dumps({"bundle": key, "version": version, "installed": installed["id"], "changes": changes, **({"mainSamplers": samplers} if materials else {})}), flush=True)
             except Exception as error:
                 counts["failed"] += 1
                 print(json.dumps(sanitize_diagnostics({"bundle": key, "version": version, "error": str(error)})), flush=True)
-    print(json.dumps({"scope": "skeleton-bytes-settings-atlas-layout-and-base-pixels", "summary": dict(counts)}), flush=True)
+    print(json.dumps({"scope": "material-profiles-active-auxiliary-pixels-and-mips" if materials else "skeleton-bytes-settings-atlas-layout-and-base-pixels", "summary": dict(counts)}), flush=True)
     if counts["failed"]:
         raise RuntimeError("Some original skeleton media could not be compared")
 
@@ -317,6 +460,7 @@ def main():
     parser.add_argument("--variant", help="Keep an explicitly selected original bundle under a separate named variant")
     parser.add_argument("--compare-scenes", action="store_true", help="Compare original scene metadata without exporting textures or replacing resources")
     parser.add_argument("--compare-media", action="store_true", help="Compare original skeleton bytes, settings, atlas layout and base texture pixels without writing resources")
+    parser.add_argument("--compare-materials", action="store_true", help="Compare original material settings and active auxiliary textures without writing resources; requires --apk")
     parser.add_argument("--dependency", action="append", default=[], help="Add a verified relative resource dependency when the original manifest is absent")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--python-libs", type=Path)
@@ -334,11 +478,13 @@ def main():
             if key:
                 entries[key].append(row)
         requested_bundles = args.bundle
-        if args.compare_scenes or args.compare_media:
-            if not args.python_libs or args.output or args.missing_paintings or args.all_versions or args.variant or args.compare_scenes and args.compare_media:
+        if args.compare_scenes or args.compare_media or args.compare_materials:
+            if not args.python_libs or args.output or args.missing_paintings or args.all_versions or args.variant or sum((args.compare_scenes, args.compare_media, args.compare_materials)) != 1:
                 parser.error("Choose one comparison mode with --python-libs and without conversion options")
-            if args.compare_media:
-                compare_skeleton_media(archive, entries, args.catalog, requested_bundles, args.python_libs, args.apk, args.dependency)
+            if args.compare_media or args.compare_materials:
+                if args.compare_materials and not args.apk:
+                    parser.error("Material comparison requires --apk for original shader references")
+                compare_skeleton_media(archive, entries, args.catalog, requested_bundles, args.python_libs, args.apk, args.dependency, args.compare_materials)
             else:
                 if args.apk or args.dependency:
                     parser.error("Scene metadata comparison does not read media dependencies")

@@ -6,11 +6,27 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 import unittest
-from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key, sprite_content_rect, astc_mip_layout
+from tools.extract_assets import BundleExtractor, atlas_pages, binary_strings, precise_references, write_json, shader_render_queue, resource_bundle_key, sprite_content_rect, astc_mip_layout, load_shared_texture_dependency, shared_texture_bundle
 from tools.inspect_effects import inspect
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_original_texture_fallback_never_replaces_a_loaded_serialized_file(self):
+        environment = SimpleNamespace(cabs={'existing': object()}, load_file=Mock())
+        self.assertFalse(load_shared_texture_dependency(environment, b'UnityFS', {'existing', 'other'}))
+        environment.load_file.assert_not_called()
+        self.assertTrue(load_shared_texture_dependency(environment, b'UnityFS', {'missing'}))
+        environment.load_file.assert_called_once_with(b'UnityFS', name='share/share.data', is_dependency=True)
+    def test_shared_texture_archive_selects_only_one_exact_original_resource(self):
+        archive = SimpleNamespace(namelist=lambda: ['package/files/vercache_demo/share/share.data', 'package/files/vercache_demo/share/unrelated.data'], read=lambda name: b'UnityFS-original')
+        self.assertEqual(shared_texture_bundle(archive), b'UnityFS-original')
+        archive.namelist = lambda: ['unrelated/share/share.data']
+        with self.assertRaises(ValueError):
+            shared_texture_bundle(archive)
+        archive.namelist = lambda: ['first/vercache_demo/share/share.data', 'second/vercache_demo/share/share.data']
+        with self.assertRaises(ValueError):
+            shared_texture_bundle(archive)
+
     def test_external_skeletons_are_exported_by_reference_without_importing_dependency_scenes(self):
         owner_file, dependency_file = SimpleNamespace(name="scene"), SimpleNamespace(name="role")
         owner = SimpleNamespace(path_id=1, assets_file=owner_file, type=SimpleNamespace(name="MonoBehaviour"), read_typetree=lambda: {"skeletonDataAsset": {"m_FileID": 1, "m_PathID": 99}})

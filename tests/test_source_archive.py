@@ -6,12 +6,72 @@ import io
 import zipfile
 import tempfile
 from contextlib import nullcontext
+from copy import deepcopy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination, scene_metadata_changes, installed_scene_version, skeleton_media_changes
+from source_archive import spine_key, decode_bundle, missing_paintings, sanitize_diagnostics, source_versions, manifest_dependencies, load_dependencies, output_destination, scene_metadata_changes, installed_scene_version, skeleton_media_changes, material_profile, skeleton_material_changes
 
 
 class SourceArchiveTests(unittest.TestCase):
+    def test_material_comparison_checks_profiles_auxiliary_pixels_and_original_mips(self):
+        def image(size, data):
+            value = SimpleNamespace(size=size, data=data)
+            value.convert = lambda mode: value
+            value.tobytes = lambda: value.data
+            return value
+        base, target = image((4, 4), b'RGBA' * 16), image((4, 4), b'RGBA' * 16)
+        mip, target_mip = image((2, 2), b'RGBA' * 4), image((2, 2), b'RGBA' * 4)
+        owner = SimpleNamespace(path_id=1, type=SimpleNamespace(name='MonoBehaviour'))
+        atlas, material, shader = SimpleNamespace(path_id=2), SimpleNamespace(path_id=3), SimpleNamespace(path_id=5)
+        texture = SimpleNamespace(m_Width=4, m_Height=4, m_TextureFormat=51, image=base, get_image_data=lambda: bytes(32))
+        texture_reader = SimpleNamespace(path_id=4, read=lambda: texture)
+        envs = [[name, {'m_Texture': {'m_FileID': 0, 'm_PathID': 0 if name == '_MaskTex' else 4}, 'm_Scale': {'x': 1, 'y': 1}}] for name in ('_MainTex', '_NoiseTex', '_MaskTex')]
+        profile = {'id': '3', 'shader': 'Spine/Skeleton', 'keywords': ['_NOISE_TEX_ON'], 'renderQueue': 3000, 'properties': {'m_TexEnvs': envs, 'm_Floats': [['_NoiseFactor', .1]]}}
+        source = {'pages': [{'atlas': 0, 'page': 'page-0.png', 'sourcePage': 'original.png', 'materials': {'normal': profile}}], 'errors': []}
+        sampler = {'m_FilterMode': 1, 'm_WrapU': 0, 'm_WrapV': 0}
+        imported = {'path': 'noise.png', 'width': 4, 'height': 4, 'settings': sampler, 'colorSpace': 0, 'mipCount': 2, 'mips': [{'level': 1, 'width': 2, 'height': 2, 'path': 'noise-mip.png'}]}
+        target_profile = {**deepcopy(profile), 'textures': {'_NoiseTex': deepcopy(imported), '_MaskTex': {'default': 'white'}}}
+        target_profile['id'] = 'different-address'
+        target_profile['properties']['m_TexEnvs'][0][1]['m_Texture']['m_PathID'] = 99
+        self.assertEqual(material_profile(profile), material_profile(target_profile))
+        profile['properties']['m_Floats'].append(['_CardTransparency', 1])
+        self.assertEqual(material_profile(profile, {'_CardTransparency': 1}), material_profile(target_profile, {'_CardTransparency': 1}))
+        bindings = deepcopy(source)
+        bindings['pages'][0]['materials']['normal'] = target_profile
+        entry = {'id': '1', 'path': 'fixture', 'materialBindings': bindings}
+        trees = {1: {'skeletonJSON': {}, 'atlasAssets': [{'m_PathID': 2}]}, 2: {'materials': [{'m_PathID': 3}]}, 3: {'m_SavedProperties': {'m_TexEnvs': envs}, 'm_Shader': {'m_PathID': 5}}, 4: {'m_TextureSettings': sampler, 'm_ColorSpace': 0, 'm_MipCount': 2}, 5: {'m_ParsedForm': {'m_PropInfo': {'m_Props': [{'m_Name': '_CardTransparency', 'm_Type': 3, 'm_DefValue[0]': 1}]}}}}
+        refs = {2: atlas, 3: material, 4: texture_reader, 5: shader}
+        extractor = SimpleNamespace(objects=[owner], tree=lambda reader: trees[reader.path_id], resolve=lambda owner, pointer: refs[pointer['m_PathID']], skeleton_materials=lambda reader: source)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            compare = lambda: skeleton_material_changes(extractor, [entry], root, lambda path: nullcontext(target_mip if path.name == 'noise-mip.png' else target), lambda *args: mip)
+            changes, samplers = compare()
+            self.assertEqual(changes, [])
+            self.assertEqual(samplers[0]['mipCount'], 2)
+            target.data = b'changed'
+            self.assertEqual(compare()[0][0]['kind'], 'auxiliary-pixels')
+            target.data = base.data
+            target_mip.data = b'changed'
+            self.assertEqual(compare()[0][0]['kind'], 'auxiliary-mip-pixels')
+            target_mip.data = mip.data
+            target_profile['textures']['_NoiseTex']['mips'] = []
+            self.assertEqual(compare()[0][0]['kind'], 'auxiliary-mip-levels')
+            self.assertEqual(compare()[0][0]['sourceMipCount'], 2)
+            self.assertEqual(compare()[0][0]['importedLevels'], [])
+            target_profile['textures']['_NoiseTex'] = deepcopy(imported)
+            trees[4]['m_MipCount'] = 1
+            difference = compare()[0][0]
+            self.assertEqual((difference['sourceMipCount'], difference['importedMipCount'], difference['importedLevels']), (1, 2, [1]))
+            trees[4]['m_MipCount'] = 2
+            target_profile['properties']['m_Floats'] = [['_NoiseFactor', .2]]
+            self.assertEqual(compare()[0][0]['kind'], 'material-profile')
+            trees[5]['m_ParsedForm']['m_PropInfo']['m_Props'].append({'m_Name': '_ColorMask', 'm_Type': 2, 'm_DefValue[0]': 14})
+            target_profile['properties']['m_Floats'] = [['_NoiseFactor', .1], ['_ColorMask', 15]]
+            snapshot = deepcopy(entry)
+            self.assertEqual(compare()[0][0]['kind'], 'material-alpha-write-mask')
+            self.assertEqual(entry, snapshot)
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_media_comparison_checks_bytes_settings_layout_and_pixels_without_writing(self):
         reader = SimpleNamespace(path_id=99, type=SimpleNamespace(name="MonoBehaviour"))
         atlas = SimpleNamespace(path_id=100)

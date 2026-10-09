@@ -8,6 +8,7 @@ import math
 import re
 import struct
 import sys
+import zipfile
 from pathlib import Path
 if __package__:
     from .unity_animation import decode_packed_animation
@@ -488,6 +489,24 @@ class BundleExtractor:
         return {"skeletons": skeletons, "effects": self.extract_effects(), "images": self.extract_images(), "renderers": self.extract_renderers(), "errors": errors}
 
 
+def load_shared_texture_dependency(environment, data, names):
+    if set(environment.cabs).intersection(names):
+        return False
+    environment.load_file(data, name="share/share.data", is_dependency=True)
+    return True
+
+
+def shared_texture_bundle(archive):
+    if __package__:
+        from .source_archive import decode_bundle
+    else:
+        from source_archive import decode_bundle
+    names = [name for name in archive.namelist() if name.lower().endswith("/vercache_demo/share/share.data")]
+    if len(names) != 1:
+        raise ValueError("Original shared texture resource is absent or ambiguous")
+    return decode_bundle(archive.read(names[0]))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
@@ -498,6 +517,7 @@ def main():
     parser.add_argument("--merge", action="store_true", help="Update matching bundle records without dropping other extracted bundles")
     parser.add_argument("--metadata-only", action="store_true", help="Refresh renderer material queues without rewriting existing media")
     parser.add_argument("--material-textures", action="store_true", help="Also export active skeleton material textures during metadata refresh")
+    parser.add_argument("--source-archive", type=Path, help="Resolve missing shared texture references from an original local resource archive without replacing loaded dependencies")
     args = parser.parse_args()
     if args.metadata_only and not args.merge:
         parser.error("--metadata-only requires --merge")
@@ -506,6 +526,11 @@ def main():
     sys.path.insert(0, str(source / "tools/python-libs"))
     import UnityPy
     decoder = load_decoder(source)
+    shared_bytes, shared_names = None, set()
+    if args.source_archive:
+        with zipfile.ZipFile(args.source_archive) as archive:
+            shared_bytes = shared_texture_bundle(archive)
+        shared_names = set(UnityPy.load(shared_bytes).cabs)
     roots = [source / "full-files/files", source / "qnzl-2.0-poc/overlay"]
     records = {}
     for root in roots:
@@ -585,6 +610,8 @@ def main():
                             data = decoder.xor_prefix(data, records[dependency_key].hash_code)
                         effect_texture_bytes[dependency_key] = data
                     environment.load_file(effect_texture_bytes[dependency_key], name=dependency_key, is_dependency=True)
+            if shared_bytes:
+                load_shared_texture_dependency(environment, shared_bytes, shared_names)
             if args.metadata_only:
                 previous = next((item for item in catalog if item["id"] == key), None)
                 if not previous or not previous.get("path"):
