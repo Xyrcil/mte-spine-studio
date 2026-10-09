@@ -20,5 +20,6 @@ export function materialOrdering(renderer){
 
 export function skeletonDisplaySettings(renderType,data,canvasPixelsPerUnit=100){
   if(renderType==='SkeletonGraphic'&&(!Number.isFinite(canvasPixelsPerUnit)||canvasPixelsPerUnit<=0))throw new Error('Invalid Canvas reference pixels per unit');
-  return {renderType,...(renderType==='SkeletonGraphic'?{canvasPixelsPerUnit}:{}),animation:data.startingAnimation??data._animationName,loop:Boolean(data.startingLoop??data.loop)};
+  if(data.pmaVertexColors!==undefined&&![true,false,0,1].includes(data.pmaVertexColors))throw new Error('Invalid source vertex color alpha mode');
+  return {renderType,...(renderType==='SkeletonGraphic'?{canvasPixelsPerUnit}:{}),...(data.pmaVertexColors!==undefined?{pmaVertexColors:Boolean(data.pmaVertexColors)}:{}),animation:data.startingAnimation??data._animationName,loop:Boolean(data.startingLoop??data.loop)};
 }

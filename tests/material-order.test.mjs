@@ -70,6 +70,21 @@ test('vertex color power retains alpha, chains previous effects and restores the
   let previousCalls=0;const previousEffect={transform(_p,_u,color){previousCalls++;color.r*=.5;}},target={vertexEffect:previousEffect,slotFilter:null},light={r:.5,g:.25,b:.75,a:.8},renderer={skeletonRenderer:target,drawSkeleton(){target.vertexEffect.transform({}, {},light,{});throw new Error('draw failed');}};
   assert.throws(()=>drawSkeletonSlots(renderer,{},[],undefined,2.5),/draw failed/);assert.equal(previousCalls,1);assert.equal(light.r,.25**2.5);assert.equal(light.g,.25**2.5);assert.equal(light.b,.75**2.5);assert.equal(light.a,.8);assert.equal(target.vertexEffect,previousEffect);assert.equal(target.slotFilter,null);
 });
+test('source premultiplied vertex colors are quantized before color power without applying alpha twice',()=>{
+  for(const alpha of [0,.25,.5,1])for(const texturePMA of [false,true]){
+    const original={r:.8,g:.4,b:.2,a:alpha},light={...original};if(texturePMA)for(const key of ['r','g','b'])light[key]*=alpha;
+    const target={slotFilter:null,vertexEffect:null,premultipliedAlpha:false},renderer={skeletonRenderer:target,drawSkeleton(_skeleton,pma){assert.equal(pma,texturePMA);target.vertexEffect.transform({}, {},light,{});}};
+    drawSkeletonSlots(renderer,{},[],undefined,2.5,texturePMA,true);
+    const sourceAlpha=Math.floor(Math.fround(alpha*255));assert.equal(light.a,sourceAlpha/255);
+    for(const key of ['r','g','b']){
+      const native=Math.floor(Math.fround(original[key]*sourceAlpha))/255,contribution=texturePMA?light[key]:light[key]*light.a;
+      assert.ok(Math.abs(contribution-native**2.5)<1e-12);
+    }
+    assert.equal(target.vertexEffect,null);assert.equal(target.premultipliedAlpha,false);
+  }
+  const layer=fixture();layer.instance.pmaVertexColors=true;Object.assign(layer.entry.materialBindings.pages[0].materials.normal,{shader:'Spine/Skeleton',keywords:['_VERTEX_COLOR_POW_ON','_STRAIGHT_ALPHA_INPUT'],properties:{m_Floats:[['_VertexColorPow',2.5]]}});layer.materialMapping=compileMaterialMapping(layer);
+  assert.equal(skeletonDrawSegments(layer)[0].vertexColorPMA,true);
+});
 test('unimplemented material effects follow source keywords without treating disabled saved settings as active',()=>{
   const entry={materialBindings:{pages:[{materials:{normal:{keywords:['_FLOW_MAP_ON','_NOISE_TEX_ON']},additive:{keywords:['_FLOW_MAP_ON']}}},{materials:{normal:{keywords:[],properties:{m_Floats:[['_NoiseTexON',1]]}}}}]}};
   assert.deepEqual(materialEffectLimitations(entry),['Flow-map distortion','Noise-texture distortion']);assert.deepEqual(materialEffectLimitations({}),[]);

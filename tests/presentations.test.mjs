@@ -37,6 +37,9 @@ test('UI skeletons preserve Canvas pixel units and their own starting animation 
   assert.deepEqual(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'source-start',startingLoop:false,loop:true}),{renderType:'SkeletonGraphic',canvasPixelsPerUnit:100,animation:'source-start',loop:false});
   assert.equal(skeletonDisplaySettings('SkeletonGraphic',{startingAnimation:'animation'},80).canvasPixelsPerUnit,80);
   assert.deepEqual(skeletonDisplaySettings('SkeletonAnimation',{_animationName:'idle',loop:true}),{renderType:'SkeletonAnimation',animation:'idle',loop:true});
+  assert.equal(skeletonDisplaySettings('SkeletonAnimation',{pmaVertexColors:1}).pmaVertexColors,true);
+  assert.equal(skeletonDisplaySettings('SkeletonAnimation',{pmaVertexColors:0}).pmaVertexColors,false);
+  assert.throws(()=>skeletonDisplaySettings('SkeletonAnimation',{pmaVertexColors:'true'}),/vertex color alpha/);
   assert.throws(()=>skeletonDisplaySettings('SkeletonGraphic',{},0),/Canvas/);
 });
 test('standalone asset bundles expose every skeleton without layering variants together',()=>{
