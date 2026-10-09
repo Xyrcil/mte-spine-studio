@@ -8,6 +8,8 @@ import {expectedPackPaths,PACK_CATALOGS,resourceType} from '../src/engine/resour
 import {selectAsset} from './select_asset.mjs';
 import {buildAssetLibrary} from '../src/asset-library.js';
 import {expandHotSpringPresentations} from '../src/engine/hot-spring.js';
+import {expandStationDrawings} from '../src/engine/station-drawing.js';
+import {skillDisplayOptions} from '../src/engine/skill-display.js';
 const engineOption=process.argv.indexOf('--engine'),engine=engineOption>=0?process.argv[engineOption+1]:'chromium';
 assert.ok(['chromium','firefox','webkit'].includes(engine),'Choose --engine chromium, firefox or webkit');
 const root=resolve('dist'),assets=resolve('public/assets'),catalogues=Object.fromEntries(await Promise.all(PACK_CATALOGS.map(async name=>[name,JSON.parse(await readFile(resolve(assets,name),'utf8'))])));
@@ -106,7 +108,12 @@ try{
     assert.equal(await page.evaluate(()=>window.mteStudio.packReloadRequired),true);const imported=await page.evaluate(()=>window.mteCache.request('PACK_STATUS'));assert.ok(imported.bytes>3*1024**3);
     const fullPaths=[...PACK_CATALOGS,...expectedPackPaths(catalogues)];assert.equal(imported.files,fullPaths.length);
     const stored=await page.evaluate(async paths=>{const pack=await window.mteCache.request('PACK_STATUS'),cache=await caches.open(pack.name),missing=[];for(let start=0;start<paths.length;start+=64)await Promise.all(paths.slice(start,start+64).map(async path=>{const response=await cache.match(new URL('assets/'+path,location.href).href);if(!response)missing.push(path);await response?.body?.cancel();}));return {files:pack.files,missing};},fullPaths);assert.equal(stored.files,fullPaths.length);assert.deepEqual(stored.missing,[]);
-    await setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);const library=catalogues['library.json'],expanded=expandHotSpringPresentations(catalogues['presentations.json'].presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);assert.equal(await page.evaluate(()=>window.mteLibrary.rows.length),buildAssetLibrary({presentations:expanded},library).length);
+    await setOffline(true);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
+    const library=structuredClone(catalogues['library.json']);
+    let expanded=expandHotSpringPresentations(catalogues['presentations.json'].presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters);
+    expanded.push(...skillDisplayOptions(expanded,library).flatMap(row=>row.presentation?[row.presentation]:[]));
+    expanded=expandStationDrawings(expanded,library,catalogues['runtime-index.json'].entries);
+    assert.equal(await page.evaluate(()=>window.mteLibrary.rows.length),buildAssetLibrary({presentations:expanded},library).length);
     for(const name of PACK_CATALOGS){const actual=await page.evaluate(async name=>(await fetch('assets/'+name)).json(),name);assert.deepEqual(actual,catalogues[name],`Imported catalogue differs: ${name}`);}
     await page.getByRole('button',{name:'Gallery',exact:true}).click();await page.locator('#skill-role').selectOption(skillRole.id);await page.locator('#open-skill').click();await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.skillDisplay&&!document.querySelector('#open-skill').disabled);await page.getByRole('button',{name:'Export',exact:true}).click();await page.locator('#export-format').selectOption('png');assert.ok(await page.evaluate(async()=>Boolean(await window.mteExporter.run())));console.log('Full converted resource archive imported, matched every indexed file and catalogue, and exported a skill offline',imported);
   }
