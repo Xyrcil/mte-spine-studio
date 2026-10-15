@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
-const {browser,close}=await launchTestBrowser('chromium');
+const engine=process.argv[2]||'chromium',{browser,close}=await launchTestBrowser(engine);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length);
@@ -27,5 +27,5 @@ try{
   await page.locator('#voice-scope').selectOption('story');assert.equal(await page.locator('#hot-spring-level').isVisible(),false);await page.locator('#voice-scope').selectOption('hot-spring');
   await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length===1&&!window.mteEditor.busy);assert.equal(await page.locator('#hot-spring-level').inputValue(),'5');
   await page.evaluate(()=>{const stage=window.mteStudio;stage.paused=false;window.voiceGapResult=stage.interact(stage.canvas.getBoundingClientRect().left+10,stage.canvas.getBoundingClientRect().top+10);});assert.equal(await page.evaluate(()=>window.voiceGapResult.reason),'No interaction region here');
-  assert.deepEqual(errors,[]);console.log('Hot spring voice checks passed: six roles, all 30 source level pools, decoded available tracks, real audio/subtitle, object attribution, undo, duplication, import, reload and explicit missing click behavior',media);
+  assert.deepEqual(errors,[]);console.log(`${engine}: Hot spring voice checks passed: six roles, all 30 source level pools, decoded available tracks, real audio/subtitle, object attribution, undo, duplication, import, reload and explicit missing click behavior`,media);
 }finally{await close();}

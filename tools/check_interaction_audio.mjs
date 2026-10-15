@@ -25,7 +25,26 @@ try{
   await page.waitForFunction(()=>window.mteAudio.element.currentTime>.05);assert.equal(await page.locator('#subtitle').textContent(),expected.text);assert.ok(await page.evaluate(name=>window.mteAudio.element.src.includes('/'+name+'/'),expected.name));assert.deepEqual(errors,[]);
   await selectAsset(page,'Spines/painting/301619101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301619101_spine');
   const head=await page.evaluate(async()=>{const stage=window.mteStudio,root=stage.groups[0].controllers[0];window.headSounds=[];stage.addEventListener('sound-request',event=>window.headSounds.push(event.detail.name));root.value.isBig=true;const result=root.click(root.hotspots.find(hit=>hit.event===13)),library=await fetch('/assets/library.json').then(r=>r.json()),voice=library.voices.find(row=>row.resourceName==='Voice_3016191_Touch_Head');return {result,text:voice.text};});assert.equal(head.result.accepted,true);
-  await page.waitForFunction(()=>window.mteAudio.element.currentTime>.05);assert.equal(await page.locator('#subtitle').textContent(),head.text);assert.equal(await page.evaluate(()=>window.headSounds.filter(name=>name==='301619101_cm_click_03_head').length),1);assert.match(await page.locator('#status').textContent(),/Sound unavailable: 301619101_cm_click_03_head/);assert.deepEqual(errors,[]);
+  await page.waitForFunction(()=>window.mteAudio.element.currentTime>.05);assert.equal(await page.locator('#subtitle').textContent(),head.text);assert.equal(await page.evaluate(()=>window.headSounds.filter(name=>name==='301619101_cm_click_03_head').length),1);
+  const headClip=await page.evaluate(()=>window.mteAudio.soundInfo('301619101_cm_click_03_head','a_sound_ui').clip);assert.ok(headClip,'Recovered source head effect must be indexed');
+  await page.waitForFunction(path=>[...window.mteAudio.effects].some(effect=>effect.src.endsWith(path)&&effect.currentTime>.05&&effect.muted),headClip.path);
+  const failedUrl=new URL('assets/'+headClip.path,page.url()).href;let failedRequests=0;const rejectHead=async route=>{failedRequests++;await route.fulfill({status:404,contentType:'audio/mp4',body:''});};
+  await page.route(failedUrl,rejectHead);
+  try{
+    await page.evaluate(()=>{
+      const bus=window.mteAudio,original=bus.playEffect,expected='Effect playback failed: 301619101_cm_click_03_head';window.failedHead={events:[],rejection:null};
+      const listener=event=>{if(event.detail===expected)window.failedHead.events.push(event.detail);};bus.addEventListener('audio-error',listener);
+      bus.playEffect=function(...args){const pending=original.apply(this,args);if(args[0]==='301619101_cm_click_03_head')pending.then(()=>{},error=>window.failedHead.rejection={name:error.name,message:error.message});return pending;};
+      window.restoreHeadObserver=()=>{bus.playEffect=original;bus.removeEventListener('audio-error',listener);};
+    });
+    await page.evaluate(()=>{const stage=window.mteStudio;window.mteAudio.stopEffects();stage.dispatchEvent(new CustomEvent('sound-request',{detail:{name:'301619101_cm_click_03_head',category:'a_sound_ui',group:stage.groups[0].id}}));});
+    await page.waitForFunction(()=>{const {events,rejection}=window.failedHead,status=document.querySelector('#status').textContent;return events.includes(status)||rejection&&['NotSupportedError','NetworkError'].includes(rejection.name)&&rejection.message&&status===rejection.message;});
+    const failure=await page.evaluate(()=>({...window.failedHead,status:document.querySelector('#status').textContent}));assert.ok(failedRequests>0,'Error fixture must fail a real media request');
+    assert.ok(failure.events.includes(failure.status)||['NotSupportedError','NetworkError'].includes(failure.rejection?.name)&&failure.rejection.message===failure.status,'Product must display the observed effect error, not stale status');
+    assert.equal(await page.evaluate(()=>[...window.mteAudio.effects].some(effect=>effect.effectName==='301619101_cm_click_03_head')),false);console.log(`${engine}: HTTP 404 effect failure`,{failedRequests,...failure});
+  }finally{await page.unroute(failedUrl,rejectHead);await page.evaluate(()=>{window.restoreHeadObserver?.();delete window.restoreHeadObserver;delete window.failedHead;});}
+  await page.evaluate(()=>{const stage=window.mteStudio;stage.dispatchEvent(new CustomEvent('sound-request',{detail:{name:'301619101_cm_click_03_head',category:'a_sound_ui',group:stage.groups[0].id}}));});
+  await page.waitForFunction(path=>[...window.mteAudio.effects].some(effect=>effect.src.endsWith(path)&&effect.currentTime>.05&&effect.muted),headClip.path);assert.deepEqual(errors,[]);
   await selectAsset(page,'Spines/painting/301301101_spine');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/painting/301301101_spine');
   const position=await page.evaluate(()=>{
     const stage=window.mteStudio,group=stage.groups[0],root=group.controllers[0],audio=window.mteAudio,resolve=audio.resolve.bind(audio);audio.stop();audio.stopEffects();

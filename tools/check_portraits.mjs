@@ -6,9 +6,12 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
-  await selectAsset(page,'appearance:3013001');
+  const sources=await page.evaluate(async()=>{const library=await fetch('/assets/library.json').then(response=>response.json());return {animated:library.appearances.find(row=>row.id==='3013001'),missing:library.appearances.find(row=>row.spineStatus==='missing-source'&&row.portrait?.path),portraits:library.appearances.filter(row=>row.portrait).length};});assert.ok(sources.animated?.portrait);assert.equal(sources.animated.displayKind,'spine');assert.ok(sources.missing);
+  const selectPortrait=async id=>{const key=await page.evaluate(id=>window.mteLibrary.reveal(`appearance:${id}`),id);await page.locator('#category').selectOption('portrait');await page.locator(`[data-library-key="${key}"]`).click();};
+  await selectPortrait(sources.missing.id);await page.waitForFunction(id=>window.mteStudio.groups[0]?.appearanceId===id&&!window.mteEditor.busy,sources.missing.id);assert.match(await page.locator('#details').textContent(),/Spine bundle absent from backup/);assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].asset),sources.missing.portrait.path);
+  await selectPortrait(sources.animated.id);
   await page.waitForFunction(()=>window.mteStudio.groups.length===1&&window.mteStudio.groups[0].appearanceId==='3013001');
-  const details=await page.locator('#details').textContent();assert.match(details,/Static portrait/);assert.match(details,/Spine bundle absent/);
+  const details=await page.locator('#details').textContent();assert.match(details,/Static portrait/);assert.match(details,/Animated version also available/);
   const portrait=await page.evaluate(()=>{const group=window.mteStudio.groups[0];return {asset:group.asset,width:group.width,height:group.height};});
   assert.match(portrait.asset,/^portraits\/3013001_lihui\//);assert.equal(portrait.width,19.62);assert.equal(portrait.height,24.52);
   const voice=await page.evaluate(async()=>{const library=await fetch('/assets/library.json').then(r=>r.json());return library.voices.find(row=>row.targetId==='3013001'&&row.resourceName.includes('Login')&&window.mteAudio.resolve(row.resourceName,'a_sound_voiceeff'))?.id;});
@@ -25,6 +28,6 @@ try{
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),scene);
   await page.waitForTimeout(700);await page.reload();await page.waitForFunction(()=>window.mteStudio?.groups.length===3&&!window.mteEditor.busy);
   assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),scene);
-  await page.locator('#category').selectOption('portrait');assert.ok(Number((await page.locator('#library-count').textContent()).split(' ')[0])>=169);assert.equal(await page.locator('#assets img').count(),24);
+  await page.locator('#search').fill('');await page.locator('#category').selectOption('portrait');assert.equal(Number((await page.locator('#library-count').textContent()).split(' ')[0]),sources.portraits);assert.equal(await page.locator('#assets img').count(),Math.min(24,sources.portraits));
   assert.deepEqual(errors,[]);console.log('Portrait browser checks passed: native size, missing-Spine label, voice, mixed scene, duplication, import failure and reload');
 }finally{await close();}

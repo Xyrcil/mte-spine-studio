@@ -7,7 +7,16 @@ const all=process.argv.includes('--all'),{browser,close}=await launchTestBrowser
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length>0);
-  await page.locator('#category').selectOption('story');assert.equal(await page.locator('#library-count').textContent(),'244 artwork entries');assert.equal(await page.locator('#assets [data-asset]').count(),24);
+  const source=await page.evaluate(async()=>{
+    const [catalog,library,runtime]=await Promise.all(['presentations','library','runtime-index'].map(name=>fetch(`/assets/${name}.json`).then(response=>response.json()))),{expandStationDrawings}=await import('/src/engine/station-drawing.js'),{expandHotSpringPresentations}=await import('/src/engine/hot-spring.js');
+    const presentationIds=catalog.presentations.map(row=>row.id),standaloneIds=catalog.presentations.filter(row=>row.standalone).map(row=>row.id),entryKeys=runtime.entries.map(row=>row.bundle+'\0'+row.id),referenced=new Set(catalog.presentations.flatMap(row=>row.instances.map(instance=>row.id+'\0'+instance.skeletonId))),unassigned=new Set(catalog.presentations.flatMap(row=>(row.unassignedInstances||[]).filter(instance=>instance.skeletonId).map(instance=>row.id+'\0'+instance.skeletonId)));
+    const expectedUnreferenced=runtime.entries.filter(row=>!referenced.has(row.bundle+'\0'+row.id)&&unassigned.has(row.bundle+'\0'+row.id)).map(row=>({bundle:row.bundle,id:row.id})),unexpectedUnreferenced=runtime.entries.filter(row=>!referenced.has(row.bundle+'\0'+row.id)&&!unassigned.has(row.bundle+'\0'+row.id)).map(row=>({bundle:row.bundle,id:row.id}));
+    const expanded=expandStationDrawings(expandHotSpringPresentations(catalog.presentations,library.hotSpringHouses,library.hotSpringRoles,library.voices,library.characters),library,runtime.entries),linked=new Set(library.appearances.map(row=>row.bundle));
+    const storyKeys=[...library.appearances.filter(row=>row.kind==='story').map(row=>`appearance:${row.id}`),...expanded.filter(row=>row.category==='story'&&(row.instances.length||row.unassignedInstances?.length)&&!row.skillDisplay&&!linked.has(row.id)).map(row=>`bundle:${row.id}`)];
+    return {presentationIds,standaloneIds,entryKeys,referenced:[...referenced],expectedUnreferenced,unexpectedUnreferenced,storyKeys};
+  });assert.equal(new Set(source.presentationIds).size,source.presentationIds.length);assert.equal(new Set(source.entryKeys).size,source.entryKeys.length);assert.deepEqual(source.unexpectedUnreferenced,[],'Runtime entry has no declared instance or explicit unassigned skeleton reference');
+  await page.locator('#category').selectOption('story');assert.equal(await page.locator('#library-count').textContent(),`${source.storyKeys.length} artwork entries`);assert.equal(await page.locator('#assets [data-asset]').count(),Math.min(24,source.storyKeys.length));
+  const storyKeys=[];while(true){storyKeys.push(...await page.locator('#assets .asset').evaluateAll(nodes=>nodes.map(node=>node.dataset.libraryKey)));if(await page.getByRole('button',{name:'Next',exact:true}).isDisabled())break;await page.getByRole('button',{name:'Next',exact:true}).click();}assert.equal(new Set(storyKeys).size,storyKeys.length);assert.deepEqual(storyKeys.sort(),[...source.storyKeys].sort());
   await selectAsset(page,'Spines/story/gelei');await page.waitForFunction(()=>window.mteStudio.groups[0]?.presentation.id==='Spines/story/gelei');
   assert.equal(await page.locator('#animation-preview').inputValue(),'stand');
   await page.locator('#animation-preview').selectOption('weixiao');assert.equal(await page.evaluate(()=>window.mteStudio.groups[0].layers[0].state.getCurrent(0).animation.name),'weixiao');
@@ -24,14 +33,14 @@ try{
   console.log(engine+': all '+animationNames.length+' original story animation choices retain focus and apply their initial pose while paused');
   const result=await page.evaluate(async()=>{
     const stage=window.mteStudio,presentations=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries;
-    const standalone=presentations.filter(p=>p.standalone),failures=[];let loaded=0;
+    const standalone=presentations.filter(p=>p.standalone),failures=[],loadedIds=[];let loaded=0;
     for(const presentation of standalone){
       for(const group of [...stage.groups])stage.remove(group.id);
-      try{await stage.add(presentation,entries.filter(entry=>entry.bundle===presentation.id));stage.evaluate(1/30);stage.draw();const error=stage.gl.getError();if(error!==stage.gl.NO_ERROR)throw new Error(`WebGL error ${error}`);loaded++;}
+      try{await stage.add(presentation,entries.filter(entry=>entry.bundle===presentation.id));stage.evaluate(1/30);stage.draw();const error=stage.gl.getError();if(error!==stage.gl.NO_ERROR)throw new Error(`WebGL error ${error}`);loaded++;loadedIds.push(presentation.id);}
       catch(error){failures.push({id:presentation.id,error:error.message});}
     }
-    return {expected:standalone.length,loaded,failures};
-  });console.log(result);assert.deepEqual(result.failures,[]);assert.equal(result.loaded,275);
+    return {expected:standalone.length,loaded,loadedIds,failures};
+  });console.log({...result,loadedIds:result.loadedIds.length});assert.deepEqual(result.failures,[]);assert.equal(result.loaded,source.standaloneIds.length);assert.equal(result.expected,source.standaloneIds.length);assert.deepEqual(result.loadedIds.sort(),[...source.standaloneIds].sort());
   if(all){
     page.on('console',message=>{if(message.text().startsWith('Library rendering:'))console.log(message.text());});
     const library=await page.evaluate(async()=>{
@@ -90,12 +99,12 @@ try{
           finally{if(group)stage.remove(group.id);}
           processed++;if(processed%16===0)console.log('Library rendering: '+processed+'/'+catalog.length+' presentations, '+poses+' sampled poses');
         }
-        return {expected:catalog.length,loaded,layers,animations,poses,extraSamples,variants,brieflyVisible,unassignedTemplates:catalog.filter(row=>!row.instances.length&&row.unassignedInstances?.length).map(row=>row.id),unreferenced:entries.filter(entry=>!covered.has(entry.bundle+'\0'+entry.id)).map(entry=>({bundle:entry.bundle,id:entry.id})),empty,failures};
+        return {expected:catalog.length,presentationIds:catalog.map(row=>row.id),entryKeys:entries.map(row=>row.bundle+'\0'+row.id),covered:[...covered],loaded,layers,animations,poses,extraSamples,variants,brieflyVisible,unassignedTemplates:catalog.filter(row=>!row.instances.length&&row.unassignedInstances?.length).map(row=>row.id),unreferenced:entries.filter(entry=>!covered.has(entry.bundle+'\0'+entry.id)).map(entry=>({bundle:entry.bundle,id:entry.id})),empty,failures};
       }finally{stage.dispose();}
     });
     await writeFile('private/library-rendering-'+engine+'.json',JSON.stringify(library,null,2));
     assert.deepEqual(library.empty.filter(row=>row.reason==='sampled-no-pixels'),[],'Source-visible animation produced no pixels after keyframe and midpoint sampling');
-    console.log(engine+' full library rendering',{...library,brieflyVisible:library.brieflyVisible.length,empty:library.empty.length,emptyReasons:library.empty.reduce((counts,row)=>(counts[row.reason]=(counts[row.reason]||0)+1,counts),{})});assert.deepEqual(library.failures,[]);assert.equal(library.loaded,library.expected);assert.deepEqual(library.unreferenced,[]);assert.equal(library.poses,library.animations*3+library.extraSamples);
+    console.log(engine+' full library rendering',{...library,presentationIds:library.presentationIds.length,entryKeys:library.entryKeys.length,covered:library.covered.length,brieflyVisible:library.brieflyVisible.length,empty:library.empty.length,emptyReasons:library.empty.reduce((counts,row)=>(counts[row.reason]=(counts[row.reason]||0)+1,counts),{})});assert.deepEqual(library.failures,[]);assert.equal(library.loaded,library.expected);assert.equal(library.expected,source.presentationIds.length);assert.deepEqual([...library.presentationIds].sort(),[...source.presentationIds].sort());assert.deepEqual([...library.entryKeys].sort(),[...source.entryKeys].sort());assert.deepEqual([...library.covered].sort(),[...source.referenced].sort());assert.deepEqual(library.unreferenced,source.expectedUnreferenced,'Only explicitly unassigned source skeleton entries may remain unreferenced');assert.equal(library.poses,library.animations*3+library.extraSamples);
   }
   assert.deepEqual(errors,[]);
 }finally{await close();}

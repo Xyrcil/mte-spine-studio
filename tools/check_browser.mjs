@@ -48,19 +48,25 @@ try{
   const beforeFailure=await page.evaluate(()=>window.mteHost.getScene());await page.route(pattern,route=>route.abort());
   await selectAsset(page,target);await page.waitForFunction(()=>!window.mteStudio.assetLoadBusy&&window.mteStudio.activeLoads===0);assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),beforeFailure);assert.equal(await page.evaluate(()=>window.mteHost.getState().busy),false);assert.equal(await page.locator('#cancel-asset-load').isVisible(),false);
   await page.unroute(pattern);await selectAsset(page,target);await page.waitForFunction(()=>window.mteStudio.groups.at(-1)?.presentation.id==='Spines/painting/301301101_spine'&&!window.mteStudio.assetLoadBusy);assert.deepEqual(errors,[]);
-  const portrait='appearance:3013001',portraitPattern='**/assets/portraits/3013001_lihui/*.png',beforePortrait=await page.evaluate(()=>window.mteHost.getScene());
+  const portraitSource=await page.evaluate(async()=>{
+    const [library,catalog]=await Promise.all(['library','presentations'].map(name=>fetch(`/assets/${name}.json`).then(response=>response.json()))),animated=new Set(catalog.presentations.filter(row=>row.instances.length).map(row=>row.id));
+    const appearance=library.appearances.find(row=>row.portrait?.path&&row.displayKind!=='spine'&&!animated.has(row.bundle));if(!appearance)throw new Error('No genuinely static portrait exists in the source catalogue');
+    return {id:appearance.id,path:appearance.portrait.path,url:new URL('assets/'+appearance.portrait.path,location.href).href};
+  });const portrait=`appearance:${portraitSource.id}`,portraitPattern=portraitSource.url,beforePortrait=await page.evaluate(()=>window.mteHost.getScene());
+  let heldPortraitRequests=0;await page.evaluate(()=>window.portraitRequestHeld=false);
   let releasePortrait;const portraitWaiting=new Promise(resolve=>releasePortrait=resolve);
-  await page.route(portraitPattern,async route=>{await portraitWaiting;await route.continue().catch(()=>{});});
+  await page.route(portraitPattern,async route=>{assert.equal(route.request().url(),portraitSource.url);heldPortraitRequests++;await page.evaluate(()=>window.portraitRequestHeld=true);await portraitWaiting;await route.continue().catch(()=>{});});
   try{
-    await selectAsset(page,portrait);await page.waitForFunction(()=>window.mteStudio.assetLoadBusy&&window.mteStudio.activeLoads>0);
+    await selectAsset(page,portrait);await page.waitForFunction(()=>window.portraitRequestHeld&&window.mteStudio.assetLoadBusy&&window.mteStudio.activeLoads>0);assert.ok(heldPortraitRequests>0,'Portrait cancellation must hold the exact source image request');
+    assert.equal(await page.locator('#cancel-asset-load').isVisible(),true);assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),beforePortrait);
     await page.locator('#cancel-asset-load').click();
     await page.waitForFunction(()=>window.mteStudio.activeLoads===0&&!window.mteStudio.assetLoadBusy,{},{timeout:3000});
     assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),beforePortrait);
     const liveTextures=await page.evaluate(()=>window.loadingTextures.size);releasePortrait();await page.waitForTimeout(500);
     assert.equal(await page.evaluate(()=>window.loadingTextures.size),liveTextures,'Cancelled portrait allocated a late texture');
     assert.deepEqual(await page.evaluate(()=>window.mteHost.getScene()),beforePortrait);
-  }finally{releasePortrait();await page.unroute(portraitPattern);}
-  await selectAsset(page,portrait);await page.waitForFunction(()=>window.mteStudio.groups.at(-1)?.appearanceId==='3013001'&&!window.mteStudio.assetLoadBusy);
+  }finally{releasePortrait();await page.unroute(portraitPattern);await page.evaluate(()=>delete window.portraitRequestHeld);}
+  await selectAsset(page,portrait);await page.waitForFunction(id=>window.mteStudio.groups.at(-1)?.appearanceId===id&&!window.mteStudio.assetLoadBusy,portraitSource.id);assert.deepEqual(await page.evaluate(()=>{const group=window.mteStudio.groups.at(-1);return {kind:group.kind,asset:group.asset};}),{kind:'image',asset:portraitSource.path});
   assert.deepEqual(errors,[]);
-  console.log(engine+': real asset loading checks passed: Gallery/Studio, busy host, detached preparation, cancellation, workspace switch, context loss during partial loading, replacement, failed request, portrait cancellation and retry');
+  console.log(engine+': real asset loading checks passed: Gallery/Studio, busy host, detached preparation, cancellation, workspace switch, context loss during partial loading, replacement, failed request, portrait cancellation and retry',{portrait:portraitSource.id,heldPortraitRequests});
 }finally{await close();}
