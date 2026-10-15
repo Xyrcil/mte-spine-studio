@@ -13,7 +13,7 @@ const checkpointName=option('--checkpoint'),stepOption=option('--steps'),steps=s
 assert.ok(steps===Infinity&&stepOption===undefined||Number.isSafeInteger(steps)&&steps>0,'Invalid controller step count');
 let checkpointPath;
 if(checkpointName){checkpointPath=resolve(checkpointName);const within=relative(resolve('private'),checkpointPath);assert.ok(within&&!within.startsWith('..')&&!isAbsolute(within),'Controller checkpoints must be inside private/');}
-const sourceFiles=['public/vendor/spine-webgl.js','tools/check_controllers.mjs','tools/controller_branches.mjs',...(await readdir('src/engine')).filter(name=>name.endsWith('.js')).map(name=>'src/engine/'+name)].sort();
+const sourceFiles=['public/vendor/spine-webgl.js','tools/check_controllers.mjs','tools/controller_branches.mjs','tools/controller_pose.mjs',...(await readdir('src/engine')).filter(name=>name.endsWith('.js')).map(name=>'src/engine/'+name)].sort();
 const runtimeSource=JSON.stringify(await Promise.all(sourceFiles.map(async path=>[path,await readFile(path,'utf8')]))),checkpoint=new ControllerCheckpoint(checkpointPath,runtimeSource);await checkpoint.open();
 const {browser,close}=await launchTestBrowser('chromium');
 try{
@@ -32,7 +32,7 @@ try{
       const catalog=(await fetch('/assets/presentations.json').then(response=>response.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(response=>response.json())).entries;
       for(const group of [...stage.groups])stage.remove(group.id);
       const presentation=catalog.find(presentation=>presentation.id===bundle),group=await stage.add(presentation,entries.filter(entry=>entry.bundle===bundle)),root=group.controllers[0];
-      const invalidPose=()=>group.layers.flatMap(layer=>layer.skeleton.bones.filter(bone=>['a','b','c','d','worldX','worldY','x','y','rotation','scaleX','scaleY','shearX','shearY','arotation','ax','ay','ascaleX','ascaleY','ashearX','ashearY'].some(key=>!Number.isFinite(bone[key]))).map(bone=>({layer:layer.instance.name,bone:bone.data.name,parent:bone.parent?.data.name,local:[bone.x,bone.y,bone.scaleX,bone.scaleY],parentMatrix:bone.parent&&[bone.parent.a,bone.parent.b,bone.parent.c,bone.parent.d],applied:[bone.ax,bone.ay,bone.arotation]})));
+      const {invalidControllerPose}=await import('/tools/controller_pose.mjs'),invalidPose=()=>invalidControllerPose(group);
       if(invalidPose().length)return {bundle,failures:[{reason:'Non-finite initial pose',bones:invalidPose()}]};
       for(let i=0;i<3600&&root.primary?.state.getCurrent(0)?.animation.name==='start';i++)stage.evaluate(1/120);
       const key=()=>JSON.stringify({voiceTimes:root.value.voiceTimes??0,names:root.value.names,variants:Object.keys(root.value.variants).filter(name=>root.value.variants[name]).sort(),state:root.value.state,isBig:root.value.isBig,stockingDown:root.value.stockingDown,cardStage:root.value.cardStage,selectedCard:root.value.selectedCard,wins:root.value.wins,rounds:root.value.rounds,tracks:root.layers.map(layer=>layer.state.tracks.map(track=>track?{name:track.animation.name,loop:track.loop}:null))});

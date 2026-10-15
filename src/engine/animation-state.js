@@ -83,7 +83,7 @@ export function restorePose(skeleton,value){
   skeleton.setSkin(value.skin===null?null:skeleton.data.findSkin(value.skin));
   for(const key of ['x','y','scaleX','scaleY'])skeleton[key]=value[key];skeleton.color.set(...value.color);
   value.bones.forEach((row,index)=>Object.assign(skeleton.bones[index],row));
-  value.slots.forEach((row,index)=>{const slot=skeleton.slots[index];slot.setAttachment(row.attachment===null?null:row.attachmentSkin!==undefined?skeleton.data.findSkin(row.attachmentSkin).getAttachment(index,row.attachment):skeleton.getAttachment(index,row.attachment));slot.color.set(...row.color);if(row.darkColor&&slot.darkColor)slot.darkColor.set(...row.darkColor);slot.deform=[...row.deform];if(row.attachmentState!==undefined)slot.attachmentState=row.attachmentState;});
+  value.slots.forEach((row,index)=>{const slot=skeleton.slots[index];slot.setAttachment(row.attachment===null?null:row.attachmentSkin!==undefined?skeleton.data.findSkin(row.attachmentSkin).getAttachment(index,row.attachment):skeleton.getAttachment(index,row.attachment));slot.color.set(...row.color);if(row.darkColor&&slot.darkColor)slot.darkColor.set(...row.darkColor);slot.deform=[...row.deform];if(row.attachmentState!==undefined)slot.attachmentState=row.attachmentState;else delete slot.attachmentState;});
   skeleton.drawOrder=value.drawOrder.map(index=>skeleton.slots[index]);
   for(const [key,items] of [['ik',skeleton.ikConstraints],['transform',skeleton.transformConstraints],['path',skeleton.pathConstraints]])value[key].forEach((row,index)=>Object.assign(items[index],row));
 }

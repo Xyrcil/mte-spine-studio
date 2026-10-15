@@ -31,6 +31,20 @@ test('attachment checkpoints use skin keys rather than attachment display names'
   const value=fixture(),skin=new s.Skin('default'),slotData=new s.SlotData(0,'slot',value.skeleton.data.bones[0]),attachment=new s.RegionAttachment('display-name');skin.setAttachment(0,'lookup-key',attachment);value.skeleton.data.slots.push(slotData);value.skeleton.data.defaultSkin=skin;value.skeleton.data.skins.push(skin);
   const skeleton=new s.Skeleton(value.skeleton.data);skeleton.slots[0].setAttachment(attachment);const pose=validatePose(capturePose(skeleton));assert.equal(pose.slots[0].attachment,'lookup-key');assert.equal(pose.slots[0].attachmentSkin,'default');const clone=new s.Skeleton(value.skeleton.data);assertCheckpoint({skeleton:clone},null,pose);restorePose(clone,pose);assert.equal(clone.slots[0].getAttachment(),attachment);
 });
+test('restoration clears omitted attachment cursors before they can replace saved attachments',()=>{
+  const data=fixture().skeleton.data,skin=new s.Skin('default'),slotData=new s.SlotData(0,'slot',data.bones[0]),setupAttachment=new s.RegionAttachment('setup-display'),alternate=new s.RegionAttachment('alternate-display');
+  slotData.attachmentName='setup';skin.setAttachment(0,'setup',setupAttachment);skin.setAttachment(0,'alternate',alternate);data.slots.push(slotData);data.defaultSkin=skin;data.skins.push(skin);
+  const make=()=>({skeleton:new s.Skeleton(data),state:new s.AnimationState(new s.AnimationStateData(data))}),original=make(),restored=make();
+  original.state.setAnimation(0,'a',true);step(original,0);original.skeleton.slots[0].setAttachment(alternate);
+  const animation=validateAnimation(captureAnimation(original.state)),pose=validatePose(capturePose(original.skeleton));assert.equal(pose.slots[0].attachmentState,undefined);
+  const timeline=new s.AttachmentTimeline(1);timeline.slotIndex=0;timeline.setFrame(0,0,'setup');restored.state.setAnimation(0,'a',true);step(restored,0);
+  restored.state.applyAttachmentTimeline(timeline,restored.skeleton,0,s.MixBlend.replace,true);step(restored,0);
+  restored.state.applyAttachmentTimeline(timeline,restored.skeleton,0,s.MixBlend.replace,false);step(restored,0);assert.equal(restored.skeleton.slots[0].attachmentState,5);
+  restoreAnimation(restored.state,animation,s);restorePose(restored.skeleton,pose);const restoredPose=capturePose(restored.skeleton);
+  for(let i=0;i<4;i++){step(original,.01);step(restored,.01);assert.equal(original.skeleton.slots[0].getAttachment().name,alternate.name);assert.equal(restored.skeleton.slots[0].getAttachment().name,alternate.name);}
+  assert.deepEqual(restoredPose,pose);assert.equal(Object.hasOwn(restored.skeleton.slots[0],'attachmentState'),false);
+  const explicit=validatePose(capturePose(original.skeleton));explicit.slots[0].attachmentState=0;restorePose(restored.skeleton,explicit);assert.equal(restored.skeleton.slots[0].attachmentState,0);
+});
 test('checkpoint imports reject incomplete timing and forged reverse mix links',()=>{
   const value=fixture();value.state.setAnimation(0,'a',true);step(value,.1);let saved=captureAnimation(value.state);delete saved.entries[0].animationLast;assert.throws(()=>validateAnimation(saved),/animationLast/);
   value.state.setAnimation(0,'b',true);step(value,.1);saved=captureAnimation(value.state);saved.entries[0].mixingTo=1;assert.throws(()=>validateAnimation(saved),/mix relationship/);
