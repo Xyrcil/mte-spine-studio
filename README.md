@@ -43,8 +43,8 @@ sound settings are unchanged.
   it or keep a draft. Export a scene as JSON/ZIP to move it to another browser;
   custom images are included, while game media is referenced from the pack.
 
-The story template can arrange one indexed portrait per character or all
-available story portraits. Larger arrangements use smaller textures while
+Templates can arrange two artworks, compare one character's available skins, or
+place one indexed story portrait per character or all available story portraits. Larger arrangements use smaller textures while
 editing; full-resolution export needs more device memory.
 
 ## Export

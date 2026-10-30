@@ -177,4 +177,5 @@ export default {
   'Delete':'删除',
   'Preview':'预览','Rename':'重命名','Rename scene':'重命名场景','Export':'导出',
   'Untitled scene':'未命名场景',
+  'Add two artworks and arrange them automatically.':'添加两张立绘并自动排列。','Choose two artworks for this scene.':'选择两张立绘，自动并排放入场景。','Compare skins':'皮肤对比','Arrange one character’s available appearances.':'排列同一角色的可用外观。','No character appearances are available':'没有可用的角色外观','Skin comparison: {name}':'皮肤对比：{name}','Scene template created':'场景模板已创建',
 };
