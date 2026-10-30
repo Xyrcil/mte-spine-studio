@@ -185,4 +185,6 @@ export default {
   'Include HX variants':'包含 HX 版本','Add a template':'添加模板','Add template':'添加模板','Add an arrangement to the current scene.':'将排列添加到当前场景。','Template added to scene':'已将模板添加到场景',
   'A scene supports up to 512 objects.':'一个场景最多支持 512 个对象。',
   'Arrange by':'排列方式','Rows':'行数','Gap (% of portrait height)':'间距（占立绘高度 %）','Negative values overlap neighboring portraits.':'负值会让相邻立绘适度重叠。',
+  'Horizontal gap (% of portrait height)':'水平间距（占立绘高度 %）','Row spacing (% of portrait height)':'行间距（占立绘高度 %）','Negative horizontal gaps overlap portraits. Smaller row spacing brings rows closer together.':'水平间距为负时立绘会重叠；行间距越小，前后排越靠近。',
+  'Preparing your scene':'正在准备场景','Loading artworks…':'正在载入立绘…','Artwork loading progress':'立绘载入进度','Loaded {count} / {total}':'已载入 {count} / {total}','Keep this page open while the artworks load.':'立绘载入完成后即可编辑，请保持页面打开。','Cancelling…':'正在取消…','Template cancelled; no artwork was added':'已取消排列，未添加立绘','Could not load artwork {count}; no artwork was added':'第 {count} 张立绘载入失败，未添加立绘',
 };

@@ -25,18 +25,19 @@ export function storyRowLengths(total,axis,amount){
   return Array.from({length:rows},(_,index)=>Math.floor(total/rows)+(index<total%rows?1:0));
 }
 
-export function storyPositions(sizes,{axis='columns',amount=4,gap=-2.5,origin={x:0,y:0}}={}){
+export function storyPositions(sizes,{axis='columns',amount=4,gap=-1.2,rowSpacing=6,origin={x:0,y:0}}={}){
   const lengths=storyRowLengths(sizes.length,axis,amount),rows=[];let offset=0;
   for(const length of lengths){const items=sizes.slice(offset,offset+length);offset+=length;
     const widths=items.map(item=>Math.max(.01,item.width)),height=Math.max(...items.map(item=>Math.max(.01,item.height)));
     const gaps=widths.slice(1).map((width,index)=>Math.max(gap,-.45*Math.min(width,widths[index])));
     rows.push({widths,height,gaps,width:widths.reduce((sum,value)=>sum+value,0)+gaps.reduce((sum,value)=>sum+value,0)});
   }
-  const verticalGaps=rows.slice(1).map((row,index)=>Math.max(gap,-.45*Math.min(row.height,rows[index].height)));
-  let top=origin.y+(rows.reduce((sum,row)=>sum+row.height,0)+verticalGaps.reduce((sum,value)=>sum+value,0))/2;const result=[];
-  rows.forEach((row,rowIndex)=>{let left=origin.x-row.width/2;const y=top-row.height/2;
+  const steps=rows.slice(1).map((row,index)=>(row.height+rows[index].height)/2*rowSpacing/10);
+  const totalHeight=rows.length?(rows[0].height+rows.at(-1).height)/2+steps.reduce((sum,value)=>sum+value,0):0;
+  let top=origin.y+totalHeight/2;const result=[];
+  rows.forEach((row,rowIndex)=>{const shift=rows.length>1&&row.widths.length>1?Math.min(row.width/row.widths.length*.25,2)*(rowIndex%2?1:-1):0;let left=origin.x-row.width/2+shift;const y=top-row.height/2;
     row.widths.forEach((width,index)=>{result.push({x:left+width/2,y});left+=width+(row.gaps[index]||0);});
-    top-=row.height+(verticalGaps[rowIndex]||0);
+    if(rowIndex<steps.length)top-=row.height/2+steps[rowIndex]-rows[rowIndex+1].height/2;
   });
   return result;
 }
@@ -53,7 +54,8 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
   document.querySelector('.workspace').append(hub);
   const modal=document.createElement('dialog');modal.className='workspace-dialog';modal.innerHTML='<form method="dialog"><h2>Unsaved changes</h2><p>Save this scene before leaving, or keep its draft to continue later.</p><div class="dialog-actions"><button value="cancel">Cancel</button><button value="draft">Keep draft and leave</button><button value="discard">Discard changes</button><button value="save" class="primary">Save and leave</button></div></form>';document.querySelector('#app').append(modal);
   const context=document.createElement('div');context.className='scene-context';context.hidden=true;context.setAttribute('role','menu');document.querySelector('#app').append(context);
-  const templateDialog=document.createElement('dialog');templateDialog.className='workspace-dialog';templateDialog.innerHTML='<form method="dialog"><h2>Story portraits</h2><p>Choose how many story artworks to arrange. Loading many animated artworks can take time.</p><label>Artwork selection <select name="scope"><option value="characters">One story portrait per character</option><option value="all">All available story portraits</option></select></label><label class="check-label"><input name="include-hx" type="checkbox">Include HX variants</label><label>Number of artworks <input name="count" type="number" min="1" max="512" value="12"></label><label>Arrange by <select name="layout-axis"><option value="columns">Columns</option><option value="rows">Rows</option></select></label><label data-layout-field="columns">Columns <input name="columns" type="number" min="1" max="512" value="4"></label><label data-layout-field="rows" hidden>Rows <input name="rows" type="number" min="1" max="512" value="2" disabled></label><label>Gap (% of portrait height) <input name="gap" type="number" min="-50" max="100" step="1" value="-25"></label><p>Negative values overlap neighboring portraits.</p><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(templateDialog);
+  const templateDialog=document.createElement('dialog');templateDialog.className='workspace-dialog';templateDialog.innerHTML='<form method="dialog"><h2>Story portraits</h2><p>Choose how many story artworks to arrange. Loading many animated artworks can take time.</p><label>Artwork selection <select name="scope"><option value="characters">One story portrait per character</option><option value="all">All available story portraits</option></select></label><label class="check-label"><input name="include-hx" type="checkbox">Include HX variants</label><label>Number of artworks <input name="count" type="number" min="1" max="512" value="12"></label><label>Arrange by <select name="layout-axis"><option value="columns">Columns</option><option value="rows">Rows</option></select></label><label data-layout-field="columns">Columns <input name="columns" type="number" min="1" max="512" value="4"></label><label data-layout-field="rows" hidden>Rows <input name="rows" type="number" min="1" max="512" value="2" disabled></label><label>Horizontal gap (% of portrait height) <input name="gap" type="number" min="-50" max="100" step="1" value="-12"></label><label>Row spacing (% of portrait height) <input name="row-spacing" type="number" min="20" max="120" step="1" value="60"></label><p>Negative horizontal gaps overlap portraits. Smaller row spacing brings rows closer together.</p><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(templateDialog);
+  const progressDialog=document.createElement('dialog');progressDialog.className='workspace-dialog template-progress';progressDialog.setAttribute('aria-labelledby','template-progress-title');progressDialog.innerHTML='<h2 id="template-progress-title">Preparing your scene</h2><p class="t-shimmer" data-progress-label data-i18n-skip></p><progress max="1" value="0" aria-label="Artwork loading progress"></progress><p class="template-progress-count" role="status" aria-live="polite" data-progress-count data-i18n-skip></p><p>Keep this page open while the artworks load.</p><button type="button" data-cancel>Cancel</button>';document.querySelector('#app').append(progressDialog);
   const insertDialog=document.createElement('dialog');insertDialog.className='workspace-dialog';insertDialog.innerHTML='<form method="dialog"><h2>Add a template</h2><p>Add an arrangement to the current scene.</p><div class="dialog-actions"><button value="cancel">Cancel</button><button value="skins">Compare skins</button><button value="story">Story portraits</button></div></form>';document.querySelector('#app').append(insertDialog);
   const skinDialog=document.createElement('dialog');skinDialog.className='workspace-dialog';skinDialog.innerHTML='<form method="dialog"><h2>Compare skins</h2><label>Character<select name="character"></select></label><label>Columns<input name="columns" type="number" min="1" max="20" value="4"></label><label>Spacing<input name="spacing" type="number" min="1" max="100" step="0.5" value="12"></label><div class="dialog-actions"><button value="cancel">Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(skinDialog);
   function arrange(group,target,spacing){
@@ -168,8 +170,8 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
     const resetCount=()=>{input.max=String(Math.min(512,available().length));input.value=input.max;};scope.onchange=resetCount;includeHx.onchange=resetCount;scope.value='characters';if(!available().length)scope.value='all';resetCount();
     const syncAxis=()=>{for(const name of ['rows','columns']){const visible=name===axis.value;templateDialog.querySelector(`[data-layout-field="${name}"]`).hidden=!visible;templateDialog.querySelector(`[name="${name}"]`).disabled=!visible;}};axis.onchange=syncAxis;syncAxis();
     if(await ask(templateDialog)!=='create')return;
-    const rows=available(),count=Math.max(1,Math.min(Number(input.value)||1,Number(input.max))),amount=Math.max(1,Math.min(Math.floor(Number(templateDialog.querySelector(`[name="${axis.value}"]`).value)||1),512)),gap=Math.max(-50,Math.min(Number(templateDialog.querySelector('[name="gap"]').value)||0,100));
-    await buildGrid(rows.slice(0,count),t('Story portraits'),4,12,{axis:axis.value,amount,gap:gap/10});
+    const rows=available(),count=Math.max(1,Math.min(Number(input.value)||1,Number(input.max))),amount=Math.max(1,Math.min(Math.floor(Number(templateDialog.querySelector(`[name="${axis.value}"]`).value)||1),512)),gap=Math.max(-50,Math.min(Number(templateDialog.querySelector('[name="gap"]').value)||0,100)),rowSpacing=Math.max(20,Math.min(Number(templateDialog.querySelector('[name="row-spacing"]').value)||60,120));
+    await buildGrid(rows.slice(0,count),t('Story portraits'),4,12,{axis:axis.value,amount,gap:gap/10,rowSpacing:rowSpacing/10});
   };
   hub.querySelector('[data-template="skins"]').onclick=async()=>{
     const rows=getLibrary()?.rows.filter(row=>['painting','skin'].includes(row.category)&&row.status==='animated'&&row.characterId&&row.presentation.id.startsWith('Spines/painting/')&&!row.appearance?.variantOf&&!/_hx(?:\/|$)/i.test(row.presentation.id))||[];
@@ -182,20 +184,34 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
     await buildGrid([...chosen.rows.values()],t('Skin comparison: {name}',{name:chosen.name}),columns,spacing);
   };
   async function buildGrid(rows,name,columns,spacing,storyLayout){
-    const append=insertTemplate;if(append){if(mode!=='scene-edit'||editor.busy)return;if(stage.groups.length+rows.length>512){message('A scene supports up to 512 objects.');return;}await flush();}else await newScene();
-    if(mode!=='scene-edit')return;const initial=editor.historySnapshot(),viewport=cameraCopy(stage.camera),origin=append?{x:viewport.x,y:viewport.y}:{x:0,y:0};if(!append)editor.setName(name);duoPending=0;loading=true;stage.templateBusy=true;editor.beginBatch();let complete=true;const added=[];
-    try{for(let i=0;i<rows.length;i++){message(`Adding artwork ${i+1} / ${rows.length}…`);const target=storyLayout?origin:{x:origin.x+(i%columns-(columns-1)/2)*spacing,y:origin.y-Math.floor(i/columns)*spacing},ok=await selectRow(rows[i],target,{batch:true,...(rows.length>4?{textureLimit:rows.length>24?(rows.length>120?256:512):1024}:{})});if(!ok){complete=false;message(`Stopped at artwork ${i+1}`);break;}const group=stage.groups.at(-1);if(storyLayout)added.push(group);else arrange(group,target,spacing);}}
-    finally{
-      loading=false;stage.templateBusy=false;stage.evaluate(0);
-      if(storyLayout&&added.length){
-        const boxes=added.map(group=>{const bounds=stage.objectBounds(group),height=bounds&&bounds.maxY-bounds.minY;if(height>0){group.scale=Math.max(.01,Math.min(1000,group.scale*10/height));for(const layer of group.layers)stage.transformLayer(group,layer);}return stage.objectBounds(group);});
-        const sizes=boxes.map(bounds=>bounds?{width:bounds.maxX-bounds.minX,height:bounds.maxY-bounds.minY}:{width:10,height:10}),positions=storyPositions(sizes,{...storyLayout,origin});
-        added.forEach((group,index)=>{const bounds=boxes[index],center=bounds?{x:(bounds.minX+bounds.maxX)/2,y:(bounds.minY+bounds.maxY)/2}:{x:group.x,y:group.y};group.x+=positions[index].x-center.x;group.y+=positions[index].y-center.y;for(const layer of group.layers)stage.transformLayer(group,layer);});
-        stage.evaluate(0);
+    const append=insertTemplate;if(append){if(mode!=='scene-edit'||editor.busy)return;if(stage.groups.length+rows.length>512){message('A scene supports up to 512 objects.');return;}await flush();cancelReplacement();}else await newScene();
+    if(mode!=='scene-edit')return;const initial=editor.historySnapshot(),viewport=cameraCopy(stage.camera),previousOutput=cameraCopy(outputCamera||stage.camera),previousSelection=editor.selected()?.id,originalIds=new Set(stage.groups.map(group=>group.id)),origin=append?{x:viewport.x,y:viewport.y}:{x:0,y:0};if(!append)editor.setName(name);duoPending=0;loading=true;stage.templateBusy=true;editor.beginBatch();let complete=false,cancelled=false,failedAt=0;const added=[];
+    const progress=progressDialog.querySelector('progress'),counter=progressDialog.querySelector('[data-progress-count]'),label=progressDialog.querySelector('[data-progress-label]'),cancel=progressDialog.querySelector('[data-cancel]');
+    const setLabel=text=>{label.textContent=text;label.dataset.text=text;};
+    const cancelLoading=()=>{if(cancelled)return;cancelled=true;cancel.disabled=true;setLabel(t('Cancelling…'));document.querySelector('#cancel-asset-load')?.click();};
+    const onCancel=event=>{event.preventDefault();cancelLoading();};progressDialog.addEventListener('cancel',onCancel);progressDialog.onkeydown=event=>event.stopPropagation();cancel.onclick=cancelLoading;cancel.disabled=false;progress.max=rows.length;progress.value=0;counter.textContent=t('Loaded {count} / {total}',{count:0,total:rows.length});setLabel(t('Loading artworks…'));progressDialog.showModal();
+    try{
+      await new Promise(resolve=>setTimeout(resolve,0));
+      for(let i=0;i<rows.length;i++){
+        if(cancelled)break;const target=storyLayout?origin:{x:origin.x+(i%columns-(columns-1)/2)*spacing,y:origin.y-Math.floor(i/columns)*spacing};
+        const ok=await selectRow(rows[i],target,{batch:true,...(rows.length>4?{textureLimit:rows.length>24?(rows.length>120?256:512):1024}:{})});if(!ok){failedAt=i+1;break;}const group=stage.groups.at(-1);added.push(group);if(!storyLayout)arrange(group,target,spacing);
+        progress.value=added.length;counter.textContent=t('Loaded {count} / {total}',{count:added.length,total:rows.length});await new Promise(resolve=>setTimeout(resolve,0));
       }
-      if(append)stage.camera=viewport;else{stage.fit();outputCamera=cameraCopy(stage.camera);editor.resetHistory();}editor.before(initial);editor.endBatch();
+      if(!cancelled&&!failedAt){
+        stage.evaluate(0);
+        if(storyLayout&&added.length){
+          const boxes=added.map(group=>{const bounds=stage.objectBounds(group),height=bounds&&bounds.maxY-bounds.minY;if(height>0){group.scale=Math.max(.01,Math.min(1000,group.scale*10/height));for(const layer of group.layers)stage.transformLayer(group,layer);}return stage.objectBounds(group);});
+          const sizes=boxes.map(bounds=>bounds?{width:bounds.maxX-bounds.minX,height:bounds.maxY-bounds.minY}:{width:10,height:10}),positions=storyPositions(sizes,{...storyLayout,origin});
+          added.forEach((group,index)=>{const bounds=boxes[index],center=bounds?{x:(bounds.minX+bounds.maxX)/2,y:(bounds.minY+bounds.maxY)/2}:{x:group.x,y:group.y};group.x+=positions[index].x-center.x;group.y+=positions[index].y-center.y;for(const layer of group.layers)stage.transformLayer(group,layer);});stage.evaluate(0);
+        }
+        if(append){stage.camera=viewport;outputCamera=previousOutput;}else{stage.fit();outputCamera=cameraCopy(stage.camera);editor.resetHistory();}complete=true;
+      }
+    }catch(error){failedAt=added.length+1;console.error('Template loading failed',error);}
+    finally{
+      if(!complete){for(const group of [...stage.groups])if(!originalIds.has(group.id))stage.remove(group.id);stage.camera=viewport;outputCamera=previousOutput;if(!append)editor.setName(initial.name);editor.choose(stage.groups.find(group=>group.id===previousSelection));}
+      loading=false;stage.templateBusy=false;if(complete)editor.before(initial);editor.endBatch();progressDialog.removeEventListener('cancel',onCancel);progressDialog.close();
     }
-    if(complete)message(append?'Template added to scene':'Scene template created',{transient:true});
+    message(complete?(append?'Template added to scene':'Scene template created'):cancelled?'Template cancelled; no artwork was added':`Could not load artwork ${failedAt}; no artwork was added`,{transient:true});
   }
   viewer.setCanvasContextMenu(event=>{
     if(mode!=='scene-edit'||viewer.uiHidden)return false;const group=stage.hitTestDetailed(event.clientX,event.clientY,{includeLocked:true});context.replaceChildren();
@@ -220,7 +236,7 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
     if(event.key==='Escape'){getSelection()?.clear();return;}
     if(!['Delete','Backspace'].includes(event.key)||editor.busy)return;const selection=getSelection()?.getSelected()||[],items=(selection.length?selection:[editor.selected()]).filter(group=>group&&!group.locked);if(!items.length)return;event.preventDefault();editor.mutate(()=>{for(const group of items)if(stage.groups.includes(group))stage.remove(group.id);editor.choose(stage.groups.at(-1));});
   });
-  window.addEventListener('beforeunload',event=>{if(['scene-edit','scene-preview','scene-export'].includes(mode)&&dirty){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{if(stage.templateBusy||['scene-edit','scene-preview','scene-export'].includes(mode)&&dirty){event.preventDefault();event.returnValue='';}});
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')editor.flushAutosave().catch(()=>{});});
   document.addEventListener('mte-ui-visibility-change',event=>{if(event.detail.hidden&&mode==='scene-edit'){hiddenReturnToEdit=true;startPreview({forHidden:true}).catch(error=>message(error.message));}else if(!event.detail.hidden&&hiddenReturnToEdit){hiddenReturnToEdit=false;if(mode==='scene-preview'&&previewBefore)stopPreview().catch(error=>message(error.message));}});
   return {state,navigate,role,scenes,update,libraryPurpose,replacementTarget:()=>replacementId,cancelReplacement,finishReplacement,assetAdded(previousCount){if(mode!=='scene-edit')return;if(duoPending>0&&previousCount===2-duoPending){arrange(stage.groups.at(-1),{x:previousCount?6:-6,y:0},12);duoPending--;stage.evaluate(0);stage.fit();outputCamera=cameraCopy(stage.camera);}else if(!previousCount)outputCamera=cameraCopy(stage.camera);},async start(){try{const scene=await loadPreview();if(scene){await restore(scene);update();return true;}}catch(error){message(`Preview could not be restored: ${error.message}`);}update();return false;}};

@@ -477,7 +477,7 @@ export class Stage extends EventTarget {
     const interval=1000/(this.hostFPS??60),elapsed=Math.max(0,time-this.previous);
     if(elapsed>=interval-.5){
       const delta=Math.min(elapsed/1000,Math.max(.1,interval/1000+.02));this.previous=Math.max(this.previous,time);
-      if(!this.recoveryPending){this.evaluate(this.paused?0:delta*this.speed*(this.hostSpeed??1));this.draw();}
+      if(!this.recoveryPending&&!this.templateBusy){this.evaluate(this.paused?0:delta*this.speed*(this.hostSpeed??1));this.draw();}
     }
     this.frame=requestAnimationFrame(next => this.tick(next));
   }
