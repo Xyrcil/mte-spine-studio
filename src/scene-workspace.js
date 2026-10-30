@@ -16,6 +16,31 @@ function signature(scene){
 function thumbnail(canvas){try{const image=document.createElement('canvas');image.width=320;image.height=180;image.getContext('2d').drawImage(canvas,0,0,320,180);return image.toDataURL('image/jpeg',.72);}catch{return '';}}
 function cameraCopy(camera){const {sourcePreview,...result}=structuredClone(camera);return result;}
 
+export function storyRowLengths(total,axis,amount){
+  if(!Number.isInteger(total)||total<0)throw new Error('Invalid artwork count');
+  const limit=Math.max(1,Math.floor(Number(amount)||1));
+  if(axis==='columns')return Array.from({length:Math.ceil(total/limit)},(_,index)=>Math.min(limit,total-index*limit));
+  if(axis!=='rows')throw new Error('Invalid arrangement');
+  const rows=Math.min(total,limit);if(!rows)return [];
+  return Array.from({length:rows},(_,index)=>Math.floor(total/rows)+(index<total%rows?1:0));
+}
+
+export function storyPositions(sizes,{axis='columns',amount=4,gap=-2.5,origin={x:0,y:0}}={}){
+  const lengths=storyRowLengths(sizes.length,axis,amount),rows=[];let offset=0;
+  for(const length of lengths){const items=sizes.slice(offset,offset+length);offset+=length;
+    const widths=items.map(item=>Math.max(.01,item.width)),height=Math.max(...items.map(item=>Math.max(.01,item.height)));
+    const gaps=widths.slice(1).map((width,index)=>Math.max(gap,-.45*Math.min(width,widths[index])));
+    rows.push({widths,height,gaps,width:widths.reduce((sum,value)=>sum+value,0)+gaps.reduce((sum,value)=>sum+value,0)});
+  }
+  const verticalGaps=rows.slice(1).map((row,index)=>Math.max(gap,-.45*Math.min(row.height,rows[index].height)));
+  let top=origin.y+(rows.reduce((sum,row)=>sum+row.height,0)+verticalGaps.reduce((sum,value)=>sum+value,0))/2;const result=[];
+  rows.forEach((row,rowIndex)=>{let left=origin.x-row.width/2;const y=top-row.height/2;
+    row.widths.forEach((width,index)=>{result.push({x:left+width/2,y});left+=width+(row.gaps[index]||0);});
+    top-=row.height+(verticalGaps[rowIndex]||0);
+  });
+  return result;
+}
+
 export function createSceneWorkspace({stage,editor,viewer,setView,getView,message,getLibrary,getSelection=()=>null,selectRow,startSceneSpeech=()=>{}}){
   let mode='role',id='',baseId=null,legacyKey=null,dirty=false,baseline='',outputCamera=null,previewBefore=null,previewSelectedId=null,transitioning=false,loading=false,hiddenReturnToEdit=false,revision=0,duoPending=0,replacementId=null,hubScenes=[],hubDrafts=[],insertTemplate=false;
   const header=document.querySelector('.viewer-header');
@@ -28,7 +53,7 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
   document.querySelector('.workspace').append(hub);
   const modal=document.createElement('dialog');modal.className='workspace-dialog';modal.innerHTML='<form method="dialog"><h2>Unsaved changes</h2><p>Save this scene before leaving, or keep its draft to continue later.</p><div class="dialog-actions"><button value="cancel">Cancel</button><button value="draft">Keep draft and leave</button><button value="discard">Discard changes</button><button value="save" class="primary">Save and leave</button></div></form>';document.querySelector('#app').append(modal);
   const context=document.createElement('div');context.className='scene-context';context.hidden=true;context.setAttribute('role','menu');document.querySelector('#app').append(context);
-  const templateDialog=document.createElement('dialog');templateDialog.className='workspace-dialog';templateDialog.innerHTML='<form method="dialog"><h2>Story portraits</h2><p>Choose how many story artworks to arrange. Loading many animated artworks can take time.</p><label>Artwork selection <select name="scope"><option value="characters">One story portrait per character</option><option value="all">All available story portraits</option></select></label><label class="check-label"><input name="include-hx" type="checkbox">Include HX variants</label><label>Number of artworks <input name="count" type="number" min="1" max="512" value="12"></label><label>Columns <input name="columns" type="number" min="1" max="20" value="4"></label><label>Spacing <input name="spacing" type="number" min="1" max="100" step="0.5" value="12"></label><div class="dialog-actions"><button value="cancel">Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(templateDialog);
+  const templateDialog=document.createElement('dialog');templateDialog.className='workspace-dialog';templateDialog.innerHTML='<form method="dialog"><h2>Story portraits</h2><p>Choose how many story artworks to arrange. Loading many animated artworks can take time.</p><label>Artwork selection <select name="scope"><option value="characters">One story portrait per character</option><option value="all">All available story portraits</option></select></label><label class="check-label"><input name="include-hx" type="checkbox">Include HX variants</label><label>Number of artworks <input name="count" type="number" min="1" max="512" value="12"></label><label>Arrange by <select name="layout-axis"><option value="columns">Columns</option><option value="rows">Rows</option></select></label><label data-layout-field="columns">Columns <input name="columns" type="number" min="1" max="512" value="4"></label><label data-layout-field="rows" hidden>Rows <input name="rows" type="number" min="1" max="512" value="2" disabled></label><label>Gap (% of portrait height) <input name="gap" type="number" min="-50" max="100" step="1" value="-25"></label><p>Negative values overlap neighboring portraits.</p><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(templateDialog);
   const insertDialog=document.createElement('dialog');insertDialog.className='workspace-dialog';insertDialog.innerHTML='<form method="dialog"><h2>Add a template</h2><p>Add an arrangement to the current scene.</p><div class="dialog-actions"><button value="cancel">Cancel</button><button value="skins">Compare skins</button><button value="story">Story portraits</button></div></form>';document.querySelector('#app').append(insertDialog);
   const skinDialog=document.createElement('dialog');skinDialog.className='workspace-dialog';skinDialog.innerHTML='<form method="dialog"><h2>Compare skins</h2><label>Character<select name="character"></select></label><label>Columns<input name="columns" type="number" min="1" max="20" value="4"></label><label>Spacing<input name="spacing" type="number" min="1" max="100" step="0.5" value="12"></label><div class="dialog-actions"><button value="cancel">Cancel</button><button value="create" class="primary">Create scene</button></div></form>';document.querySelector('#app').append(skinDialog);
   function arrange(group,target,spacing){
@@ -138,12 +163,13 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
   hub.querySelector('[data-template="story"]').onclick=async()=>{
     const source=getLibrary()?.rows.filter(row=>row.category==='story'&&row.status==='animated'&&row.presentation.id.startsWith('Spines/story/'))||[];
     if(!source.length){message('No story portraits are available');return;}
-    const input=templateDialog.querySelector('[name="count"]'),scope=templateDialog.querySelector('[name="scope"]'),includeHx=templateDialog.querySelector('[name="include-hx"]');includeHx.checked=false;
+    const input=templateDialog.querySelector('[name="count"]'),scope=templateDialog.querySelector('[name="scope"]'),includeHx=templateDialog.querySelector('[name="include-hx"]'),axis=templateDialog.querySelector('[name="layout-axis"]');includeHx.checked=false;
     const available=()=>{const rows=source.filter(row=>includeHx.checked||!/_hx(?:\/|$)/i.test(row.presentation.id)),unique=[...new Map(rows.map(row=>[row.presentation.id,row])).values()];if(scope.value!=='characters')return unique;const characters=new Map();for(const row of unique.filter(row=>row.characterId)){const old=characters.get(row.characterId);if(!old||/_hx(?:\/|$)/i.test(old.presentation.id)&&!/_hx(?:\/|$)/i.test(row.presentation.id))characters.set(row.characterId,row);}return [...characters.values()];};
     const resetCount=()=>{input.max=String(Math.min(512,available().length));input.value=input.max;};scope.onchange=resetCount;includeHx.onchange=resetCount;scope.value='characters';if(!available().length)scope.value='all';resetCount();
+    const syncAxis=()=>{for(const name of ['rows','columns']){const visible=name===axis.value;templateDialog.querySelector(`[data-layout-field="${name}"]`).hidden=!visible;templateDialog.querySelector(`[name="${name}"]`).disabled=!visible;}};axis.onchange=syncAxis;syncAxis();
     if(await ask(templateDialog)!=='create')return;
-    const rows=available(),count=Math.max(1,Math.min(Number(input.value)||1,Number(input.max))),columns=Math.max(1,Math.min(Number(templateDialog.querySelector('[name="columns"]').value)||4,20)),spacing=Math.max(1,Math.min(Number(templateDialog.querySelector('[name="spacing"]').value)||12,100));
-    await buildGrid(rows.slice(0,count),t('Story portraits'),columns,spacing);
+    const rows=available(),count=Math.max(1,Math.min(Number(input.value)||1,Number(input.max))),amount=Math.max(1,Math.min(Math.floor(Number(templateDialog.querySelector(`[name="${axis.value}"]`).value)||1),512)),gap=Math.max(-50,Math.min(Number(templateDialog.querySelector('[name="gap"]').value)||0,100));
+    await buildGrid(rows.slice(0,count),t('Story portraits'),4,12,{axis:axis.value,amount,gap:gap/10});
   };
   hub.querySelector('[data-template="skins"]').onclick=async()=>{
     const rows=getLibrary()?.rows.filter(row=>['painting','skin'].includes(row.category)&&row.status==='animated'&&row.characterId&&row.presentation.id.startsWith('Spines/painting/')&&!row.appearance?.variantOf&&!/_hx(?:\/|$)/i.test(row.presentation.id))||[];
@@ -155,11 +181,20 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
     const columns=Math.max(1,Math.min(Number(skinDialog.querySelector('[name="columns"]').value)||4,20)),spacing=Math.max(1,Math.min(Number(skinDialog.querySelector('[name="spacing"]').value)||12,100));
     await buildGrid([...chosen.rows.values()],t('Skin comparison: {name}',{name:chosen.name}),columns,spacing);
   };
-  async function buildGrid(rows,name,columns,spacing){
+  async function buildGrid(rows,name,columns,spacing,storyLayout){
     const append=insertTemplate;if(append){if(mode!=='scene-edit'||editor.busy)return;if(stage.groups.length+rows.length>512){message('A scene supports up to 512 objects.');return;}await flush();}else await newScene();
-    if(mode!=='scene-edit')return;const initial=editor.historySnapshot(),viewport=cameraCopy(stage.camera),origin=append?{x:viewport.x,y:viewport.y}:{x:0,y:0};if(!append)editor.setName(name);duoPending=0;loading=true;stage.templateBusy=true;editor.beginBatch();let complete=true;
-    try{for(let i=0;i<rows.length;i++){message(`Adding artwork ${i+1} / ${rows.length}…`);const target={x:origin.x+(i%columns-(columns-1)/2)*spacing,y:origin.y-Math.floor(i/columns)*spacing},ok=await selectRow(rows[i],target,{batch:true,...(rows.length>4?{textureLimit:rows.length>24?(rows.length>120?256:512):1024}:{})});if(!ok){complete=false;message(`Stopped at artwork ${i+1}`);break;}arrange(stage.groups.at(-1),target,spacing);}}
-    finally{loading=false;stage.templateBusy=false;stage.evaluate(0);if(append)stage.camera=viewport;else{stage.fit();outputCamera=cameraCopy(stage.camera);editor.resetHistory();}editor.before(initial);editor.endBatch();}
+    if(mode!=='scene-edit')return;const initial=editor.historySnapshot(),viewport=cameraCopy(stage.camera),origin=append?{x:viewport.x,y:viewport.y}:{x:0,y:0};if(!append)editor.setName(name);duoPending=0;loading=true;stage.templateBusy=true;editor.beginBatch();let complete=true;const added=[];
+    try{for(let i=0;i<rows.length;i++){message(`Adding artwork ${i+1} / ${rows.length}…`);const target=storyLayout?origin:{x:origin.x+(i%columns-(columns-1)/2)*spacing,y:origin.y-Math.floor(i/columns)*spacing},ok=await selectRow(rows[i],target,{batch:true,...(rows.length>4?{textureLimit:rows.length>24?(rows.length>120?256:512):1024}:{})});if(!ok){complete=false;message(`Stopped at artwork ${i+1}`);break;}const group=stage.groups.at(-1);if(storyLayout)added.push(group);else arrange(group,target,spacing);}}
+    finally{
+      loading=false;stage.templateBusy=false;stage.evaluate(0);
+      if(storyLayout&&added.length){
+        const boxes=added.map(group=>{const bounds=stage.objectBounds(group),height=bounds&&bounds.maxY-bounds.minY;if(height>0){group.scale=Math.max(.01,Math.min(1000,group.scale*10/height));for(const layer of group.layers)stage.transformLayer(group,layer);}return stage.objectBounds(group);});
+        const sizes=boxes.map(bounds=>bounds?{width:bounds.maxX-bounds.minX,height:bounds.maxY-bounds.minY}:{width:10,height:10}),positions=storyPositions(sizes,{...storyLayout,origin});
+        added.forEach((group,index)=>{const bounds=boxes[index],center=bounds?{x:(bounds.minX+bounds.maxX)/2,y:(bounds.minY+bounds.maxY)/2}:{x:group.x,y:group.y};group.x+=positions[index].x-center.x;group.y+=positions[index].y-center.y;for(const layer of group.layers)stage.transformLayer(group,layer);});
+        stage.evaluate(0);
+      }
+      if(append)stage.camera=viewport;else{stage.fit();outputCamera=cameraCopy(stage.camera);editor.resetHistory();}editor.before(initial);editor.endBatch();
+    }
     if(complete)message(append?'Template added to scene':'Scene template created',{transient:true});
   }
   viewer.setCanvasContextMenu(event=>{

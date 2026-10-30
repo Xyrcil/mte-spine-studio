@@ -184,4 +184,5 @@ export default {
   'Discard changes':'放弃更改',
   'Include HX variants':'包含 HX 版本','Add a template':'添加模板','Add template':'添加模板','Add an arrangement to the current scene.':'将排列添加到当前场景。','Template added to scene':'已将模板添加到场景',
   'A scene supports up to 512 objects.':'一个场景最多支持 512 个对象。',
+  'Arrange by':'排列方式','Rows':'行数','Gap (% of portrait height)':'间距（占立绘高度 %）','Negative values overlap neighboring portraits.':'负值会让相邻立绘适度重叠。',
 };
