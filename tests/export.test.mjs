@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {exportPlan,frameSources,exportCamera,clipSample,exportRenderSize} from '../src/engine/export-plan.js';
-import {omittedVisualWarnings} from '../src/engine/export-source.js';
+import {exportPlan,frameSources,exportCamera,clipSample,exportRenderSize,previewFrameIndices,moveExportCrop} from '../src/engine/export-plan.js';
+import {omittedVisualWarnings,exportPlaybackScene} from '../src/engine/export-source.js';
 import {RenderSession} from '../src/engine/export.js';
 
 test('export material clocks depend on the source time and requested frame, not the seek path',async()=>{
@@ -16,6 +16,19 @@ test('export material clocks depend on the source time and requested frame, not 
   }
 });
 const settings=()=>({format:'mp4',width:320,height:240,scale:1,fps:10,speed:1,start:0,end:1,loops:2,loopMode:'repeat',fade:.2,background:'#191b20',transparent:false,fit:'contain',crop:{x:0,y:0,width:1,height:1}});
+test('visual crop stays inside the viewport and preview samples reuse the real loop order',()=>{
+  const crop={x:.1,y:.2,width:.4,height:.5};
+  assert.deepEqual(moveExportCrop(crop,2,-2),{...crop,x:.6,y:0});
+  assert.deepEqual(moveExportCrop(crop,2,2,'se'),{...crop,width:.9,height:.8});
+  const corner=moveExportCrop(crop,-2,-2,'nw');assert.equal(corner.x,0);assert.equal(corner.y,0);assert.equal(corner.width,.5);assert.equal(corner.height,.7);
+  for(const loopMode of ['repeat','ping-pong','crossfade']){const plan=exportPlan({...settings(),end:30,loopMode}),indices=previewFrameIndices(plan);assert.ok(indices.length<=180);assert.equal(indices[0],0);assert.ok(indices.every(index=>index<plan.cycleFrames));assert.deepEqual(frameSources(plan,indices.at(-1)),frameSources(plan,indices.at(-1)+plan.cycleFrames));}
+});
+test('restarting one artwork drops only its captured voice, not the original scene or other sounds',()=>{
+  const object={id:'actor',kind:'image',name:'Actor',src:'data:image/png;base64,AA==',width:1,height:1,x:0,y:0,scale:1,rotation:0,opacity:1};
+  const scene={schema:1,name:'Scene',background:'#191b20',camera:{x:0,y:0,width:10,height:10},speed:1,paused:false,objects:[object],audio:{schema:1,voiceVolume:1,effectVolume:1,ambientVolume:1,muted:false,ambientEnabled:false,language:'a_sound_voiceeff',ambientTracks:[],voiceTrack:{name:'voice',category:'a_sound_voiceeff',time:1,group:'actor'},effectTracks:[{name:'selected effect',category:'a_sound_ui',time:0,group:'actor'},{name:'scene effect',category:'a_sound_ui',time:0}]}};
+  const restarted=exportPlaybackScene(scene,{startMode:'idle',appearanceGroup:'actor'});assert.deepEqual(restarted.objects[0].id,'actor');assert.equal(scene.objects[0],object);assert.equal(restarted.audio.voiceTrack,undefined);assert.equal(scene.audio.voiceTrack.name,'voice');assert.deepEqual(restarted.audio.effectTracks,[scene.audio.effectTracks[1]]);
+  assert.throws(()=>exportPlaybackScene(scene,{startMode:'idle',appearanceGroup:'absent'}),/Select an artwork/);assert.throws(()=>exportPlan({...settings(),startMode:'unknown'}),/start mode/);
+});
 test('export supersampling preserves output size and respects device and memory limits',()=>{
   const plan=exportPlan(settings());assert.deepEqual(exportRenderSize(plan,8192),{width:640,height:480,scale:2});assert.equal(plan.width,320);
   assert.deepEqual(exportRenderSize(plan,512),{width:320,height:240,scale:1});

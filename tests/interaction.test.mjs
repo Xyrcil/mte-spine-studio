@@ -17,6 +17,12 @@ test('box and polygon colliders retain offsets and include polygon edges',()=>{
   const matrix=objectTransform({x:4,y:5,scale:2,rotation:37,flipX:true}),world=point(matrix,3,2),local=inversePoint(matrix,world.x,world.y);assert.ok(Math.abs(local.x-3)<1e-10&&Math.abs(local.y-2)<1e-10);
 });
 test('controller event source follows hierarchy rather than render sorting',()=>{const {root}=fixture();assert.equal(root.primary.instance.id,'front');});
+test('alternating source animations use their own sound before falling back to the declared hit sound',()=>{
+  const {root,events}=fixture();root.source.data.rolePetType=0;root.sounds.set('horn','first_sound');root.sounds.set('horn_02','second_sound');
+  assert.equal(root.click({event:102,animation:'horn'}).accepted,true);assert.equal(events.find(row=>row.name)?.name,'first_sound');
+  root.unlocked();events.length=0;assert.equal(root.click({event:102,animation:'horn'}).animation,'horn_02');assert.equal(events.find(row=>row.name)?.name,'second_sound');
+  root.unlocked();root.value.variants.horn=true;root.sounds.delete('horn_02');events.length=0;root.click({event:102,animation:'horn'});assert.equal(events.find(row=>row.name)?.name,'first_sound');
+});
 test('managed source controllers unlock only on the active animation end event',()=>{
   const {root,events}=fixture();root.source.class='SpineClickAnimationRoot';
   root.click({event:1,track:2});const active=root.primary.state.getCurrent(2),before=root.snapshot(),count=events.length;

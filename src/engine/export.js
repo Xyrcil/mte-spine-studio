@@ -1,11 +1,13 @@
 import {Output,BufferTarget,StreamTarget,Mp4OutputFormat,WebMOutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
 import {Zip,ZipPassThrough} from 'fflate';
 import {Stage} from './stage.js';
-import {exportPlan,frameSources,exportCamera,exportRenderSize} from './export-plan.js';
+import {resourceUrl} from './resource-urls.js';
+import {exportPlan,frameSources,exportCamera,exportRenderSize,previewFrameIndices} from './export-plan.js';
 import {mixExportSample,voiceTimeline,sceneCaptionWeight} from './export-audio.js';
 import {subtitleActive,prepareSubtitle,drawSubtitle} from './subtitles.js';
 import {aacEncodingDelay,aacGaplessMetadata,normalizeDecodedAac} from './audio-delay.js';
-import {exportScene,omittedVisualWarnings} from './export-source.js';
+import {exportPlaybackScene,omittedVisualWarnings} from './export-source.js';
+import {prepareAppearancePlayback} from './appearance-playback.js';
 import {chooseVideoCodec} from './export-codec.js';
 import {InteractionPlayer} from './interaction-sequence.js';
 import {objectVisible} from './background-layers.js';
@@ -18,23 +20,57 @@ const png=canvas=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve
 
 export class RenderSession {
   constructor(scene,catalog,entries,imageAssets,sourceAspect,plan,signal){
-    this.scene=exportScene(scene,Boolean(plan.useSequence));this.catalog=catalog;this.entries=entries;this.plan=plan;this.signal=signal;
+    this.scene=exportPlaybackScene(scene,plan);this.catalog=catalog;this.entries=entries;this.plan=plan;this.signal=signal;
     this.canvas=document.createElement('canvas');this.canvas.width=plan.width;this.canvas.height=plan.height;
     this.stage=new Stage(this.canvas,{manual:true,antialias:!plan.supersampling,transparent:Boolean(plan.transparent)});this.stage.imageAssets=new Map(imageAssets);
     try{const size=exportRenderSize(plan,this.stage.gl.getParameter(this.stage.gl.MAX_RENDERBUFFER_SIZE));this.renderScale=plan.supersampling?size.scale:1;this.canvas.width=plan.width*this.renderScale;this.canvas.height=plan.height*this.renderScale;}catch(error){this.stage.dispose();throw error;}
     this.stage.addEventListener('sequence-error',event=>{this.playbackError=new Error(event.detail);});
     const bounds=exportCamera(this.scene.camera,sourceAspect,plan);this.camera=bounds.camera;this.stage.options.clip=bounds.clip?Object.fromEntries(Object.entries(bounds.clip).map(([key,value])=>[key,value*this.renderScale])):null;this.stage.options.maskCamera=bounds.maskCamera;this.time=0;
   }
-  async initialize(){checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);if(this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);this.materialTimeOrigin=this.stage.materialTime;if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;}
+  async initialize(){
+    checkpoint(this.signal);this.playbackError=null;this.stage.sequencePlayer=null;
+    if(this.scene.objects.some(object=>this.catalog.find(row=>row.id===object.bundle)?.controllers?.some(root=>root.class==='SpineClickAnimationRoot'&&!Object.hasOwn(root.data,'rolePetType'))))await ensureInteractionAmbients(this.stage,this.signal);
+    const restart=!this.plan.useSequence&&this.plan.startMode&&this.plan.startMode!=='captured';
+    if(restart||this.scene.mainViewSpeech?.group||this.scene.sequence?.actions.some(action=>action.type==='main-view-speech'))await ensureMainViewSpeech(this.stage,this.signal);
+    await this.stage.restore(this.scene,this.catalog,this.entries,this.signal);this.initialSpeech=null;
+    if(restart){
+      const group=this.stage.groups.find(group=>group.id===this.plan.appearanceGroup),result=prepareAppearancePlayback(this.stage.mainViewSpeech.library,group,{entrance:this.plan.startMode==='entry',unlocked:true});
+      if(!result.applied||!result.profile.idleAvailable)throw new Error('This artwork has no source entry or idle configuration');
+      if(this.plan.startMode==='entry'&&!result.entrance)throw new Error('This artwork has no source entry animation');
+      const entry=this.plan.startMode==='entry'&&Boolean(this.plan.entryVoice);
+      if(entry||!this.scene.mainViewSpeech?.group||this.scene.mainViewSpeech.group===group.id)this.initialSpeech={group:group.id,entry};
+    }
+    this.materialTimeOrigin=this.stage.materialTime;if(this.plan.useSequence)this.stage.sequencePlayer=new InteractionPlayer(this.stage,this.scene.sequence,{continueAfterEnd:true});this.stage.background=this.plan.background;this.stage.camera={...this.camera};this.time=0;this.pendingTime=0;
+  }
   async seek(target,onAdvance){
     if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');
     checkpoint(this.signal);
     if(target<this.time-1e-9){await this.initialize();this.time=0;}
+    if(this.initialSpeech){const speech=this.initialSpeech;this.initialSpeech=null;const options={language:this.scene.audio?.language||'a_sound_voiceeff'};this.stage.mainViewSpeech.command(speech.group,'start',options);if(speech.entry)this.stage.mainViewSpeech.command(speech.group,'entry',options);}
     let steps=0;
     while(target-this.time>1e-9){const delta=Math.min(1/120,target-this.time);this.pendingTime=this.time+delta;this.stage.evaluate(delta);if(this.playbackError)throw this.playbackError;this.time+=delta;if(++steps%300===0){onAdvance?.(this.time);await yieldBrowser();checkpoint(this.signal);}}
     if(this.stage.recoveryPending)throw new Error('Export rendering was interrupted; retry the export');this.time=target;this.pendingTime=target;this.stage.materialTime=this.materialTimeOrigin+target;this.stage.evaluate(0);if(this.playbackError)throw this.playbackError;this.stage.draw();
   }
   dispose(){this.stage.dispose();this.stage.gl.getExtension('WEBGL_lose_context')?.loseContext();}
+}
+
+export async function prepareLoopPreview({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{}}){
+  const source=exportPlaybackScene(scene,settings),plan=exportPlan({...settings,format:'png'},source.speed);
+  if(plan.end>120)throw new Error('Loop preview supports intervals ending within 120 seconds. Media export is not limited.');
+  const indices=previewFrameIndices(plan),sources=indices.map(index=>frameSources(plan,index)),frames=[...new Set(sources.flatMap(rows=>rows.map(row=>row.frame)))].sort((a,b)=>a-b);
+  const aspect=plan.width/plan.height,pixels=Math.min(480*480/Math.max(aspect,1/aspect),16*1024*1024/(frames.length+3));
+  const width=Math.max(2,Math.floor(Math.sqrt(pixels*aspect))),height=Math.max(2,Math.floor(width/aspect));
+  const session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,{...plan,width,height,transparent:Boolean(settings.transparent)},signal),images=new Map();
+  let disposed=false,stageDisposed=false;
+  const releaseStage=()=>{if(!stageDisposed){stageDisposed=true;session.dispose();}};
+  const dispose=()=>{if(disposed)return;disposed=true;for(const image of images.values())image.close();images.clear();releaseStage();};
+  try{
+    await session.initialize();
+    for(const frame of frames){checkpoint(signal);await session.seek(plan.start+frame/plan.fps*plan.speed);images.set(frame,await createImageBitmap(session.canvas));onProgress({frame:images.size,total:frames.length});await yieldBrowser();}
+    checkpoint(signal);releaseStage();
+    return {width,height,duration:plan.cycleFrames/plan.fps,samples:indices.length,dispose,
+      draw(ctx,seconds){if(disposed)return;const rows=sources[Math.floor((seconds%(plan.cycleFrames/plan.fps))/(plan.cycleFrames/plan.fps)*sources.length)];ctx.clearRect(0,0,width,height);ctx.imageSmoothingEnabled=true;for(let index=0;index<rows.length;index++){ctx.globalCompositeOperation=index?'lighter':'source-over';ctx.globalAlpha=rows[index].weight;ctx.drawImage(images.get(rows[index].frame),0,0);}ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}};
+  }catch(error){dispose();throw error;}
 }
 
 export async function collectInteractionEffects(session,plan,provider,onProgress=()=>{},interactionProvider){
@@ -83,7 +119,7 @@ export async function exportVideoSupport(settings,sceneSpeed=1){
 }
 
 export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspect,settings,signal,onProgress=()=>{},writable,audioClip,ambientClips=[],subtitleClip,effectProvider,capturedVoice,interactionProvider}){
-  scene=exportScene(scene,Boolean(settings.useSequence));
+  scene=exportPlaybackScene(scene,settings);
   const plan=exportPlan(settings,scene.speed),quality=new Quality({bitrate:plan.bitrate}),codec=await exportVideoSupport(settings,scene.speed);
   if(!writable&&['mp4','webm'].includes(plan.format)&&plan.bitrate*plan.duration/8>384*1024*1024)throw new Error('Use direct file saving for this large export, or reduce its duration or bitrate');
   const renderPlan={...plan,supersampling:true},session=new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal),head=plan.loopMode==='crossfade'?new RenderSession(scene,catalog,entries,imageAssets,sourceAspect,renderPlan,signal):null;
@@ -130,7 +166,7 @@ export async function exportMedia({scene,catalog,entries,imageAssets,sourceAspec
       for(const clip of [...(video&&audioClip?[{...audioClip,scene:false}]:[]),...(video?ambientClips.map(clip=>({...clip,scene:true})):[]),...interactionClips,...(voiceAudio?[voiceAudio]:[]),...scheduledAudio,...(subtitleClip?[{...subtitleClip,captionOnly:true}]:[]),...(voiceCaption?[voiceCaption]:[]),...scheduledCaptions]){
         if(clip.sceneCaption&&!clip.url){sceneCaptions.push({layout:prepareSubtitle(ctx,clip.text,plan.width,plan.height),duration:clip.duration,position:clip.position,rate:clip.sceneRate,offset:clip.offset||0,until:clip.until});continue;}
         checkpoint(signal);let buffer=decoded.get(clip.url);
-        if(!buffer){const response=await fetch(clip.url,{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
+        if(!buffer){const response=await fetch(resourceUrl(clip.url),{signal});if(!response.ok)throw new Error(`Audio unavailable (${response.status})`);
           const data=await response.arrayBuffer(),timing=aacGaplessMetadata(data);
           buffer=normalizeDecodedAac(decoder,await decoder.decodeAudioData(data),timing);checkpoint(signal);decodedBytes+=buffer.length*buffer.numberOfChannels*4;
           if(decodedBytes>256*1024*1024)throw new Error('Decoded audio exceeds the memory budget; use fewer or shorter sound tracks');decoded.set(clip.url,buffer);

@@ -76,7 +76,16 @@ export class History {
   redo(current){if(!this.future.length)return null;this.past.push(structuredClone(current));return this.future.pop();}
 }
 
-let dbPromise;
+let dbPromise,hostScenes=null;
+export function configureHostSceneStore(value){
+  if(value===null){hostScenes=null;return;}
+  if(!Array.isArray(value)||value.length>64)throw new Error('Invalid saved wallpaper scenes');
+  const next=new Map();
+  for(const row of value){if(typeof row?.key!=='string'||!row.key||row.key.length>512||row.key==='autosave'||next.has(row.key))throw new Error('Invalid saved wallpaper scene');next.set(row.key,validateScene(row.scene));}
+  hostScenes=next;
+}
+export function hostSavedScenes(){return hostScenes?[...hostScenes].filter(([key])=>key!=='autosave').map(([key,scene])=>({key,scene:structuredClone(scene)})):[];}
+function hostStoreChanged(){globalThis.window?.dispatchEvent(new Event('mte-session-change'));}
 function database(){
   if(!dbPromise){
     const opening=new Promise((resolve,reject)=>{
@@ -93,11 +102,18 @@ function database(){
   return dbPromise;
 }
 export async function saveLocalScene(scene,key='autosave'){
-  const checked=validateScene(scene),db=await database();
+  const checked=validateScene(scene);
+  if(hostScenes){
+    if(typeof key!=='string'||!key||key.length>512)throw new Error('Invalid saved wallpaper scene name');
+    if(key!=='autosave'&&!hostScenes.has(key)&&hostScenes.size-(hostScenes.has('autosave')?1:0)>=64)throw new Error('Up to 64 wallpaper scenes can be saved');
+    hostScenes.set(key,checked);hostStoreChanged();return;
+  }
+  const db=await database();
   return new Promise((resolve,reject)=>{const tx=db.transaction('scenes','readwrite');tx.objectStore('scenes').put(checked,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Scene save aborted'));});
 }
 export async function loadLocalScene(key='autosave'){
+  if(hostScenes)return hostScenes.has(key)?structuredClone(hostScenes.get(key)):null;
   const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('scenes'),request=tx.objectStore('scenes').get(key);tx.oncomplete=()=>{try{resolve(request.result?validateScene(request.result):null);}catch(error){reject(error);}};request.onerror=()=>reject(request.error);tx.onerror=()=>reject(tx.error||request.error||new Error('Scene load failed'));tx.onabort=()=>reject(tx.error||new Error('Scene load aborted'));});
 }
-export async function listLocalScenes(){const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('scenes'),request=tx.objectStore('scenes').getAllKeys();tx.oncomplete=()=>resolve(request.result.filter(key=>key!=='autosave'));request.onerror=()=>reject(request.error);tx.onerror=()=>reject(tx.error||request.error||new Error('Scene listing failed'));tx.onabort=()=>reject(tx.error||new Error('Scene listing aborted'));});}
-export async function deleteLocalScene(key){const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('scenes','readwrite');tx.objectStore('scenes').delete(key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Scene deletion aborted'));});}
+export async function listLocalScenes(){if(hostScenes)return [...hostScenes.keys()].filter(key=>key!=='autosave');const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('scenes'),request=tx.objectStore('scenes').getAllKeys();tx.oncomplete=()=>resolve(request.result.filter(key=>key!=='autosave'));request.onerror=()=>reject(request.error);tx.onerror=()=>reject(tx.error||request.error||new Error('Scene listing failed'));tx.onabort=()=>reject(tx.error||new Error('Scene listing aborted'));});}
+export async function deleteLocalScene(key){if(hostScenes){hostScenes.delete(key);hostStoreChanged();return;}const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('scenes','readwrite');tx.objectStore('scenes').delete(key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Scene deletion aborted'));});}

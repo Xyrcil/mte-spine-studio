@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "build:web": "vite build --mode web --outDir private/web-shell",
     "build:local": "vite build --mode local-assets --outDir dist-local",
+    "build:wallpaper": "vite build --mode wallpaper --outDir private/wallpaper-shell",
     "assets:index": "node tools/index_skeletons.mjs && node tools/build_presentations.mjs",
     "test": "node --test tests/*.test.mjs"
   },

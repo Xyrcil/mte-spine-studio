@@ -1,4 +1,5 @@
 import {viewportRectLayout} from './ui-layout.js';
+import {resourceUrl} from './resource-urls.js';
 import {viewportDecorationMatrix} from './native-visuals.js';
 import {multiply,point} from './geometry.js';
 
@@ -45,7 +46,7 @@ export class DialogueTextLayer {
     try{
       for(const source of panel.fonts||[]){
         if(!source.lineBreaking)throw new Error('Original dialogue line-breaking rules are unavailable; refresh the resource pack');
-        const response=await fetch(base+source.path,{signal});if(!response.ok)throw new Error('Original dialogue font is unavailable');
+        const response=await fetch(resourceUrl(base+source.path),{signal});if(!response.ok)throw new Error('Original dialogue font is unavailable');
         const bytes=await response.arrayBuffer();if(bytes.byteLength!==source.bytes)throw new Error('Original dialogue font is incomplete');
         const family='mte-dialogue-'+crypto.randomUUID(),face=new FontFace(family,bytes);await face.load();
         if(this.disposed||signal?.aborted)throw new DOMException('Dialogue font loading cancelled','AbortError');document.fonts.add(face);this.fonts.set(source.assetId,{source,family,face});

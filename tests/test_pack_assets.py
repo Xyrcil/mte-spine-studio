@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from pack_assets import pack, CATALOGUES, indexed_files
+from pack_assets import pack, refresh_catalogues, CATALOGUES, indexed_files
 
 
 class ResourceArchiveTests(unittest.TestCase):
@@ -93,3 +93,31 @@ class ResourceArchiveTests(unittest.TestCase):
                 (root / "audio-index.json").write_text(json.dumps({"schema": 1, "entries": [{"errors": [], "clips": [{"path": path}]}]}), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     indexed_files(root)
+
+    def test_catalogue_refresh_preserves_media_has_no_duplicate_entries_and_rejects_new_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "assets"
+            self.setup_assets(root)
+            (root / "audio").mkdir()
+            (root / "audio/voice.wav").write_bytes(b"source voice")
+            (root / "audio-index.json").write_text(json.dumps({"schema": 1, "entries": [{"errors": [], "clips": [{"path": "audio/voice.wav"}]}]}))
+            output = Path(directory) / "resources.zip"
+            pack(root, output)
+            library = json.loads((root / "library.json").read_text())
+            library["mainViewVoices"] = {"entryVoices": [{"resourceName": "source"}]}
+            (root / "library.json").write_text(json.dumps(library))
+            result = refresh_catalogues(root, output)
+            self.assertEqual(result["updated"], ["library.json"])
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(len(archive.namelist()), len(set(archive.namelist())))
+                self.assertEqual(archive.read("audio/voice.wav"), b"source voice")
+                self.assertEqual(json.loads(archive.read("library.json")), library)
+            before = output.read_bytes()
+            self.assertEqual(refresh_catalogues(root, output)["updated"], [])
+            library["extra"] = "audio/new.wav"
+            (root / "library.json").write_text(json.dumps(library))
+            (root / "audio/new.wav").write_bytes(b"new")
+            with self.assertRaisesRegex(ValueError, "Resource files changed"):
+                refresh_catalogues(root, output)
+            self.assertEqual(output.read_bytes(), before)
+            self.assertEqual(list(output.parent.glob("mte-pack-*.partial")), [])

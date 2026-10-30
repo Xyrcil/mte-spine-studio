@@ -1,4 +1,4 @@
-import {mainViewVoiceBinding,mainViewTouchVoices} from './voice-catalog.js';
+import {mainViewVoiceBinding,mainViewTouchVoices,mainViewEntryVoice} from './voice-catalog.js';
 import {audioResourceLookup} from './audio.js';
 
 const languages=['a_sound_voiceeff','a_sound_voiceeff_ch'];
@@ -24,8 +24,7 @@ export class MainViewSpeech {
     const binding=this.binding(group);if(!binding)return false;
     if(group.kind!=='spine'||binding.drawingId)return true;
     const rules=this.library.mainViewVoices?.touchRules;if(!rules)return false;
-    const appearance=this.object(group).appearanceId||this.library.appearances.find(row=>row.bundle===group.presentation.id)?.id;
-    return !(rules.find(row=>row.id===appearance)?.spineTouch>0);
+    return !(rules.find(row=>row.id===binding.modelId)?.spineTouch>0);
   }
   pool(group){
     const binding=this.binding(group);if(!binding)return [];
@@ -45,7 +44,7 @@ export class MainViewSpeech {
       return {accepted:true,animation:resourceName};
     }
     const clip=this.audio?.resolve(resourceName,this.value.language,true);
-    if(!usableClip(clip)){this.emit('speech-unavailable',{resourceName,language:this.value.language});return {accepted:false,reason:'Source speech or its timing metadata is unavailable for this language'};}
+    if(!usableClip(clip)){this.emit('speech-unavailable',{group:group.id,resourceName,language:this.value.language});return {accepted:false,resourceName,reason:'Source speech or its timing metadata is unavailable for this language'};}
     delete this.value.captionOnly;this.value.wordsVisible=true;this.stage.mainViewSpeechClock.soundStarted(clip.duration);
     this.emit('voice-request',{group:group.id,...(row.id?{sourceVoiceId:row.id}:{sourceResource:resourceName}),sourceCaption:true,language:this.value.language,lateness});
     return {accepted:true,animation:resourceName};
@@ -59,13 +58,14 @@ export class MainViewSpeech {
       if(this.value.group!==groupId)return {accepted:false,reason:'This object is not the main-view speaker'};
       clock.hide();clock.stopWords();clock.clearShields();this.emit('voice-stop-request',{group:groupId});this.value.group='';return {accepted:true,animation:''};
     }
-    if(!['start','touch'].includes(operation))return {accepted:false,reason:'Unknown source speech command'};
+    if(!['start','touch','entry','birthday'].includes(operation))return {accepted:false,reason:'Unknown source speech command'};
     if(operation==='touch'&&!this.touchAllowed(group))return {accepted:false,reason:'The original main-view touch button is disabled or its rules are unavailable'};
     if(operation==='touch'&&!clock.value.canClick)return {accepted:false,reason:'Source speech is still playing'};
     if(this.value.group!==groupId){const old=this.value.group;clock.hide();clock.stopWords();clock.clearShields();if(old)this.emit('voice-stop-request',{group:old});this.value.group=groupId;clock.show();clock.finish();}
     else if(!clock.value.visible){clock.show();clock.finish();}
     this.value.language=language;this.value.localized=localized;
     if(operation==='start'){if(!clock.active)clock.finish();return {accepted:true,animation:''};}
+    if(operation==='entry'||operation==='birthday')return this.request(group,{...mainViewEntryVoice(this.library,this.object(group),{birthday:operation==='birthday'}),id:undefined});
     const pool=this.pool(group);if(!pool.length)return {accepted:false,reason:'The original touch pool has no unlocked lines'};
     const row=pool[this.choose(pool.length)],clip=this.audio?.resolve(row.resourceName,language,true);
     if(!usableClip(clip)&&!chineseCaptionPolicy(this.library,row.resourceName,language))return this.request(group,row);

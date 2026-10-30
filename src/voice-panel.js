@@ -1,5 +1,18 @@
-import {voiceCatalog,hotSpringRole,stationVoiceBinding,mainViewVoiceBinding} from './engine/voice-catalog.js';
+import {voiceCatalog,hotSpringRole,stationVoiceBinding,mainViewVoiceBinding,mainViewEntryVoice} from './engine/voice-catalog.js';
 import {chineseCaptionPolicy} from './engine/main-view-speech.js';
+
+export function voiceAvailability(library,audio,row,language,{bindingKnown=true}={}){
+  if(!bindingKnown)return {state:'unbound',clip:null,label:'Automatic dialogue binding is unconfirmed.'};
+  if(!row?.resourceName)return {state:'unconfigured',clip:null,label:'No source audio is configured.'};
+  const clip=audio.resolve(row.resourceName,language,row.exactResource),policy=chineseCaptionPolicy(library,row.resourceName,language);
+  if(policy)return {state:'caption-only',clip,policy,label:'The source uses subtitles only for this language.'};
+  if(!clip)return {state:'missing',clip:null,label:'Audio file is missing for this language.'};
+  return {state:'available',clip,label:clip.sharedShortCue?`Shared short source cue (${clip.duration.toFixed(2)} s) · Not a unique voice line`:row.subtitleStatus==='missing'?'Audio available · Original subtitle unavailable':'Available'};
+}
+
+export function arrivalVoiceAvailability(library,audio,object,{birthday=false}={}){
+  return voiceAvailability(library,audio,mainViewEntryVoice(library,object,{birthday}),audio.language,{bindingKnown:Boolean(mainViewVoiceBinding(library,object))});
+}
 
 export function createVoicePanel(presentation,library,audio,editor,message,stage){
   document.querySelector('#voice-panel')?.remove();document.querySelector('#hot-spring-controls')?.remove();document.querySelector('#main-view-controls')?.remove();if(!audio)return;
@@ -11,6 +24,8 @@ export function createVoicePanel(presentation,library,audio,editor,message,stage
   const role=hotSpringRole(library,presentation),selectedGroup=()=>{const group=editor.selected();return group&&(presentation.appearanceId?(group.appearanceId??group.presentation?.appearanceId)===presentation.appearanceId:group.presentation?.id===presentation.id)?group:null;};
   const station=stationVoiceBinding(library,presentation);if(station?.voiceIds.length){field('voice-scope').append(new Option('Station voice pool','station'));const note=document.createElement('p');note.id='station-voice-note';note.textContent='This pool follows the original drawing voice IDs. Playback here is a manual preview, not an animation event.';panel.append(note);}
   const mainBinding=mainViewVoiceBinding(library,presentation),favorProfile=mainBinding?.voiceIds.length?null:library.mainViewVoices?.hotSpringProfiles?.find(row=>row.id===mainBinding?.modelId);
+  if(!mainBinding){const note=document.createElement('p');note.textContent='Automatic dialogue has no matching source appearance binding. Stored voices remain available for manual preview.';panel.append(note);}
+  if(presentation.controllers?.some(root=>root.data.OtherSoundList?.length)){const note=document.createElement('p');note.textContent='This skin uses dedicated interaction sounds. Actions without a source sound remain silent.';panel.append(note);}
   if(mainBinding&&library.mainViewVoices?.touchRules&&library.mainViewVoices?.captions&&stage?.mainViewSpeech.library&&selectedGroup()){
     const controls=document.createElement('section');controls.id='main-view-controls';
     controls.innerHTML='<h3>Main-view speech</h3><p>Choose this object as the main-view speaker. Idle speech follows the original two-minute game timer. These commands can be recorded.</p><label><input id="main-view-localized" type="checkbox">Preview source localization filter</label><div class="actions"></div><p>The source localization filter excludes chest lines from ordinary and station pools. It does not select the audio language or simulate account progress.</p><p>Uses recovered managed-client rules. Newer native-client behavior has not been verified.</p>';
@@ -37,9 +52,9 @@ export function createVoicePanel(presentation,library,audio,editor,message,stage
   sourceSound.onclick=async()=>{try{await audio.playEffect(role.ambientSound,sound.category,0,true,selectedGroup()?.id);editor.changed({audioOnly:true});}catch(error){message(error.message);}};
   language.value=audio.language;field('voice-volume').value=audio.volume;field('effect-volume').value=audio.effectVolume;
   function selection(){return rows.find(row=>row.id===list.value);}
-  function status(){const row=selection(),clip=row&&audio.resolve(row.resourceName,language.value,row.exactResource),policy=row&&chineseCaptionPolicy(library,row.resourceName,language.value);field('play-voice').disabled=!clip;field('voice-availability').textContent=(row?clip?clip.sharedShortCue?`Shared short source cue (${clip.duration.toFixed(2)} s) · Not a unique voice line`:row.subtitleStatus==='missing'?'Audio available · Original subtitle unavailable':'Available':row.resourceName?'Audio absent for this language':'No audio resource configured':'No matching voices')+(policy?` · Source mode: subtitle only (${policy.duration} s). This button previews stored audio.`:'');}
+  function status(){const row=selection(),state=voiceAvailability(library,audio,row,language.value);field('play-voice').disabled=!state.clip;field('voice-availability').dataset.state=row?state.state:'empty';field('voice-availability').textContent=(row?state.label:'No matching voices')+(state.policy&&state.clip?' · This button previews stored audio.':'');}
   function refresh(){const previous=list.value;levelLabel.hidden=sourceNote.hidden=sourceSound.hidden=field('voice-scope').value!=='hot-spring';favorLabel.hidden=favorNote.hidden=!favorProfile||field('voice-scope').value!=='main-view-touch';if(selectedGroup()?.hotSpringLevel!==undefined)level.value=String(selectedGroup().hotSpringLevel);if(selectedGroup()?.hotSpringFavorLevel!==undefined)favor.value=String(selectedGroup().hotSpringFavorLevel);rows=voiceCatalog(library,[{...presentation,hotSpringLevel:Number(level.value)||1,hotSpringFavorLevel:favorProfile?Number(favor.value):undefined}],field('voice-scope').value,field('voice-search').value);list.replaceChildren();
-    for(const row of rows){const clip=audio.resolve(row.resourceName,language.value,row.exactResource),option=new Option(`${row.label}${clip?.sharedShortCue?' · Shared short cue':clip?'':' · Missing track'}`,row.id);list.append(option);}
+    for(const row of rows){const state=voiceAvailability(library,audio,row,language.value),option=new Option(`${row.label}${state.state==='caption-only'?' · Subtitle only':state.clip?.sharedShortCue?' · Shared short cue':state.clip?'':' · Missing track'}`,row.id);list.append(option);}
     if(rows.some(row=>row.id===previous))list.value=previous;else{const first=rows.find(row=>audio.resolve(row.resourceName,language.value,row.exactResource));if(first)list.value=first.id;}
     field('voice-count').textContent=`Voices (${rows.length})`;status();
   }

@@ -25,3 +25,9 @@ test('scene cache preparation resolves root-relative atlas URLs under project de
 test('scene cache preparation includes unique particle sprite textures',()=>{const url=scope+'assets/effects/petal.png';assert.deepEqual(sceneCacheUrls([{effects:[{textures:[url,url]}]}],scope),[url]);});
 test('offline preparation includes rendered native images without queuing unsupported graphics',()=>{const url=scope+'assets/effects/smoke.png';assert.deepEqual(sceneCacheUrls([{nativeImages:[{used:true,texture:url},{used:true,texture:url},{used:false,texture:scope+'assets/unused.png'},{used:true,reason:'unsupported',texture:scope+'assets/unsupported.png'}]}],scope),[url]);});
 test('catalogue caching requires the expected schema and collection fields',()=>{assert.equal(validCatalogue({schema:1,entries:[]},'runtime-index.json'),true);assert.equal(validCatalogue({schema:1,entries:[]},'library.json'),false);assert.equal(validCatalogue(false,'audio-index.json'),false);assert.equal(validCatalogue({schema:99,entries:[]},'audio-index.json'),false);});
+test('hosted code is cached as application code and alias changes invalidate resource metadata',()=>{
+  assert.equal(cacheKind(scope+'app/index-abc.js',scope),'shell');
+  assert.equal(cacheKind(scope+'assets/resource-map.json',scope),'catalog');
+  assert.equal(validCatalogue({schema:1,aliases:{'b.png':'a.png'}},'resource-map.json'),true);
+  for(const aliases of [[],null,{bad:42}])assert.equal(validCatalogue({schema:1,aliases},'resource-map.json'),false);
+});

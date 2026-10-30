@@ -29,6 +29,11 @@ test('character, category, source searches, favorites and recent order compose',
   const rows=buildAssetLibrary(catalog,library);assert.equal(queryAssetLibrary(rows,{character:'1'}).length,3);assert.equal(queryAssetLibrary(rows,{category:'painting'}).length,4);assert.equal(queryAssetLibrary(rows,{category:'skin',search:'alice summer'}).length,1);assert.equal(queryAssetLibrary(rows,{category:'portrait'}).length,3);assert.equal(queryAssetLibrary(rows,{character:'unassigned'}).length,3);
   assert.deepEqual(queryAssetLibrary(rows,{collection:'favorites',favorites:['appearance:2']}).map(r=>r.name),['Summer']);assert.deepEqual(queryAssetLibrary(rows,{collection:'recent',recent:['appearance:3','appearance:1']}).map(r=>r.name),['Story','Original']);assert.equal(queryAssetLibrary(rows,{search:'does not exist'}).length,0);
 });
+test('known characters precede unassigned resources without hiding either or reordering recents',()=>{
+  const rows=buildAssetLibrary(catalog,library),ordered=queryAssetLibrary(rows);
+  assert.equal(ordered[0].characterId,'1');assert.equal(ordered.at(-1).characterId,'');assert.equal(ordered.length,rows.length);
+  assert.deepEqual(queryAssetLibrary(rows,{collection:'recent',recent:['appearance:4','appearance:1']}).map(row=>row.name),['Absent','Original']);
+});
 test('original controller variants retain their own collider geometry and appearance association',t=>{
   let catalog,library;try{catalog=JSON.parse(readFileSync(new URL('../public/assets/presentations.json',import.meta.url)));library=JSON.parse(readFileSync(new URL('../public/assets/library.json',import.meta.url)));}catch{t.skip('Local game assets are not distributed');return;}
   for(const name of ['301301101_spine','301603101_spine']){

@@ -2,6 +2,7 @@ import workerUrl from './cache-worker.js?worker&url';
 import {sceneCacheUrls} from './engine/cache-policy.js';
 import {voiceCatalog} from './engine/voice-catalog.js';
 import {sequenceCacheResources} from './engine/sequence-cache.js';
+import {resourceUrl} from './engine/resource-urls.js';
 
 export function createCachePanel(stage,editor,getData,message){
   const panel=document.createElement('section');panel.id='cache-panel';panel.innerHTML=`<h2>Resource cache</h2><p id="cache-status" role="status">Starting resource cache…</p><label class="check-label"><input id="cache-enabled" type="checkbox" checked>Cache resources I open</label><label>Resource limit (MiB)<input id="cache-budget" type="number" min="64" max="2048" step="64" value="256"></label><label class="check-label"><input id="cache-voices" type="checkbox">Include selected character voices</label><div class="actions"><button id="cache-scene">Prepare scene offline</button><button id="cache-cancel" disabled>Cancel preparation</button><button id="cache-clear">Clear resource cache</button><button id="cache-refresh">Refresh cache status</button><button id="cache-persist">Request persistent storage</button><button id="cache-update" hidden>Apply app update</button></div><p>Only prepared or previously cached resources work offline. Clearing this cache does not remove saved scenes. Browser storage may still be evicted.</p>`;
@@ -44,7 +45,8 @@ export function createCachePanel(stage,editor,getData,message){
       if(controller.signal.aborted)throw new DOMException('Cache preparation cancelled','AbortError');
       if(!urls.size)throw new Error('No scene resources to prepare');
       const catalogues=['runtime-index.json','presentations.json','library.json','audio-index.json','portrait-index.json'].map(name=>new URL('assets/'+name,base).href);
-      await request('PREFETCH',{id:job,urls:[...new Set([...catalogues,...urls])]},info=>status(`Preparing ${info.done} / ${info.total} resources`));await refresh();if(warnings.length)status(field('status').textContent+' · '+warnings.join('; '));
+      if(import.meta.env.MODE==='web'&&!await request('PACK_STATUS'))catalogues.push(new URL('assets/resource-map.json',base).href);
+      await request('PREFETCH',{id:job,urls:[...new Set([...catalogues,...urls].map(resourceUrl))]},info=>status(`Preparing ${info.done} / ${info.total} resources`));await refresh();if(warnings.length)status(field('status').textContent+' · '+warnings.join('; '));
     }catch(error){status(error.name==='AbortError'?'Cache preparation cancelled':error.message);}finally{busy=false;controller=null;field('cancel').disabled=true;field('scene').disabled=false;}
   };
   field('cancel').onclick=()=>{controller?.abort();request('CANCEL',{id:job}).catch(error=>status(error.message));};

@@ -19,7 +19,7 @@ export function createSequencePanel(stage,editor,message){
     updateTimeline(busy||editor.busy);
     field('status').textContent=recorder.active?`Recording · ${recorder.actions.length} actions`:stage.sequencePlayer?'Replaying':stage.sequence?`${stage.sequence.actions.length} actions · ${stage.sequence.duration.toFixed(2)} s${stage.sequence.initial.audio?'':' · No recorded sound settings; replay uses current preferences'}`:'No sequence recorded';
     for(const selector of ['.library','#library-toggle','#layers','.scene-controls:not(#sequence-panel)','#sound-panel','#voice-panel','#background','#speed','#fit']){const node=document.querySelector(selector);if(node)node.inert=(selector==='.scene-controls:not(#sequence-panel)'?active||loading:busy)||(['.library','#library-toggle'].includes(selector)&&!document.querySelector('#export-panel').hidden);}
-    for(const tab of document.querySelectorAll('[data-view]'))tab.disabled=busy;
+    for(const tab of document.querySelectorAll('button[data-view]'))tab.disabled=busy;
     const spring=document.querySelector('#hot-spring-controls');if(spring){spring.inert=loading||Boolean(stage.sequencePlayer)||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired;for(const select of spring.querySelectorAll('select'))select.disabled=busy||editor.busy;}
     const story=document.querySelector('#story-cg-controls');if(story){story.inert=loading||Boolean(stage.sequencePlayer)||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired||stage.assetLoadBusy||editor.busy&&!recorder.active;for(const button of story.querySelectorAll('button'))button.disabled=story.inert;}
     const speech=document.querySelector('#main-view-controls');if(speech){speech.inert=loading||Boolean(stage.sequencePlayer)||stage.recoveryPending||stage.resourceImportBusy||stage.packReloadRequired||editor.busy&&!recorder.active;for(const checkbox of speech.querySelectorAll('input'))checkbox.disabled=busy||editor.busy;}
@@ -57,7 +57,7 @@ export function createSequencePanel(stage,editor,message){
   function stopped(){stage.sequencePlayer=null;stage.sequenceBusy=false;stage.paused=true;stage.dispatchEvent(new CustomEvent('sequence-paused'));editor.changed();refresh();}
   function stop(){recorder.stop();stopped();}
   function togglePause(){if(!recorder.active&&!stage.sequencePlayer)return false;stage.paused=!stage.paused;stage.dispatchEvent(new CustomEvent(stage.paused?'sequence-paused':'sequence-playing'));editor.refresh();return true;}
-  field('record').onclick=()=>{if(editor.busy||loading)return;try{document.querySelector('[data-view="gallery"]').click();recorder.start();stage.paused=false;stage.dispatchEvent(new CustomEvent('sequence-playing'));editor.refresh();refresh();message('Recording interactions. Click the character in Gallery.');}catch(error){message(error.message);}};
+  field('record').onclick=()=>{if(editor.busy||loading)return;try{document.querySelector('button[data-view="gallery"]').click();recorder.start();stage.paused=false;stage.dispatchEvent(new CustomEvent('sequence-playing'));editor.refresh();refresh();message('Recording interactions. Click the character in Gallery.');}catch(error){message(error.message);}};
   field('stop').onclick=stop;
   field('replay').onclick=async()=>{
     if(!stage.sequence||editor.busy||loading)return;const sequence=validateSequence(stage.sequence);loading=true;refresh();

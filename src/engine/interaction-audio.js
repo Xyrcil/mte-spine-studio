@@ -37,7 +37,7 @@ export function interactionEffects(event,skin,state){
 
 export function resolveInteractionVoice(request,library,audio,language,{onUnavailable=()=>{}}={}){
   if(request.sourceVoiceId){
-    const rows=[...(library.mainViewVoices?.voices||[]),...(library.mainViewVoices?.stationVoices||[]),...(library.mainViewVoices?.favorVoices||[])];
+    const rows=[...(library.mainViewVoices?.voices||[]),...(library.mainViewVoices?.stationVoices||[]),...(library.mainViewVoices?.favorVoices||[]),...(library.mainViewVoices?.entryVoices||[])];
     const row=rows.find(row=>row.id===request.sourceVoiceId);
     if(row&&audio.resolve(row.resourceName,language,true))return {...row,exactResource:true,title:row.title||row.resourceName,...(request.sourceCaption?{text:library.mainViewVoices?.captions?.[row.resourceName]||'',sourceMainView:true}:{})};
     onUnavailable(`Source voice unavailable (${language}): ${row?.resourceName||request.sourceVoiceId}`);

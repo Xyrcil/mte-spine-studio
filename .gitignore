@@ -6,4 +6,5 @@ __pycache__/
 *.pyc
 public/assets/
 private/
+.wrangler/
 .env*

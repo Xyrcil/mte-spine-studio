@@ -12,7 +12,7 @@ export function validateSequence(value){
     const at=time(action.at);if(at<previous||at>duration)throw new Error('Sequence actions must be ordered within its duration');previous=at;
     const group=identifier(action.group,'object'),controller=identifier(action.controller,'controller'),hit=identifier(action.hit,'region');
     if(action.type==='main-view-speech'){
-      if(!initial.objects.some(object=>object.id===group)||controller!=='main-view-speech'||!['start','touch','stop'].includes(hit)||action.unavailable!==undefined||typeof action.animation!=='string'||action.animation.length>512||!['a_sound_voiceeff','a_sound_voiceeff_ch'].includes(action.language)||typeof action.localized!=='boolean')throw new Error('Invalid sequence main-view speech');
+      if(!initial.objects.some(object=>object.id===group)||controller!=='main-view-speech'||!['start','touch','stop','entry','birthday'].includes(hit)||action.unavailable!==undefined||typeof action.animation!=='string'||action.animation.length>512||!['a_sound_voiceeff','a_sound_voiceeff_ch'].includes(action.language)||typeof action.localized!=='boolean')throw new Error('Invalid sequence main-view speech');
       return {at,group,controller,hit,animation:action.animation,type:'main-view-speech',language:action.language,localized:action.localized};
     }
     const object=initial.objects.find(object=>object.id===group&&object.kind==='spine');

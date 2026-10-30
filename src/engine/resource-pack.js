@@ -1,5 +1,10 @@
 import {validCatalogue} from './cache-policy.js';
 export const PACK_CATALOGS=['presentations.json','runtime-index.json','library.json','audio-index.json','portrait-index.json'];
+export function playbackMetadataStatus(library){
+  const skins=library?.appearances?.filter(row=>row.kind==='skin')||[],entrances=skins.filter(row=>Number.isSafeInteger(row.entranceItem)&&row.entranceItem>=0).length;
+  const greetings=Array.isArray(library?.mainViewVoices?.entryVoices);
+  return {ready:Boolean(greetings&&entrances===skins.length),entrances,greetings:greetings?library.mainViewVoices.entryVoices.length:0};
+}
 const extensions=/\.(json|skel|atlas|png|webp|jpg|jpeg|m4a|ogg|mp3|wav|otf|ttf)$/i;
 export function packPath(value){
   if(typeof value!=='string'||value.length>2048||value.startsWith('/')||/[\\\u0000-\u001f?#%]/.test(value))throw new Error('Invalid resource path');

@@ -29,6 +29,17 @@ test('source Spine touch rules disable only the main-view UI button, not portrai
   const {stage,group,library}=setup();group.kind='spine';group.presentation={id:'painting',appearanceId:'12'};library.mainViewVoices.touchRules=[{id:'12',spineTouch:1}];assert.equal(stage.mainViewSpeech.touchAllowed(group),false);assert.equal(stage.triggerMainViewSpeech('actor','touch').accepted,false);
   group.kind='image';assert.equal(stage.mainViewSpeech.touchAllowed(group),true);group.kind='spine';group.appearanceId='station';library.appearances.push({id:'station',stationDrawingId:'draw'});library.stationDrawings={drawings:[{id:'draw',gospelId:'2',voiceIds:[]}]};assert.equal(stage.mainViewSpeech.touchAllowed(group),true);
 });
+test('declared source variants inherit the canonical Spine touch restriction',()=>{
+  const {stage,group,library}=setup();group.kind='spine';group.appearanceId='hx';group.presentation={id:'variant'};
+  library.appearances.push({id:'hx',variantOf:'12',bundle:'variant'});library.mainViewVoices.touchRules=[{id:'12',spineTouch:1}];
+  assert.equal(stage.mainViewSpeech.binding(group).modelId,'12');assert.equal(stage.mainViewSpeech.touchAllowed(group),false);assert.equal(stage.triggerMainViewSpeech(group.id,'touch').accepted,false);
+});
+test('entry and birthday speech are recordable source-resource commands with reproducible clocks',()=>{
+  const {stage}=setup(),recorder=new InteractionRecorder(stage),events=[];stage.addEventListener('voice-request',event=>events.push(event.detail));
+  recorder.start();assert.equal(stage.triggerMainViewSpeech('actor','entry').animation,'Voice_2_Login');stage.evaluate(3);assert.equal(stage.triggerMainViewSpeech('actor','birthday').animation,'Voice_2_Birthday');stage.evaluate(3);
+  const recorded=recorder.stop(),expected=stage.mainViewSpeech.snapshot();recorder.dispose();assert.deepEqual(events.map(event=>event.sourceResource),['Voice_2_Login','Voice_2_Birthday']);assert.ok(events.every(event=>event.sourceCaption));
+  stage.mainViewSpeech.reset();stage.mainViewSpeechClock.reset();new InteractionPlayer(stage,recorded,{notifyEnd:false}).advance(recorded.duration,delta=>stage.evaluateFrame(delta));assert.deepEqual(stage.mainViewSpeech.snapshot(),expected);
+});
 test('speech state and independent timers round-trip without embedding source words',()=>{
   const {stage}=setup();stage.triggerMainViewSpeech('actor','touch');stage.evaluateFrame(.5);const saved=validateScene(stage.snapshot());assert.equal(saved.mainViewSpeech.group,'actor');assert.equal(saved.mainViewSpeechClock.wordsRemaining,1.75);assert.equal(JSON.stringify(saved).includes('Visible caption'),false);
   stage.mainViewSpeechClock.advance(200);stage.mainViewSpeech.restore(saved.mainViewSpeech);stage.mainViewSpeechClock.restore(saved.mainViewSpeechClock);assert.deepEqual(stage.snapshot(),saved);
@@ -42,6 +53,7 @@ test('recorded speech commands reproduce source choices and idle timers for port
 });
 test('missing audio is reported without inventing a duration or retrying another selected line',()=>{
   const {stage}=setup(),warnings=[];stage.mainViewSpeech.audio.resolve=()=>null;stage.addEventListener('speech-unavailable',event=>warnings.push(event.detail));assert.equal(stage.triggerMainViewSpeech('actor','touch',{localized:true}).accepted,false);assert.equal(warnings.length,1);assert.equal(stage.mainViewSpeechClock.value.wordsRemaining,null);assert.equal(stage.mainViewSpeechClock.value.canClick,true);
+  assert.equal(stage.triggerMainViewSpeech('actor','birthday').resourceName,'Voice_2_Birthday');
 });
 test('invalid source durations cannot close the click gate or create a partial words state',()=>{
   for(const duration of [-1,86401,NaN,Infinity,undefined]){

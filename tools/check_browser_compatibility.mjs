@@ -1,19 +1,21 @@
 import assert from 'node:assert/strict';
 import {launchTestBrowser} from './test_browser.mjs';
 import {selectAsset} from './select_asset.mjs';
+import {selectView,togglePlayback} from './viewer_actions.mjs';
 const name=process.argv[2]||'webkit';
 const {browser,close}=await launchTestBrowser(name);
 try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(process.env.MTE_TEST_URL||'http://127.0.0.1:4173/');await page.waitForFunction(()=>window.mteStudio?.groups.length&&!window.mteEditor.busy);
-  await page.locator('#pause').click();const gallery=await page.evaluate(()=>window.mteEditor.snapshot());
-  await page.getByRole('button',{name:'Studio',exact:true}).click();const initial=await page.evaluate(()=>window.mteEditor.snapshot());
+  await page.evaluate(()=>window.mteI18n.setLocale('en'));
+  await togglePlayback(page);await page.evaluate(()=>window.mteAudio.stop());const gallery=await page.evaluate(()=>window.mteEditor.snapshot());
+  await selectView(page,'studio');const initial=await page.evaluate(()=>window.mteEditor.snapshot());
   const expected=structuredClone(gallery);delete expected.camera.sourcePreview;assert.deepEqual(initial,expected);
   await page.getByLabel('X',{exact:true}).fill('2');await page.getByLabel('X',{exact:true}).press('Tab');
   await page.getByRole('button',{name:'Undo',exact:true}).click();await page.waitForFunction(()=>!window.mteEditor.busy);assert.deepEqual(await page.evaluate(()=>window.mteEditor.snapshot()),initial);
   await selectAsset(page,'Spines/painting/301619402_spine');await page.waitForFunction(()=>window.mteStudio.groups.length===2);
   const interaction=await page.evaluate(()=>{const stage=window.mteStudio,group=stage.groups.at(-1),root=group.controllers[0];root.reset();for(const layer of root.layers){layer.state.clearTracks();layer.skeleton.setToSetupPose();}root.play('animation',0,true);stage.evaluate(0);const hit=root.hotspots.find(hit=>hit.name==='HitArea_anim_anim2'),result=stage.triggerInteraction(group.id,root.source.id,hit.id);for(let i=0;i<1200&&root.value.playing;i++)stage.evaluate(1/120);stage.draw();return {accepted:result.accepted,idle:root.primary.state.getCurrent(0).animation.name,glError:stage.gl.getError(),layers:root.layers.length};});assert.equal(interaction.accepted,true);assert.equal(interaction.idle,'animation2');assert.equal(interaction.glError,0);
-  await page.getByRole('button',{name:'Export',exact:true}).click();for(const [key,value] of [['width','160'],['height','120'],['fps','10'],['end','.4']])await page.locator(`#export-${key}`).fill(value);
+  await page.evaluate(()=>window.mteAudio.stop());await selectView(page,'export');for(const [key,value] of [['width','160'],['height','120'],['fps','10'],['end','.4']])await page.locator(`#export-${key}`).fill(value);
   const outputs=await page.evaluate(async()=>{
     const {exportMedia,exportVideoSupport}=await import('/src/engine/export.js'),{Input,BlobSource,ALL_FORMATS,VideoSampleSink,AudioSampleSink}=await import('/node_modules/mediabunny/dist/bundles/mediabunny.mjs'),{unzipSync}=await import('/node_modules/fflate/esm/browser.js');
     const stage=window.mteStudio,scene=window.mteExporter.captured,catalog=(await fetch('/assets/presentations.json').then(r=>r.json())).presentations,entries=(await fetch('/assets/runtime-index.json').then(r=>r.json())).entries,library=await fetch('/assets/library.json').then(r=>r.json()),audio=window.mteAudio;

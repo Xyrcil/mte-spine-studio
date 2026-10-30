@@ -1,4 +1,5 @@
 import {stationVoiceBinding} from './engine/voice-catalog.js';
+import {resourceUrl} from './engine/resource-urls.js';
 
 export function artworkPreviewView(presentation,appearance,artworkViews){
   const sourceId=(presentation.sourceBundle||presentation.id).match(/^Spines\/painting\/(\d+)_spine(?:_hx)?$/)?.[1];
@@ -23,7 +24,7 @@ export function buildAssetLibrary(catalog,library){
 export function queryAssetLibrary(rows,{search='',character='',category='',collection='',favorites=[],recent=[]}={}){
   const terms=search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean),favoriteSet=new Set(favorites),recentOrder=new Map(recent.map((key,index)=>[key,index]));
   const result=rows.filter(row=>(!character||(character==='unassigned'?!row.characterId:row.characterId===character))&&(!category||(category==='portrait'?Boolean(row.portrait):category==='painting'?['painting','skin'].includes(row.category):row.category===category))&&(!collection||(collection==='favorites'?favoriteSet.has(row.key):recentOrder.has(row.key)))&&terms.every(term=>row.search.includes(term)));
-  return result.sort((a,b)=>collection==='recent'?recentOrder.get(a.key)-recentOrder.get(b.key):a.characterName.localeCompare(b.characterName)||a.characterId.localeCompare(b.characterId)||(['painting','skin','story','storyCG','portrait','ui'].indexOf(a.category)-['painting','skin','story','storyCG','portrait','ui'].indexOf(b.category))||a.name.localeCompare(b.name)||a.key.localeCompare(b.key));
+  return result.sort((a,b)=>collection==='recent'?recentOrder.get(a.key)-recentOrder.get(b.key):Boolean(b.characterId)-Boolean(a.characterId)||a.characterName.localeCompare(b.characterName)||a.characterId.localeCompare(b.characterId)||(['painting','skin','story','storyCG','portrait','ui'].indexOf(a.category)-['painting','skin','story','storyCG','portrait','ui'].indexOf(b.category))||a.name.localeCompare(b.name)||a.key.localeCompare(b.key));
 }
 
 export function createAssetLibrary(catalog,library,{select,selectPortrait,showUnavailable,isBusy,base=''}){
@@ -31,6 +32,7 @@ export function createAssetLibrary(catalog,library,{select,selectPortrait,showUn
   container.addEventListener('mousedown',event=>{if(event.button===0&&matchMedia('(max-width:540px)').matches&&document.activeElement===search&&event.target.closest('.asset,.asset-favorite'))event.preventDefault();});
   const controls=document.createElement('section');controls.className='library-controls';controls.innerHTML='<label>Character<select id="library-character"><option value="">All characters</option><option value="unassigned">Unassigned artwork</option></select></label><label>Collection<select id="library-collection"><option value="">All artwork</option><option value="favorites">Favorites</option><option value="recent">Recently opened</option></select></label><p id="library-count" role="status"></p>';
   category.after(controls);const character=controls.querySelector('#library-character'),collection=controls.querySelector('#library-collection'),count=controls.querySelector('#library-count');
+  const related=document.createElement('button');related.id='library-related';related.textContent='Selected character’s artwork';related.disabled=true;controls.querySelector('label').after(related);
   const characters=new Map();for(const row of rows)if(row.characterId){const group=characters.get(row.characterId)||{name:row.characterName,count:0};group.count++;characters.set(row.characterId,group);}
   for(const [id,value] of [...characters].sort((a,b)=>a[1].name.localeCompare(b[1].name)))character.append(new Option(`${value.name||id} (${value.count})`,id));
   const valid=new Set(rows.map(row=>row.key)),read=key=>{try{const value=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(value)?[...new Set(value.filter(item=>typeof item==='string'&&valid.has(item)))]:[];}catch{return [];}};
@@ -49,7 +51,7 @@ export function createAssetLibrary(catalog,library,{select,selectPortrait,showUn
       const button=document.createElement('button');button.className='asset';button.dataset.libraryKey=row.key;button.setAttribute('aria-pressed',String(row.key===active));
       if(row.presentation)button.dataset.asset=row.presentation.id;else if(row.appearance?.bundle)button.dataset.asset=row.appearance.bundle;
       if(row.appearance)button.dataset.appearance=row.appearance.id;
-      if(row.portrait){const img=document.createElement('img');img.src=`${base}assets/${row.portrait.thumbnail}`;img.loading='lazy';img.alt='';img.width=50;img.height=65;button.append(img);}
+      if(row.portrait){const img=document.createElement('img');img.src=resourceUrl(`${base}assets/${row.portrait.thumbnail}`);img.loading='lazy';img.alt='';img.width=50;img.height=65;button.append(img);}
       const title=document.createElement('strong');title.textContent=row.name;const note=document.createElement('small');
       if(row.presentation?.stationDrawingWarnings?.length)note.className='asset-warning';
       const kind=row.appearance?.hotSpringRoleId?'Hot spring':row.category==='skin'?'Skin':row.category==='painting'?'Artwork':row.category==='story'?'Story':row.category==='storyCG'?'Story CG':row.category==='portrait'?'Portrait':row.category==='ui'?'Scene / UI':row.category;
@@ -61,6 +63,8 @@ export function createAssetLibrary(catalog,library,{select,selectPortrait,showUn
     }
     if(focused){const cards=[...container.querySelectorAll('.asset-card')],target=cards.find(card=>card.querySelector('.asset').dataset.libraryKey===focusKey)||cards[Math.min(focusIndex,cards.length-1)];target?.querySelector(favoriteFocused?'.asset-favorite':'.asset').focus({preventScroll:true});}
   }
+  document.addEventListener('mte-preferences-restored',()=>{favorites=read('mte-library-favorites');recent=read('mte-library-recent').slice(0,20);render();});
   const reset=()=>{page=0;render();},navigate=delta=>{page+=delta;render();container.querySelector('.asset')?.focus({preventScroll:true});container.scrollIntoView({block:'start'});};search.oninput=reset;category.onchange=reset;character.onchange=reset;collection.onchange=reset;previous.onclick=()=>navigate(-1);next.onclick=()=>navigate(1);render();
-  return {rows,render,setActive(group){active=rows.find(row=>group?.appearanceId?row.appearance?.id===group.appearanceId:group?.presentation?.id&&row.presentation?.id===group.presentation.id)?.key||'';for(const button of container.querySelectorAll('.asset'))button.setAttribute('aria-pressed',String(button.dataset.libraryKey===active));},reveal(id){const row=rows.find(row=>row.key===id||row.presentation?.id===id||row.appearance?.bundle===id);if(!row)throw new Error(`Artwork not indexed: ${id}`);category.value='';character.value='';collection.value='';search.value=row.appearance?.id||row.presentation.id;page=0;render();return row.key;}};
+  related.onclick=()=>{const row=rows.find(row=>row.key===active);if(!row?.characterId)return;character.value=row.characterId;category.value='';collection.value='';search.value='';reset();container.querySelector('.asset')?.focus({preventScroll:true});};
+  return {rows,render,setActive(group){const row=rows.find(row=>group?.appearanceId?row.appearance?.id===group.appearanceId:group?.presentation?.id&&row.presentation?.id===group.presentation.id);active=row?.key||'';related.disabled=!row?.characterId;for(const button of container.querySelectorAll('.asset'))button.setAttribute('aria-pressed',String(button.dataset.libraryKey===active));},reveal(id){const row=rows.find(row=>row.key===id||row.presentation?.id===id||row.appearance?.bundle===id);if(!row)throw new Error(`Artwork not indexed: ${id}`);category.value='';character.value='';collection.value='';search.value=row.appearance?.id||row.presentation.id;page=0;render();return row.key;}};
 }

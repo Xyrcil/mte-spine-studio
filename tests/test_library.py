@@ -1,11 +1,17 @@
+import json
+import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from copy import deepcopy
+from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from build_library import join_portraits, hot_spring_roles, join_hot_springs, hot_spring_houses, skill_role_bindings, skill_stand_transforms, preview_stands, station_drawing_catalogue, main_view_voice_catalogue, hot_spring_speech_catalogue, chinese_caption_policy
 from build_library import join_artwork_variants, join_story_variants, story_roles_by_resource
+from build_library import build_playback_only, main_view_entry_voices, skin_playback_metadata
 
 
 class PortraitLibraryTests(unittest.TestCase):
@@ -60,7 +66,7 @@ class PortraitLibraryTests(unittest.TestCase):
             self.assertEqual(appearance["characterName"], "Alice")
         self.assertNotIn("hotSpringRoleId", appearances[2])
     def test_hx_variants_join_only_an_existing_source_binding(self):
-        parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait", "ownVoice": False, "ambientSound": "waves", "idle": "idle", "touchType": 2, "storyPack": "summer-story"}
+        parent = {"id": "skin", "characterId": "actor", "characterName": "Alice", "name": "Summer", "kind": "skin", "bundle": "Spines/painting/skin_spine", "portraitResource": "portrait", "ownVoice": False, "ambientSound": "waves", "idle": "idle", "touchType": 2, "storyPack": "summer-story", "entranceItem": 123}
         before = deepcopy(parent)
         variant = {"id": "hx", "bundle": "Spines/painting/skin_spine_hx", "status": "available"}
         unknown = {"id": "unknown", "bundle": "Spines/painting/missing_spine_hx"}
@@ -82,7 +88,7 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(original["name"], "Summer · Original archive")
         self.assertEqual(original_hx["name"], "Summer · HX variant · Original archive")
         for item in (variant, archived, original, original_hx):
-            for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack"):
+            for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack", "entranceItem"):
                 self.assertEqual(item[field], parent[field])
         self.assertNotIn("ambientSound", unknown)
     def test_original_artwork_keeps_its_source_label_without_guessing_a_character(self):
@@ -116,6 +122,7 @@ class PortraitLibraryTests(unittest.TestCase):
         self.assertEqual(result["voices"][0]["type"], 3)
         self.assertTrue(all(voice["exactResource"] for voice in result["voices"]))
         self.assertTrue(all("source" not in voice and "hash" not in voice for voice in result["voices"]))
+        self.assertEqual([voice["id"] for voice in result["entryVoices"]], ["3"])
 
     def test_main_view_caption_visibility_and_touch_rules_follow_source_fields(self):
         rows = [{"id": 1, "target_id": 7, "file_name": "line", "type": 3, "voice_title": "Title", "voice_text": "Hidden", "show_type": 0},
@@ -259,6 +266,155 @@ class PortraitLibraryTests(unittest.TestCase):
         join_portraits(rows, [{"resource": "UI/Image/lihui/role", "sprites": [{"id": "1", "name": "a"}, {"id": "2", "name": "b"}]}], set(), {})
         self.assertNotIn("portrait", rows[0])
         self.assertEqual(rows[0]["spineStatus"], "available")
+
+
+class PlaybackMetadataTests(unittest.TestCase):
+    @staticmethod
+    def voice(identifier, resource, kind=0, title="Original title"):
+        return {"id": identifier, "target_id": 7, "file_name": resource, "type": kind,
+                "voice_title": title, "voice_text": "Original subtitle", "source": "/private/archive",
+                "hash": "private", "unlock_condition": 123}
+
+    @staticmethod
+    def write_fixture(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def setUp(self):
+        self.temporary = TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        self.source, self.output = root / "source", root / "assets"
+        self.source_tables = [
+            ("generated/content/a_sound_voice.json", [self.voice(1, "Voice_7_Login")]),
+            ("generated/content/a_gospel_skin.json", [{"id": 10, "start_anime_item": 100}, {"id": 20, "start_anime_item": 111}, {"id": 30, "start_anime_item": 500}]),
+            ("qnzl-2.0-poc/generated/content/a_sound_voice.json", [self.voice(1, "Voice_7_Login", title="Archive title"), self.voice(2, "Voice_7_Birthday", 7), self.voice(3, "Voice_7_Touch_Head", 3)]),
+            ("qnzl-2.0-poc/generated/content/a_gospel_skin.json", [{"id": 10, "start_anime_item": 200, "source": "/private/archive"}, {"id": 20, "start_anime_item": 0}, {"id": 30}]),
+        ]
+        for relative, rows in self.source_tables:
+            self.write_fixture(self.source / relative, {"records": rows})
+        self.library = {"schema": 1, "characters": [{"id": "7", "name": "角色"}],
+                        "appearances": [{"id": "archive", "kind": "skin", "variantOf": "hx", "name": "Keep archive"},
+                                        {"id": "hx", "kind": "skin", "variantOf": "10", "entranceItem": 9},
+                                        {"id": "10", "kind": "skin", "ownVoice": False, "entranceItem": 9},
+                                        {"id": "20", "kind": "skin", "entranceItem": 9},
+                                        {"id": "30", "kind": "skin", "entranceItem": 777},
+                                        {"id": "40", "kind": "skin", "entranceItem": 888},
+                                        {"id": "painting", "kind": "painting", "variantOf": "10", "entranceItem": 999},
+                                        {"id": "ui", "kind": "ui", "entranceItem": 999}],
+                        "voices": [{"id": "general", "type": "0", "groupId": "7"}],
+                        "mainViewVoices": {"schema": 1, "voices": [{"id": "touch", "type": 3}],
+                                           "entryVoices": [{"id": "old"}], "touchRules": [{"id": "10", "spineTouch": 1}],
+                                           "custom": {"retain": True}},
+                        "extension": {"m_PathID": 123, "nested": [False, 0, "unchanged"]}}
+        self.library_path = self.output / "library.json"
+        self.write_fixture(self.library_path, self.library)
+        self.original_bytes = self.library_path.read_bytes()
+
+    def refresh(self):
+        with redirect_stdout(StringIO()):
+            build_playback_only(self.source, self.output)
+
+    def assert_library_unchanged(self):
+        self.assertEqual(self.library_path.read_bytes(), self.original_bytes)
+        self.assertEqual(list(self.output.iterdir()), [self.library_path])
+
+    def test_entry_records_keep_original_values_and_only_allowlisted_fields(self):
+        rows = [self.voice(1, "Voice_7_Login"), self.voice(2, "Voice_7_Birthday", 7),
+                self.voice(3, "Voice_7_Greetings_Idel_01"), self.voice(4, "Voice_7_Login_extra")]
+        before = deepcopy(rows)
+        entries = main_view_entry_voices(rows)
+        self.assertEqual(entries, [
+            {"id": "1", "targetId": "7", "type": 0, "resourceName": "Voice_7_Login", "title": "Original title", "text": "Original subtitle", "exactResource": True},
+            {"id": "2", "targetId": "7", "type": 7, "resourceName": "Voice_7_Birthday", "title": "Original title", "text": "Original subtitle", "exactResource": True},
+        ])
+        self.assertEqual(rows, before)
+
+    def test_entry_resource_names_cannot_export_private_paths(self):
+        for resource in ("/private/Voice_7_Login", "private\\Voice_7_Birthday", "Voice_\0_Login"):
+            with self.subTest(resource=resource), self.assertRaisesRegex(ValueError, "resource"):
+                main_view_entry_voices([self.voice(1, resource)])
+
+    def test_skin_entrance_item_is_allowlisted_and_does_not_default_missing_to_zero(self):
+        self.assertEqual(skin_playback_metadata({"private": "/private/archive"}), {})
+        for item in (0, 123):
+            self.assertEqual(skin_playback_metadata({"start_anime_item": item, "private": "excluded"}), {"entranceItem": item})
+        for item in (-1, True, False, 1.0, "0", None, []):
+            with self.subTest(item=item), self.assertRaisesRegex(ValueError, "entrance item"):
+                skin_playback_metadata({"start_anime_item": item})
+
+    def test_incremental_refresh_preserves_all_other_fields_and_resolves_variant_chains(self):
+        expected = deepcopy(self.library)
+        expected["mainViewVoices"]["entryVoices"] = [
+            {"id": "1", "targetId": "7", "type": 0, "resourceName": "Voice_7_Login", "title": "Archive title", "text": "Original subtitle", "exactResource": True},
+            {"id": "2", "targetId": "7", "type": 7, "resourceName": "Voice_7_Birthday", "title": "Original title", "text": "Original subtitle", "exactResource": True},
+        ]
+        for appearance in expected["appearances"]:
+            if appearance["id"] in ("10", "hx", "archive"):
+                appearance["entranceItem"] = 200
+            elif appearance["id"] == "20":
+                appearance["entranceItem"] = 0
+        self.refresh()
+        self.assertEqual(json.loads(self.library_path.read_text(encoding="utf-8")), expected)
+        self.assertEqual(list(self.output.iterdir()), [self.library_path])
+
+    def test_playback_only_cli_needs_no_asset_catalogues_or_decoder(self):
+        originals = {relative: (self.source / relative).read_bytes() for relative, _ in self.source_tables}
+        result = subprocess.run([sys.executable, "-B", str(Path(__file__).resolve().parents[1] / "tools/build_library.py"),
+                                 "--source", str(self.source), "--output", str(self.output), "--playback-only"],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updated = json.loads(self.library_path.read_text(encoding="utf-8"))
+        self.assertEqual(updated["mainViewVoices"]["voices"], self.library["mainViewVoices"]["voices"])
+        self.assertEqual(len(updated["mainViewVoices"]["entryVoices"]), 2)
+        for relative, before in originals.items():
+            self.assertEqual((self.source / relative).read_bytes(), before)
+        self.assertEqual(list(self.output.iterdir()), [self.library_path])
+
+    def test_missing_source_tables_never_erase_existing_metadata(self):
+        for relative, rows in self.source_tables:
+            path = self.source / relative
+            with self.subTest(table=relative):
+                path.unlink()
+                with self.assertRaises(FileNotFoundError):
+                    self.refresh()
+                self.assert_library_unchanged()
+                self.write_fixture(path, {"records": rows})
+
+    def test_empty_or_malformed_source_tables_never_erase_existing_metadata(self):
+        path = self.source / self.source_tables[0][0]
+        for data in ({}, {"records": []}, {"records": {}}, {"records": [{}]}):
+            with self.subTest(data=data):
+                self.write_fixture(path, data)
+                with self.assertRaisesRegex(ValueError, "source table"):
+                    self.refresh()
+                self.assert_library_unchanged()
+
+    def test_invalid_entrance_item_fails_before_writing(self):
+        self.write_fixture(self.source / self.source_tables[-1][0], {"records": [{"id": 10, "start_anime_item": False}]})
+        with self.assertRaisesRegex(ValueError, "entrance item"):
+            self.refresh()
+        self.assert_library_unchanged()
+
+    def test_missing_or_cyclic_variant_parents_fail_before_writing(self):
+        for parent in ("missing", "archive"):
+            with self.subTest(parent=parent):
+                library = deepcopy(self.library)
+                library["appearances"][1]["variantOf"] = parent
+                self.write_fixture(self.library_path, library)
+                before = self.library_path.read_bytes()
+                with self.assertRaisesRegex(ValueError, "variant"):
+                    self.refresh()
+                self.assertEqual(self.library_path.read_bytes(), before)
+                self.assertEqual(list(self.output.iterdir()), [self.library_path])
+
+    def test_absent_entry_records_do_not_clear_an_existing_entry_catalogue(self):
+        for relative, _ in self.source_tables:
+            if relative.endswith("a_sound_voice.json"):
+                self.write_fixture(self.source / relative, {"records": [self.voice(3, "Voice_7_Touch_Head", 3)]})
+        with self.assertRaisesRegex(ValueError, "entry voices"):
+            self.refresh()
+        self.assert_library_unchanged()
 
 
 if __name__ == "__main__":

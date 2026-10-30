@@ -1,9 +1,9 @@
-const CATALOGS=new Set(['runtime-index.json','presentations.json','library.json','audio-index.json','portrait-index.json']);
-export function validCatalogue(data,name){const fields=name==='library.json'?['characters','appearances','voices','storyVoices','soundResources']:name==='presentations.json'?['presentations']:['entries'];return data?.schema===1&&fields.every(field=>Array.isArray(data[field]));}
+const CATALOGS=new Set(['runtime-index.json','presentations.json','library.json','audio-index.json','portrait-index.json','resource-map.json']);
+export function validCatalogue(data,name){if(name==='resource-map.json')return data?.schema===1&&Boolean(data.aliases)&&typeof data.aliases==='object'&&!Array.isArray(data.aliases)&&Object.values(data.aliases).every(value=>typeof value==='string');const fields=name==='library.json'?['characters','appearances','voices','storyVoices','soundResources']:name==='presentations.json'?['presentations']:['entries'];return data?.schema===1&&fields.every(field=>Array.isArray(data[field]));}
 export function cacheKind(value,scope){
   const url=new URL(value,scope),base=new URL(scope);if(url.origin!==base.origin||url.username||url.password||url.search||url.hash||!url.pathname.startsWith(base.pathname))return null;
   const path=url.pathname.slice(base.pathname.length);
-  if(['','index.html','app-shell.json','vendor/spine-webgl.js','vendor/SPINE-LICENSE'].includes(path)||/^assets\/[^/]+\.(js|css)$/.test(path))return 'shell';
+  if(['','index.html','app-shell.json','vendor/spine-webgl.js','vendor/SPINE-LICENSE'].includes(path)||/^(?:app|assets)\/[^/]+\.(js|css)$/.test(path))return 'shell';
   if(!path.startsWith('assets/'))return null;
   if(CATALOGS.has(path.slice(7)))return 'catalog';
   return /\.(skel|atlas|json|png|webp|jpg|jpeg|m4a|ogg|mp3|wav|otf|ttf)$/i.test(path)?'asset':null;

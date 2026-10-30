@@ -1,13 +1,22 @@
 import './style.css';
 import './editor.css';
 import './library.css';
+import './viewer.css';
+import {createViewerShell,uiHiddenPreference} from './viewer-shell.js';
+import {GallerySpeech,speechPreferences} from './gallery-speech.js';
+import {appearancePlaybackProfile} from './engine/appearance-playback.js';
+import {createI18n,getLocale,setLocale} from './i18n.js';
 import {Stage} from './engine/stage.js';
+import {loadSpineRuntime} from './engine/runtime.js';
 import {AudioBus} from './engine/audio.js';
 import {createEditor} from './editor.js';
 import {createExportPanel} from './export-panel.js';
 import {createSoundPanel} from './sound-panel.js';
-import {createVoicePanel} from './voice-panel.js';
+import {createVoicePanel,arrivalVoiceAvailability} from './voice-panel.js';
 import {createHostApi} from './host-api.js';
+import {configureResourceAliases} from './engine/resource-urls.js';
+import {configureHostSceneStore,hostSavedScenes} from './engine/scene.js';
+import {wallpaperMode,createWallpaperBridge,wallpaperPreferences,restoreWallpaperPreferences} from './wallpaper-bridge.js';
 import {createCachePanel} from './cache-panel.js';
 import {createSequencePanel} from './sequence-panel.js';
 import {createCanvasInput} from './canvas-input.js';
@@ -18,31 +27,54 @@ import {expandStationDrawings} from './engine/station-drawing.js';
 import {createSkillPanel} from './skill-panel.js';
 import {resolveInteractionVoice,explicitInteractionEffect,configureInteractionAmbients} from './engine/interaction-audio.js';
 
+const startupSession=window.__mteHostSession;
+if(window.__mteHostState)configureHostSceneStore(startupSession?.ui?.savedScenes||[]);
+restoreWallpaperPreferences(startupSession?.ui);
+if(['en','zh-CN'].includes(startupSession?.ui?.locale))setLocale(startupSession.ui.locale);
 document.querySelector('#app').innerHTML = `
-  <header><div class="brand">MTE <span>Spine Studio</span></div><nav><button data-view="gallery" class="selected">Gallery</button><button data-view="studio">Studio</button><button data-view="export">Export</button></nav><button id="library-toggle" aria-controls="asset-library" aria-expanded="false">Library</button><button id="editor-toggle" aria-expanded="false">Controls</button><button id="pause">Pause</button></header>
-  <main><aside class="library" id="asset-library"><label for="search">Asset library</label><input id="search" placeholder="Search character, skin or resource"><label for="category">Artwork type</label><select id="category"><option value="">All types</option><option value="painting">Character artwork</option><option value="skin">Skins</option><option value="story">Story portraits</option><option value="storyCG">Story CG</option><option value="ui">Scenes / UI</option><option value="drawing">Other artwork</option><option value="portrait">Static portraits</option></select><div id="assets" role="list"></div></aside>
-  <section class="workspace"><canvas id="stage" aria-label="Animated scene"></canvas><div id="status" role="status">Loading asset catalog…</div></section>
-  <aside class="inspector"><h2>Scene</h2><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Gallery plays interactions. Studio edits the scene.</p></aside></main>`;
+  <header class="viewer-header"><div class="brand">MTE <span>Spine Studio</span></div><button id="menu-toggle" aria-haspopup="menu" aria-controls="viewer-menu" aria-expanded="false">Menu</button></header>
+  <section id="viewer-menu" class="t-dropdown" data-origin="top-right" role="menu" aria-label="Viewer options" inert>
+    <div class="menu-heading"><span>MTE Spine Studio</span><small id="viewer-mode">Gallery</small></div>
+    <button id="library-toggle" role="menuitem" aria-controls="asset-library" aria-expanded="false">Library <small>Characters & skins</small></button>
+    <button id="editor-toggle" role="menuitem" aria-controls="scene-inspector" aria-expanded="false">Controls <small>Scene, animation & audio</small></button>
+    <nav aria-label="Workspace"><button role="menuitem" data-view="gallery" class="selected">Gallery <small>Watch & interact</small></button><button role="menuitem" data-view="studio">Studio <small>Arrange your scene</small></button><button role="menuitem" data-view="export">Export <small>Video & images</small></button></nav>
+    <div class="menu-playback"><button id="pause" role="menuitem">Pause</button><button id="viewer-mute" role="menuitem" disabled>Mute sound</button><button id="viewer-fit" role="menuitem">Fit scene</button><button id="viewer-fullscreen" role="menuitem">Full screen</button></div>
+    <button id="viewer-hide-ui" role="menuitem" aria-keyshortcuts="H">Hide UI <small>Right-click to restore · Shortcut optional</small></button>
+    <button id="interface-language" role="menuitem" aria-label="Switch interface language" title="Switch interface language">English / 简体中文</button>
+  </section>
+  <main><aside class="library" id="asset-library" aria-labelledby="library-title" hidden><div class="panel-heading"><div><p class="eyebrow">Collection</p><h2 id="library-title">Asset library</h2></div><button class="panel-close" data-close-panel aria-label="Close library">×</button></div><label for="search">Search artwork</label><input id="search" placeholder="Character, skin or resource"><label for="category">Artwork type</label><select id="category"><option value="">All types</option><option value="painting">Character artwork</option><option value="skin">Skins</option><option value="story">Story portraits</option><option value="storyCG">Story CG</option><option value="ui">Scenes / UI</option><option value="drawing">Other artwork</option><option value="portrait">Static portraits</option></select><div id="assets" role="list"></div></aside>
+  <section class="workspace"><canvas id="stage" aria-label="Animated scene"></canvas><div id="status" role="status">Loading asset catalog…</div><button id="enable-sound" hidden>Enable sound</button></section>
+  <aside class="inspector" id="scene-inspector" aria-labelledby="inspector-title" hidden><div class="panel-heading"><div><p class="eyebrow" id="inspector-eyebrow">Workspace</p><h2 id="inspector-title">Scene</h2></div><button class="panel-close" data-close-panel aria-label="Close controls">×</button></div><div id="layers"></div><label>Background <input id="background" type="color" value="#191b20"></label><label>Playback speed <input id="speed" type="range" min="0.1" max="2" step="0.1" value="1"></label><button id="fit">Fit scene</button><div id="details"></div><p id="notice">Gallery plays interactions. Studio edits the scene.</p></aside></main>`;
 const status = document.querySelector('#status');
+const resourceDetails=document.createElement('details'),resourceSummary=document.createElement('summary'),detailBody=document.querySelector('#details');resourceDetails.id='resource-details';resourceSummary.textContent='Resource details';detailBody.before(resourceDetails);resourceDetails.append(resourceSummary,detailBody);
+const viewerPreferences=document.createElement('details');viewerPreferences.id='viewer-preferences';viewerPreferences.innerHTML=`<summary>Interface</summary><label for="viewer-ui-shortcut">Hide UI shortcut</label><select id="viewer-ui-shortcut"><option value="">Off</option>${Array.from({length:26},(_,index)=>String.fromCharCode(65+index)).map(key=>`<option value="${key}">${key}</option>`).join('')}</select><p>You can always hide UI from the menu and restore it with a right-click.</p>`;resourceDetails.before(viewerPreferences);
+const interfaceText=createI18n(document.querySelector('#app'));window.mteI18n={getLocale,setLocale,refresh:interfaceText.refresh};
+document.querySelector('#interface-language').onclick=()=>setLocale(getLocale()==='en'?'zh-CN':'en');
 let stage;
-try{stage=new Stage(document.querySelector('#stage'));}catch(error){status.textContent=`Rendering could not start: ${error.message}. Check browser graphics support and reload.`;document.querySelector('.library').inert=true;document.querySelector('.inspector').inert=true;for(const button of document.querySelectorAll('header button'))button.disabled=true;window.mteStartupError=error.message;}
+try{await loadSpineRuntime(new URL(import.meta.env.BASE_URL,document.baseURI));stage=new Stage(document.querySelector('#stage'));}catch(error){status.textContent=`Rendering could not start: ${error.message}. Check browser graphics support and reload.`;document.querySelector('.library').inert=true;document.querySelector('.inspector').inert=true;for(const button of document.querySelectorAll('header button'))button.disabled=true;window.mteStartupError=error.message;}
 if(stage){
 window.mteStudio = stage;
-let view = 'gallery', catalog, runtime, request, libraryData, audio,appReady=false;
-const message = value => {status.textContent=value;};
+let view = 'gallery', catalog, runtime, request, libraryData, audio,gallerySpeech,appReady=false,statusTimer;
+const message = (value,{transient=false}={}) => {clearTimeout(statusTimer);status.textContent=value;status.classList.remove('is-quiet');if(transient)statusTimer=setTimeout(()=>status.classList.add('is-quiet'),4000);};
+const speechNotices=new Map();let refreshDialogueStatus=()=>{};
+const reportSpeechIssue=detail=>{const group=detail.group||stage.mainViewSpeech.value.group;if(!group)return;speechNotices.set(group,{language:detail.language||audio?.language,resourceName:detail.resourceName||'',reason:detail.reason||''});if(speechNotices.size>64)speechNotices.delete(speechNotices.keys().next().value);refreshDialogueStatus();};
+const audioError=error=>{if(error.name==='NotAllowedError'){if(gallerySpeech)gallerySpeech.playbackBlocked();else{document.querySelector('#enable-sound').hidden=false;message('Your browser paused automatic audio. Choose Enable sound to continue.');}}else message(error.message);};
+const wallpaper=createWallpaperBridge({onError:audioError});
+const quietAudio=channel=>{const warning=audio?.hostOutput&&(audio.hostOutput.muted||audio.hostOutput.volume===0)?'Sound is muted by your wallpaper app.':audio?.muted?'All sound is muted. Open Menu to unmute.':channel==='effects'&&audio?.effectVolume===0?'Effect volume is zero. Raise Effect volume in Controls.':channel==='voice'&&audio?.volume===0?'Voice volume is zero. Raise Voice volume in Controls.':'';if(warning)queueMicrotask(()=>message(warning));};
 const sourcePreview=document.createElement('button');sourcePreview.id='source-preview';sourcePreview.textContent='Source preview';document.querySelector('#fit').after(sourcePreview);
-const closeLibrary=()=>{const open=document.body.classList.contains('library-open'),focused=document.activeElement;document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');if(open&&matchMedia('(max-width:540px)').matches&&(!focused||focused===document.body||focused.closest('.library')))stage.canvas.focus({preventScroll:true});};
+const closeLibrary=()=>viewer.closeLibrary();
 const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(group);window.mteSkills?.setActive(group);if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
+const viewer=createViewerShell({stage,getView:()=>view,setView:value=>setView(value),canSelect:()=>!editor.busy&&view!=='export',canHide:()=>!editor.busy,message,uiHidden:startupSession?.ui?.uiHidden});
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
-const resourceCache=createCachePanel(stage,editor,()=>({library:libraryData,audio,catalog,runtime}),message);window.mteCache=resourceCache;
-window.mtePack=createResourcePackPanel(resourceCache,editor,message,stage);
+const resourceCache=wallpaperMode?{ready:Promise.resolve(false)}:createCachePanel(stage,editor,()=>({library:libraryData,audio,catalog,runtime}),message);window.mteCache=resourceCache;
+window.mtePack=wallpaperMode?{setLibrary:()=>{}}:createResourcePackPanel(resourceCache,editor,message,stage);
 window.mteSequence=createSequencePanel(stage,editor,message);
 stage.addEventListener('sequence-paused',()=>audio?.pause());
 stage.addEventListener('resource-import-start',()=>audio?.pause());
 stage.addEventListener('resource-import-ended',()=>{if(!stage.paused)audio?.resume().catch(error=>message(error.message));});
 stage.addEventListener('sequence-playing',()=>audio?.resume().catch(error=>message(error.message)));
-const renderingRetry=document.createElement('button');renderingRetry.id='rendering-retry';renderingRetry.textContent='Retry rendering';renderingRetry.hidden=true;document.querySelector('header').append(renderingRetry);
+const renderingRetry=document.createElement('button');renderingRetry.id='rendering-retry';renderingRetry.textContent='Retry rendering';renderingRetry.hidden=true;document.querySelector('.viewer-header').append(renderingRetry);
 let recoverySelection;
 stage.addEventListener('rendering-pausing',()=>audio?.pause());
 stage.addEventListener('rendering-lost',()=>{request?.abort();recoverySelection=editor.selected()?.id;audio?.pause();document.querySelector('.library').inert=true;renderingRetry.hidden=false;message('Rendering interrupted. The scene is retained; you can export its JSON while waiting for recovery.');});
@@ -94,7 +126,8 @@ async function loadAsset(label,create,loadedMessage=label){
     if(current.signal.aborted||request!==current||view!==selectedView)throw new DOMException('Loading cancelled','AbortError');
     finishAssetLoading();editor.before(previous);audio?.stop();audio?.stopEffects();if(selectedView==='gallery')audio?.stopAmbients();stage.groups.push(group);
     if(selectedView==='gallery')for(const previousGroup of old)stage.remove(previousGroup.id);
-    stage.evaluate(0);stage.fit();if(selectedView==='gallery')stage.fitPreview(group);editor.choose(group);editor.changed();request=null;message(loadedMessage);closeLibrary();return true;
+    const arrival=selectedView==='gallery'?gallerySpeech?.enter(group):null;
+    stage.evaluate(0);stage.fit();if(selectedView==='gallery')stage.fitPreview(group);editor.choose(group);editor.changed();request=null;message(loadedMessage,{transient:!group.presentation?.stationDrawingWarnings?.length});if(arrival?.accepted===false)reportSpeechIssue({group:group.id,language:audio.language,resourceName:arrival.resourceName});closeLibrary();return true;
   }catch(error){if(group&&!stage.groups.includes(group))stage.release(group);if(request===current&&error.name!=='AbortError')message(error.message);return false;}
   finally{if(request===current){request=null;finishAssetLoading();}}
 }
@@ -103,48 +136,68 @@ function select(presentation){return loadAsset(presentation.id,signal=>stage.add
 function voicePanel(presentation) {
   createVoicePanel(presentation,libraryData,audio,editor,message,stage);
 }
-document.querySelector('#library-toggle').onclick=event=>{if(editor.busy||view==='export')return;const open=document.body.classList.toggle('library-open');event.target.setAttribute('aria-expanded',String(open));if(open){document.body.classList.remove('inspector-open');document.querySelector('#editor-toggle').setAttribute('aria-expanded','false');if(!matchMedia('(max-width:540px)').matches||event.detail===0)document.querySelector('#search').focus();}};
-document.querySelector('#editor-toggle').onclick=event=>{closeLibrary();event.target.setAttribute('aria-expanded',String(document.body.classList.toggle('inspector-open')));};
-document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('library-open')){closeLibrary();document.querySelector('#library-toggle').focus();}});
 document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
 document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
 sourcePreview.onclick=()=>editor.mutate(()=>{const group=editor.selected();if(!stage.fitPreview(group))message(`Source preview unavailable: ${group?.previewReason||'No matching configuration'}`);if(view==='studio')delete stage.camera.sourcePreview;});
 stage.addEventListener('preview-resized',()=>{if(!editor.busy)editor.changed({cameraOnly:true});});
-for (const button of document.querySelectorAll('[data-view]'))button.onclick=()=>{
-  if(button.dataset.view!==view)cancelAssetLoading();
+function setView(next){
+  if(next!==view)cancelAssetLoading();
   canvasInput.clear();
-  closeLibrary();
-  view=button.dataset.view;
+  view=next;
   stage.previewResponsive=view==='gallery';if(view==='studio')delete stage.camera.sourcePreview;
   document.querySelector('#library-toggle').disabled=view==='export';
-  for(const tab of document.querySelectorAll('[data-view]'))tab.classList.toggle('selected',tab===button);
+  for(const tab of document.querySelectorAll('button[data-view]'))tab.classList.toggle('selected',tab.dataset.view===view);
   exporter.setOpen(view==='export');
   document.querySelector('.library').inert=view==='export';document.querySelector('.library').classList.toggle('export-disabled',view==='export');
-};
-const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,isRecording:()=>window.mteSequence.recorder.active,onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`);}else if(result.reason!=='No interaction region here')message(result.reason);}});
-window.mteHost=createHostApi({stage,editor,getAudio:()=>audio,getReady:()=>appReady,clearInput:()=>canvasInput.clear(),onPreferencesChange:()=>{for(const [id,value] of [['voice-volume',audio?.volume],['effect-volume',audio?.effectVolume]]){const field=document.getElementById(id);if(field)field.value=value;}}});
+  viewer.setMode(view);
+  gallerySpeech?.sync();
+}
+for (const button of document.querySelectorAll('button[data-view]'))button.onclick=()=>{setView(button.dataset.view);viewer.showView(view);};
+const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,isRecording:()=>window.mteSequence.recorder.active,interact:(x,y)=>gallerySpeech?gallerySpeech.interactAt(x,y):stage.interact(x,y),onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`,{transient:true});}else if(result.resourceName)reportSpeechIssue({group:result.group,resourceName:result.resourceName});else if(result.reason!=='No interaction region here')message(result.reason);}});
+window.mteHost=createHostApi({stage,editor,getAudio:()=>audio,getReady:()=>appReady,clearInput:()=>canvasInput.clear(),onError:audioError,
+  getSessionUI:()=>({view:view==='studio'?'studio':'gallery',uiHidden:viewer.uiHidden,locale:getLocale(),selected:editor.selected()?.id,preferences:wallpaperPreferences(),savedScenes:hostSavedScenes(),speech:gallerySpeech?{group:gallerySpeech.groupId,blocked:gallerySpeech.blocked}:undefined}),
+  restoreSessionUI:async ui=>{
+    if(window.__mteHostState)configureHostSceneStore(ui.savedScenes||[]);
+    restoreWallpaperPreferences(ui);if(['en','zh-CN'].includes(ui.locale))setLocale(ui.locale);
+    await editor.restorePreferences?.();window.mteLibrary?.restorePreferences?.();
+    if(gallerySpeech){let value;try{value=JSON.parse(localStorage.getItem('mte-gallery-speech'));}catch{}gallerySpeech.preferences=speechPreferences(value);gallerySpeech.groupId=stage.groups.some(group=>group.id===ui.speech?.group)?ui.speech.group:stage.mainViewSpeech.value.group||'';gallerySpeech.blocked=ui.speech?.blocked===true;}
+    if(['gallery','studio'].includes(ui.view)){setView(ui.view);viewer.showView(ui.view);}
+    if(typeof ui.uiHidden==='boolean')viewer.setUiHidden(uiHiddenPreference(location.search,ui.uiHidden),{persist:false,focus:false});
+    const selected=stage.groups.find(group=>group.id===ui.selected);if(selected)editor.choose(selected);
+  },
+  setMode:mode=>{setView(mode);viewer.showView(mode);},
+  onPreferencesChange:()=>{for(const [id,value] of [['voice-volume',audio?.volume],['effect-volume',audio?.effectVolume]]){const field=document.getElementById(id);if(field)field.value=value;}}});
+await wallpaper.bind(window.mteHost);
+stage.addEventListener('scene-change',()=>wallpaper.changed());
+for(const name of ['click','change','mte-language-change','mte-ui-visibility-change'])document.addEventListener(name,()=>wallpaper.changed());
 document.querySelector('#notice').textContent='Click to interact in Gallery; drag objects in Studio. Drag empty space to pan, or hold Space to pan anywhere. Scroll or pinch to zoom. With the canvas focused, use arrow keys to pan, +/− to zoom, and Home to fit.';
-stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(error=>message(error.message));});
+stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;if(!audio.soundInfo(event.detail.name,event.detail.category).clip){reportSpeechIssue({group:event.detail.group,resourceName:event.detail.name,language:audio.language});return;}quietAudio('effects');audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(audioError);});
 stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
 stage.addEventListener('scene-change',()=>{const group=editor.selected();if(group?.kind==='spine')describe(group);});
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
   if(!audio||stage.paused)return;
   if(event.detail.group&&!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;
-  const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(error=>message(error.message));
-  const language=event.detail.language||document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>queueMicrotask(()=>message(warning))});if(!voice)return;
-  audio.play(voice,language,{group:event.detail.group||'',time:event.detail.lateness||0}).then(()=>{if(voice.sourceMainView&&!stage.mainViewSpeech.value.wordsVisible&&audio.currentVoice?.voice.resourceName===voice.resourceName)audio.hideSourceSubtitle(event.detail.group);}).catch(error=>message(error.message));
+  const effect=explicitInteractionEffect(event.detail,audio);if(effect)audio.playEffect(effect.name,effect.category,0,true,event.detail.group).catch(audioError);
+  const language=event.detail.language||document.querySelector('#voice-language')?.value||audio.language,voice=resolveInteractionVoice(event.detail,libraryData,audio,language,{onUnavailable:warning=>reportSpeechIssue({group:event.detail.group,language,reason:warning})});if(!voice)return;
+  quietAudio('voice');
+  audio.play(voice,language,{group:event.detail.group||'',time:event.detail.lateness||0}).then(()=>{if(audio.currentVoice?.group!==event.detail.group||audio.currentVoice.voice.resourceName!==voice.resourceName)return;speechNotices.delete(event.detail.group);refreshDialogueStatus();gallerySpeech?.playbackReady(event.detail.group,voice.resourceName);document.querySelector('#enable-sound').hidden=true;if(voice.sourceMainView&&!stage.mainViewSpeech.value.wordsVisible)audio.hideSourceSubtitle(event.detail.group);}).catch(audioError);
 });
 stage.addEventListener('voice-stop-request',event=>{if(audio?.currentVoice?.group===event.detail.group)audio.stop();});
 stage.addEventListener('voice-caption-hide-request',event=>audio?.hideSourceSubtitle(event.detail.group));
-stage.addEventListener('source-caption-request',event=>{if(audio)audio.showSourceCaption(event.detail.group,event.detail.text);});
-stage.addEventListener('speech-unavailable',event=>message(`Source speech unavailable (${event.detail.language}): ${event.detail.resourceName}`));
+stage.addEventListener('source-caption-request',event=>{if(audio){audio.showSourceCaption(event.detail.group,event.detail.text);speechNotices.delete(event.detail.group);refreshDialogueStatus();}});
+stage.addEventListener('speech-unavailable',event=>reportSpeechIssue(event.detail));
 try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
+  const importedPack=import.meta.env.MODE==='web'&&await resourceCache.ready?await resourceCache.request('PACK_STATUS'):null;
+  if(import.meta.env.MODE==='wallpaper'||import.meta.env.MODE==='web'&&!importedPack){
+    const response=await fetch(`${base}assets/resource-map.json`);if(!response.ok)throw new Error('Local resource map is unavailable');configureResourceAliases(await response.json(),new URL(base,document.baseURI));
+  }
   [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
+  window.mtePack.setLibrary(libraryData);
   configureInteractionAmbients(stage,libraryData);
   const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles,libraryData.voices,libraryData.characters);
   const skills=skillDisplayOptions(catalog.presentations,libraryData);catalog.presentations.push(...skills.flatMap(row=>row.presentation?[row.presentation]:[]));
@@ -152,10 +205,50 @@ try {
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const view=artworkPreviewView(presentation,appearance,libraryData.artworkViews);if(view)presentation.previewView=view;}}
   const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
   const audioResponse=await fetch(`${base}assets/audio-index.json`);
-  if(audioResponse.ok){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
+  if(audioResponse.ok){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[]),...(libraryData.mainViewVoices?.entryVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
+  await wallpaper.sync();
+  if(audio){
+    let preferences;try{preferences=JSON.parse(localStorage.getItem('mte-gallery-speech'));}catch{}
+    gallerySpeech=new GallerySpeech({stage,library:libraryData,audio,getView:()=>view,preferences:speechPreferences(preferences),onBlocked:()=>{document.querySelector('#enable-sound').hidden=false;message('Your browser paused automatic audio. Choose Enable sound to continue.');},onReady:()=>{document.querySelector('#enable-sound').hidden=true;quietAudio('voice');},onError:message});window.mteGallerySpeech=gallerySpeech;
+    const controls=document.createElement('section');controls.id='automatic-voices';controls.innerHTML='<h3>Arrival and dialogue</h3><label id="entrance-label">Entrance animation<select id="entrance-mode"><option value="unlocked">Unlocked preview</option><option value="locked">Locked preview</option><option value="off">Off</option></select></label><p id="entrance-status"></p><label class="check-label"><input type="checkbox" data-speech="entry">Entry greeting</label><label>Greeting preview<select id="entry-greeting"><option value="login">Login greeting</option><option value="birthday">Birthday greeting</option></select></label><label class="check-label"><input type="checkbox" data-speech="touch">Click dialogue</label><label class="check-label"><input type="checkbox" data-speech="idle">Idle dialogue</label><button id="replay-arrival">Replay arrival</button><p>Preview settings do not change a game account. Idle dialogue follows the original two-minute timer; dedicated animation events keep their own sounds.</p>';
+    document.querySelector('#sound-panel').before(controls);
+    const dialogueStatus=document.createElement('p');dialogueStatus.id='dialogue-status';dialogueStatus.className='availability-note';dialogueStatus.setAttribute('role','status');controls.append(dialogueStatus);
+    refreshDialogueStatus=()=>{
+      const group=editor.selected();dialogueStatus.hidden=!group;if(!group)return;
+      const availability=arrivalVoiceAvailability(libraryData,audio,{appearanceId:group.appearanceId??group.presentation?.appearanceId,bundle:group.presentation?.id},{birthday:gallerySpeech.preferences.birthday}),notice=speechNotices.get(group.id),missing=notice?.language===audio.language;
+      dialogueStatus.dataset.state=missing?'missing':availability.state;
+      dialogueStatus.textContent=missing?'Audio file is missing for this language. Animation remains available.':availability.state==='available'?'Entry voice available.':availability.label;
+      dialogueStatus.title=missing?notice.resourceName||notice.reason:'';
+    };
+    const mute=document.querySelector('#viewer-mute');mute.disabled=false;mute.onclick=()=>editor.mutate(()=>audio.setMuted(!audio.muted));
+    const refreshMute=()=>{mute.textContent=audio.muted?'Unmute sound':'Mute sound';mute.setAttribute('aria-pressed',String(audio.muted));};stage.addEventListener('scene-change',refreshMute);refreshMute();
+    const persistSpeech=()=>{try{localStorage.setItem('mte-gallery-speech',JSON.stringify(gallerySpeech.preferences));}catch{}};
+    const entrance=controls.querySelector('#entrance-mode'),greeting=controls.querySelector('#entry-greeting'),replay=controls.querySelector('#replay-arrival');
+    const refreshArrival=()=>{
+      const group=editor.selected(),profile=appearancePlaybackProfile(libraryData,group),preferences=gallerySpeech.preferences;
+      entrance.value=!preferences.entrance?'off':preferences.entranceUnlocked?'unlocked':'locked';entrance.disabled=!profile?.available;
+      controls.querySelector('#entrance-label').hidden=!profile;
+      controls.querySelector('#entrance-status').textContent=!profile?'':profile.entranceItem===null?'Entrance metadata unavailable. Import an updated resource pack.':!profile.entranceItem?'No unlockable entrance is configured for this appearance.':!profile.available?'The configured entrance is unavailable in this source variant.':!preferences.entrance?'Entrance animation is off.':preferences.entranceUnlocked?'Entrance plays once, then returns to idle.':'Locked preview uses the idle animation.';
+      greeting.value=preferences.birthday?'birthday':'login';greeting.disabled=!preferences.entry;
+      replay.disabled=!gallerySpeech.eligible(group)||editor.busy;
+      refreshDialogueStatus();
+    };
+    for(const field of controls.querySelectorAll('[data-speech]')){field.checked=gallerySpeech.preferences[field.dataset.speech];field.onchange=()=>{gallerySpeech.setPreference(field.dataset.speech,field.checked);persistSpeech();refreshArrival();};}
+    entrance.onchange=()=>{gallerySpeech.setPreference('entrance',entrance.value!=='off');gallerySpeech.setPreference('entranceUnlocked',entrance.value!=='locked');persistSpeech();refreshArrival();};
+    greeting.onchange=()=>{gallerySpeech.setPreference('birthday',greeting.value==='birthday');speechNotices.delete(editor.selected()?.id);persistSpeech();refreshDialogueStatus();};
+    replay.onclick=()=>{if(editor.busy)return;if(stage.paused){message('Playback is paused');return;}const group=editor.selected();if(!gallerySpeech.eligible(group))return;setView('gallery');let result;editor.mutate(()=>{stage.triggerMainViewSpeech(group.id,'stop');audio.stop();for(const effect of [...audio.effects])if(effect.effectGroup===group.id)audio.releaseEffect(effect);result=gallerySpeech.enter(group);stage.evaluate(0);stage.draw();});if(result?.accepted!==false)message('Arrival replayed',{transient:true});};
+    stage.addEventListener('scene-change',refreshArrival);refreshArrival();
+    document.querySelector('#enable-sound').onclick=async()=>{try{await gallerySpeech.unlock();document.querySelector('#enable-sound').hidden=true;message('Sound enabled',{transient:true});}catch(error){message(error.name==='NotAllowedError'?'Audio is still blocked. Check this browser’s sound permissions.':error.message);}};
+    stage.addEventListener('scene-change',()=>gallerySpeech.sync());
+  }
   window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
-  const recovered=await editor.init(catalog.presentations,runtime.entries);
-  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial)await select(initial);appReady=true;
+  let recovered=await editor.init(catalog.presentations,runtime.entries,{recover:!window.__mteHostState});
+  appReady=true;
+  if(startupSession){await window.mteHost.restoreSession(startupSession);window.__mteHostSessionConsumed=true;recovered=true;}
+  if(recovered)message('Scene restored',{transient:true});
+  if(recovered&&!startupSession)gallerySpeech?.enter(editor.selected(),{entry:!stage.mainViewSpeech.value.group,animations:false});
+  const initial=catalog.presentations.find(p=>p.id==='Spines/painting/3014027_spine');if(!recovered&&initial){await select(initial);stage.fit();editor.changed({cameraOnly:true});}
+  await wallpaper.ready();
 }catch(error){message(error.message);}
 }

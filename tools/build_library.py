@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 import sys
+from tempfile import NamedTemporaryFile
 from extract_assets import write_json, load_decoder
 
 
@@ -12,6 +13,94 @@ def records(path):
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("records", data.get("rows", []))
+
+
+def skin_playback_metadata(row):
+    if "start_anime_item" not in row:
+        return {}
+    item = row["start_anime_item"]
+    if type(item) is not int or item < 0:
+        raise ValueError("Invalid skin entrance item: expected a nonnegative integer")
+    return {"entranceItem": item}
+
+
+def main_view_entry_voices(rows):
+    result = []
+    for row in rows:
+        resource = row.get("file_name")
+        if not isinstance(resource, str) or not resource.endswith(("_Login", "_Birthday")):
+            continue
+        if any(character in resource for character in ("/", "\\", "\0")):
+            raise ValueError("Entry voice resource must be a source resource name, not a path")
+        result.append({"id": str(row["id"]), "targetId": str(row["target_id"]),
+                       "type": row["type"], "resourceName": resource,
+                       "title": row["voice_title"], "text": row["voice_text"],
+                       "exactResource": True})
+    return result
+
+
+def playback_source_tables(source):
+    roots = [source / "generated/content", source / "qnzl-2.0-poc/generated/content"]
+    paths = [(name, root / (name + ".json")) for root in roots
+             for name in ("a_sound_voice", "a_gospel_skin")]
+    for _, path in paths:
+        if not path.is_file():
+            raise FileNotFoundError("Playback-only refresh requires both generated source tables: " + str(path))
+    if sum(path.stat().st_size for _, path in paths) > 20 * 1024 * 1024:
+        raise ValueError("Playback source tables exceed the 20 MiB read budget")
+    tables = {"a_sound_voice": {}, "a_gospel_skin": {}}
+    for name, path in paths:
+        rows = records(path)
+        if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) or "id" not in row for row in rows):
+            raise ValueError("Invalid or empty playback source table: " + str(path))
+        tables[name].update({str(row["id"]): row for row in rows})
+    return tables["a_sound_voice"], tables["a_gospel_skin"]
+
+
+def build_playback_only(source, output):
+    library_path = output / "library.json"
+    library = json.loads(library_path.read_text(encoding="utf-8"))
+    main_view = library.get("mainViewVoices")
+    appearances = library.get("appearances")
+    if not isinstance(main_view, dict) or not isinstance(appearances, list):
+        raise ValueError("Existing library playback metadata is unavailable")
+    voices, skins = playback_source_tables(source)
+    entries = main_view_entry_voices(voices.values())
+    if not entries and main_view.get("entryVoices"):
+        raise ValueError("No source entry voices found; existing entry metadata was preserved")
+    skin_fields = {identifier: skin_playback_metadata(row) for identifier, row in skins.items()}
+    by_id = {str(row["id"]): row for row in appearances}
+    updates = []
+    for appearance in appearances:
+        if appearance.get("kind") != "skin":
+            continue
+        parent, seen = appearance, set()
+        while parent.get("variantOf"):
+            identifier = str(parent["id"])
+            if identifier in seen:
+                raise ValueError("Cyclic skin variant binding: " + identifier)
+            seen.add(identifier)
+            parent = by_id.get(str(parent["variantOf"]))
+            if parent is None:
+                raise ValueError("Missing skin variant parent: " + str(appearance["id"]))
+        fields = skin_fields.get(str(parent["id"]), {})
+        if fields:
+            updates.append((appearance, fields))
+    main_view["entryVoices"] = entries
+    for appearance, fields in updates:
+        appearance.update(fields)
+    payload = json.dumps(library, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=output,
+                                prefix=".library-playback-", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+        temporary.replace(library_path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    print({"entryVoices": len(entries), "entranceItems": len(updates)})
 
 
 def chinese_caption_policy(rows):
@@ -44,6 +133,7 @@ def main_view_voice_catalogue(rows, skins=(), station_ids=()):
                 "resourceName": row["file_name"], "title": row["voice_title"], "text": row["voice_text"],
                 "exactResource": True} for row in rows if str(row["id"]) in station_ids and row["type"] != 0]
     return {"schema": 1, "touchType": 3, "voices": result, "stationVoices": station,
+            "entryVoices": main_view_entry_voices(rows),
             "captions": captions,
             "touchRules": [{"id": str(row["id"]), "spineTouch": int(row.get("spine_touch") or 0)} for row in skins]}
 
@@ -291,7 +381,7 @@ def join_artwork_variants(appearances):
             continue
         label = "HX variant" if hx else "Original archive" if row.get("sourceVersion") == "original" else "Archive variant " + str(row.get("sourceVersion"))
         row.update(variantOf=parent["id"], characterId=parent.get("characterId"), characterName=parent.get("characterName"), kind=parent["kind"], name=parent["name"] + " · " + label)
-        for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack"):
+        for field in ("ownVoice", "ambientSound", "idle", "touchType", "storyPack", "entranceItem"):
             if field in parent:
                 row[field] = parent[field]
         if hx and row.get("sourceVersion"):
@@ -368,6 +458,7 @@ def build(source, output):
         bundle = "Spines/painting/" + row["spine_id"]
         presentation = by_bundle.get(bundle)
         entry = {"id": key, "characterId": str(row["gospel_id"]), "characterName": names.get(str(row["gospel_id"]), str(row["gospel_id"])), "name": row["skin_name"], "bundle": bundle, "portraitResource": "UI/Image/lihui/" + row["tachie_id"], "kind": "skin", "storyPack": row.get("storypack_id"), "ownVoice": bool(row.get("use_skinvoice")), "ambientSound": row.get("spine_ambient_sound") or "", "idle": row.get("idle_act") or "", "touchType": row.get("touch_act"), "status": "available" if presentation and presentation["instances"] else "not-extracted"}
+        entry.update(skin_playback_metadata(row))
         appearances.append(entry)
         used.add(bundle)
     raw_tables = source / "research/qnzl-2.0-diff-20260828/parsed/tables"
@@ -458,5 +549,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("public/assets"))
+    parser.add_argument("--playback-only", action="store_true",
+                        help="Refresh entry voices and skin entrance items in an existing library without scanning assets")
     args = parser.parse_args()
-    build(args.source, args.output)
+    if args.playback_only:
+        build_playback_only(args.source, args.output)
+    else:
+        build(args.source, args.output)

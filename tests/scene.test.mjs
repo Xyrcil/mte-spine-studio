@@ -4,6 +4,12 @@ import {validateScene,History} from '../src/engine/scene.js';
 import {Stage,objectTransform,disposeRestoredContextResources} from '../src/engine/stage.js';
 import {InteractionRoot} from '../src/engine/interaction.js';
 import {MainViewSpeechClock} from '../src/engine/main-view-speech-clock.js';
+import {cameraPresets} from '../src/editor.js';
+test('camera presets retain only bounded camera values and user names, never source object references',()=>{
+  const camera={x:1,y:2,width:12,height:8,sourcePreview:{group:'private-object-reference'}};
+  const rows=cameraPresets([{name:'My view',camera},{name:'My view',camera},{name:'Invalid',camera:{...camera,width:NaN}}]);
+  assert.deepEqual(rows,[{name:'My view',camera:{x:1,y:2,width:12,height:8}}]);assert.equal(cameraPresets(Array.from({length:15},(_,index)=>({name:String(index),camera}))).length,12);assert.deepEqual(cameraPresets(null),[]);
+});
 const scene=()=>({schema:1,name:'Scene',camera:{x:0,y:0,width:10,height:10},background:'#191b20',speed:1,paused:true,objects:[{id:'actor',kind:'spine',name:'Actor',bundle:'painting',x:1,y:2,scale:1,rotation:0,opacity:1,flipX:false,flipY:false,visible:true,locked:false,layers:[{id:'body',active:true,tracks:[{index:0,name:'Idle',time:2,loop:true,timeScale:1}]}]}]});
 test('recovery disposal skips invalid pre-loss handles and restores deletion methods even on failure',()=>{
   const valid={},stale={},deleted=[],prototype={},gl=Object.create(prototype);

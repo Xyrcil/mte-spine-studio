@@ -22,6 +22,7 @@ import {StoryCgRoot,isStoryCg} from './story-cg.js';
 import {StationDrawingRoot} from './station-drawing.js';
 import {MainViewSpeechClock} from './main-view-speech-clock.js';
 import {MainViewSpeech} from './main-view-speech.js';
+import {resourceUrl,mapAssetManager} from './resource-urls.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -55,6 +56,7 @@ export class Stage extends EventTarget {
     this.imageAssets=new Map();
     this.paused = false;
     this.speed = 1;
+    this.hostPaused=false;this.hostSpeed=1;this.hostFPS=60;this.renderScale=1;
     this.materialTime=0;
     this.background = '#191b20';
     this.camera = {x:0,y:0,width:20,height:20};
@@ -72,7 +74,7 @@ export class Stage extends EventTarget {
     if(!options.manual){this.resizeObserver = new ResizeObserver(() => this.resize());this.resizeObserver.observe(canvas);this.frame = requestAnimationFrame(time => this.tick(time));}
   }
   resize() {
-    const ratio = Math.min(devicePixelRatio || 1, 2);
+    const ratio = Math.min(devicePixelRatio || 1, 2)*(this.renderScale??1);
     this.canvas.width = Math.max(1, Math.round(this.canvas.clientWidth * ratio));
     this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
     if(this.camera.sourcePreview&&this.previewResponsive!==false&&!this.options?.manual&&!this.recoveryPending&&!this.assetLoadBusy&&this.checkPreview()){const preview=this.camera.sourcePreview,group=this.groups.find(group=>group.id===preview.group),previous=this.camera;this.fitPreview(group,preview.view);if(JSON.stringify(previous)!==JSON.stringify(this.camera))this.dispatchEvent(new CustomEvent('preview-resized'));}
@@ -81,7 +83,7 @@ export class Stage extends EventTarget {
     if(this.contextLost||this.disposed)throw new DOMException('Rendering context is unavailable','AbortError');
     presentation=prepareSkillArtwork(presentation);
     const contextEpoch=this.contextEpoch;
-    const manager = new (s().webgl.AssetManager)(this.gl);
+    const manager = mapAssetManager(new (s().webgl.AssetManager)(this.gl));
     let released=false;const textureLoader=manager.textureLoader,disposeManager=manager.dispose.bind(manager);
     manager.textureLoader=image=>released||signal?.aborted||this.disposed||this.contextLost||contextEpoch!==this.contextEpoch?new (s().FakeTexture)(image):textureLoader(image);
     manager.dispose=()=>{released=true;disposeManager();};
@@ -188,8 +190,7 @@ export class Stage extends EventTarget {
     if(delta>0)this.dispatchEvent(new CustomEvent('simulation-step',{detail:{delta}}));
   }
   evaluateFrame(delta) {
-    this.mainViewSpeech?.advance();
-    this.mainViewSpeechClock?.advance(delta);
+    if(!this.suspendMainViewSpeech||this.sequencePlayer){this.mainViewSpeech?.advance();this.mainViewSpeechClock?.advance(delta);}
     if(delta>0)this.materialTime=(this.materialTime??0)+delta;
     for(const group of this.groups)if(group.visible)for(const native of group.nativeAnimations||[])if(native.model&&native.source.data.m_Enabled!==0&&native.source.data.m_Enabled!==false&&group.isActiveTransform(group.transforms.get(String(native.source.data.m_GameObject.m_PathID))?.id))native.model.advance(delta);
     if(delta>0)for(const group of this.groups)if(group.visible)for(const effect of group.effects||[])if(effect.model&&group.isActiveTransform(effect.source.transform))effect.model.advance(delta);
@@ -236,7 +237,7 @@ export class Stage extends EventTarget {
   async addImage(src,name='Background image',detached=false,signal) {
     const contextEpoch=this.contextEpoch,image=new Image(),signals=[signal,this.contextAbort?.signal].filter(Boolean);let timer,cancel;
     this.activeLoads=(this.activeLoads||0)+1;
-    try{image.src=src;await Promise.race([image.decode(),new Promise((_resolve,reject)=>{cancel=()=>{image.src='';reject(new DOMException(signal?.aborted?'Loading cancelled':'Rendering context is unavailable','AbortError'));};for(const pending of signals)pending.addEventListener('abort',cancel,{once:true});timer=setTimeout(()=>{image.src='';reject(new Error('Image loading timed out'));},60000);if(signals.some(pending=>pending.aborted))cancel();})]);
+    try{image.src=resourceUrl(src);await Promise.race([image.decode(),new Promise((_resolve,reject)=>{cancel=()=>{image.src='';reject(new DOMException(signal?.aborted?'Loading cancelled':'Rendering context is unavailable','AbortError'));};for(const pending of signals)pending.addEventListener('abort',cancel,{once:true});timer=setTimeout(()=>{image.src='';reject(new Error('Image loading timed out'));},60000);if(signals.some(pending=>pending.aborted))cancel();})]);
     if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
     if(this.contextLost||this.disposed||contextEpoch!==this.contextEpoch)throw new DOMException('Rendering context is unavailable','AbortError');
     const width=this.camera.width,height=width*image.naturalHeight/image.naturalWidth;
@@ -326,7 +327,7 @@ export class Stage extends EventTarget {
   release(group){group.nativeTextLayer?.dispose();group.dialogueTypography?.dispose();group.maskedRenderer?.dispose();group.distortionRenderer?.dispose();if(group.kind==='image')group.texture.dispose();else group.manager.dispose();}
   screenToWorld(clientX,clientY){const rect=this.canvas.getBoundingClientRect(),aspect=rect.width/rect.height,width=Math.max(this.camera.width,this.camera.height*aspect);return {x:this.camera.x+((clientX-rect.left)/rect.width-.5)*width,y:this.camera.y+(.5-(clientY-rect.top)/rect.height)*width/aspect};}
   boneDragAt(clientX,clientY){
-    if(this.paused||this.recoveryPending||this.sequencePlayer)return null;const position=this.screenToWorld(clientX,clientY);
+    if(this.playbackPaused||this.recoveryPending||this.sequencePlayer)return null;const position=this.screenToWorld(clientX,clientY);
     for(const group of [...this.groups].reverse())for(const root of group.controllers||[])if(root instanceof BoneDragRoot&&root.contains(position.x,position.y))return {group:group.id,controller:root.source.id,hit:root.target,position};
     return null;
   }
@@ -345,13 +346,14 @@ export class Stage extends EventTarget {
   }
   interact(clientX,clientY){
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
-    if(this.paused)return {accepted:false,reason:'Playback is paused'};
+    if(this.playbackPaused)return {accepted:false,reason:'Playback is paused'};
     const {x,y}=this.screenToWorld(clientX,clientY);
     for(const group of [...this.groups].reverse())if(group.visible)for(const root of group.controllers||[]){const hit=root.hitAt(x,y);if(hit)return this.triggerInteraction(group.id,root.source.id,hit.id);}
     return {accepted:false,reason:'No interaction region here'};
   }
   triggerInteraction(groupId,controllerId,hitId,{replay=false}={}){
     if(this.recoveryPending)return {accepted:false,reason:'Rendering is recovering'};
+    if(this.hostPaused&&!replay)return {accepted:false,reason:'Playback is paused'};
     if(this.sequencePlayer&&!replay)return {accepted:false,reason:'Stop sequence playback before interacting'};
     const group=this.groups.find(group=>group.id===groupId&&group.visible);
     const root=group?.controllers?.find(root=>root.source.id===controllerId);
@@ -362,7 +364,7 @@ export class Stage extends EventTarget {
     return result;
   }
   triggerMainViewSpeech(group,operation,{language,localized,replay=false}={}){
-    if(this.paused&&operation==='touch'&&!replay)return {accepted:false,reason:'Playback is paused'};
+    if(this.playbackPaused&&['touch','entry','birthday'].includes(operation)&&!replay)return {accepted:false,reason:'Playback is paused'};
     if(this.recoveryPending||this.sequencePlayer&&!replay)return {accepted:false,reason:'Source speech commands are unavailable during recovery or sequence playback'};
     const result={...this.mainViewSpeech.command(group,operation,{language,localized}),group,controller:'main-view-speech',hit:operation,type:'main-view-speech',language:language??this.mainViewSpeech.value.language,localized:localized??this.mainViewSpeech.value.localized};
     if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));return result;
@@ -412,7 +414,7 @@ export class Stage extends EventTarget {
   draw() {
     if(this.contextLost||this.disposed)return;
     if(this.camera.sourcePreview)this.checkPreview();
-    for(const group of this.groups)if(group.visible)group.dialogueTypography?.prepare();
+    if(!this.uiHidden)for(const group of this.groups)if(group.visible)group.dialogueTypography?.prepare();
     const {gl,renderer,canvas}=this;
     gl.viewport(0,0,canvas.width,canvas.height);
     const hex=this.background.replace('#','');
@@ -430,20 +432,35 @@ export class Stage extends EventTarget {
         renderer.drawTextureRotated(group.texture,pose.x-width/2,pose.y-height/2,width,height,width/2,height/2,pose.rotation,new (s().Color)(1,1,1,backgroundOpacity(group,this.groups)),false);
       }else{
         const draws=[...group.layers.flatMap(layer=>skeletonDrawSegments(layer).map(segment=>({...segment,order:layer.instance.sortingOrder,path:hierarchyOrder(group,layer.instance.transform),layer}))),...(group.effects||[]).map(effect=>({order:particleOrder(group,effect.source),queue:particleQueue(effect.source),path:hierarchyOrder(group,effect.source.transform),effect})),...(group.nativeImages||[]).filter(image=>image.used&&!image.source.viewportDecoration).map(image=>({order:0,path:hierarchyOrder(group,image.source.transform),image}))].sort(compareDraws);
-        for(const slot of group.nativeTextLayer?.slots||[])if(slot.used)draws.push({order:0,path:hierarchyOrder(group,slot.source.transform),text:slot});draws.sort(compareDraws);
+        if(!this.uiHidden)for(const slot of group.nativeTextLayer?.slots||[])if(slot.used)draws.push({order:0,path:hierarchyOrder(group,slot.source.transform),text:slot});draws.sort(compareDraws);
         for(const draw of draws)if(draw.text)group.nativeTextLayer.draw(renderer,draw.text);else if(draw.image)drawNativeImage(renderer,group,draw.image);else if(draw.effect)drawParticleLayer(renderer,group,draw.effect,this.options.maskCamera);else if(draw.layer.active){const alpha=draw.layer.skeleton.color.a;draw.layer.skeleton.color.a=group.opacity;try{if(draw.distortion)group.distortionRenderer.draw(renderer,group,draw,this.materialTime);else if(draw.slots)drawSkeletonSlots(renderer,draw.layer.skeleton,draw.slots,draw.tint,draw.vertexColorPower,draw.premultipliedAlpha,draw.vertexColorPMA);else renderer.drawSkeleton(draw.layer.skeleton,false);}finally{draw.layer.skeleton.color.a=alpha;}}
       }
     }
     const viewport=this.options.maskCamera||{x:this.camera.x,y:this.camera.y,width,height:width/aspect};
-    for(const group of this.groups)if(group.visible)for(const image of group.nativeImages||[])if(image.source.viewportDecoration)drawNativeImage(renderer,group,image,viewport);
-    for(const group of this.groups)if(group.visible)group.dialogueTypography?.draw(renderer,viewport);
+    if(!this.uiHidden){
+      for(const group of this.groups)if(group.visible)for(const image of group.nativeImages||[])if(image.source.viewportDecoration)drawNativeImage(renderer,group,image,viewport);
+      for(const group of this.groups)if(group.visible)group.dialogueTypography?.draw(renderer,viewport);
+    }
     renderer.end();
     gl.disable(gl.SCISSOR_TEST);
   }
   tick(time) {
-    const delta=Math.max(0,Math.min((time-this.previous)/1000,.1)); this.previous=Math.max(this.previous,time);
-    if(!this.recoveryPending){this.evaluate(this.paused ? 0 : delta*this.speed);this.draw();}
+    this.frame=null;
+    if(this.disposed||this.hostPaused)return;
+    const interval=1000/(this.hostFPS??60),elapsed=Math.max(0,time-this.previous);
+    if(elapsed>=interval-.5){
+      const delta=Math.min(elapsed/1000,Math.max(.1,interval/1000+.02));this.previous=Math.max(this.previous,time);
+      if(!this.recoveryPending){this.evaluate(this.paused?0:delta*this.speed*(this.hostSpeed??1));this.draw();}
+    }
     this.frame=requestAnimationFrame(next => this.tick(next));
+  }
+  get playbackPaused(){return this.paused||this.hostPaused;}
+  setHostPlayback({paused=this.hostPaused,speed=this.hostSpeed,fps=this.hostFPS,renderScale=this.renderScale}){
+    const wasPaused=this.hostPaused,oldScale=this.renderScale;
+    this.hostPaused=paused;this.hostSpeed=speed;this.hostFPS=fps;this.renderScale=renderScale;
+    if(paused){if(this.frame!==null&&this.frame!==undefined)cancelAnimationFrame(this.frame);this.frame=null;}
+    else if(wasPaused&&!this.disposed&&!this.options.manual){this.previous=performance.now();this.frame=requestAnimationFrame(time=>this.tick(time));}
+    if(oldScale!==renderScale&&!this.options.manual){this.resize();if(!this.recoveryPending)this.draw();}
   }
   remove(id) {
     if(this.mainViewSpeech?.value.group===id||this.groups.some(group=>group.parentId===id&&group.id===this.mainViewSpeech?.value.group))this.mainViewSpeech.detach(this.mainViewSpeech.value.group);

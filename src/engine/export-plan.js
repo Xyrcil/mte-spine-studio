@@ -6,6 +6,8 @@ export function exportRenderSize(plan,maxSide,maxPixels=16*1024*1024){
   return {width:plan.width*scale,height:plan.height*scale,scale};
 }
 export function exportPlan(value,sceneSpeed=1){
+  if(value.startMode!==undefined&&!['captured','idle','entry'].includes(value.startMode))throw new Error('Invalid animation start mode');
+  if(value.startMode&&value.startMode!=='captured'&&!value.useSequence&&(typeof value.appearanceGroup!=='string'||!value.appearanceGroup||value.appearanceGroup.length>512))throw new Error('Select an artwork before restarting its animation');
   const width=number(value.width,'width',2,8192),height=number(value.height,'height',2,8192),scale=number(value.scale??1,'pixel multiplier',.25,4);
   const outputWidth=Math.round(width*scale),outputHeight=Math.round(height*scale);
   if(!Number.isInteger(width)||!Number.isInteger(height)||outputWidth>8192||outputHeight>8192)throw new Error('Output dimensions must be whole pixels, at most 8192 per side');
@@ -28,6 +30,18 @@ export function exportPlan(value,sceneSpeed=1){
   const bitrate=number(value.bitrate??8e6,'bitrate',100000,100e6);
   number(value.audioOffset??0,'audio offset',0,86400);number(value.audioGain??1,'audio volume',0,2);
   return {...value,crop,width:outputWidth,height:outputHeight,fps,speed,start,end,loops,segmentFrames,fadeFrames,cycleFrames,frames,duration:frames/fps,bitrate};
+}
+
+export function previewFrameIndices(plan,limit=180){
+  const count=Math.min(limit,plan.cycleFrames);
+  return Array.from({length:count},(_,index)=>Math.floor(index*plan.cycleFrames/count));
+}
+
+export function moveExportCrop(crop,dx,dy,resize=false){
+  const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
+  if(!resize)return {...crop,x:clamp(crop.x+dx,0,1-crop.width),y:clamp(crop.y+dy,0,1-crop.height)};
+  const corner=resize===true?'se':resize,x=corner.includes('w')?clamp(crop.x+dx,0,crop.x+crop.width-.01):crop.x,y=corner.includes('n')?clamp(crop.y+dy,0,crop.y+crop.height-.01):crop.y;
+  return {x,y,width:corner.includes('w')?crop.x+crop.width-x:clamp(crop.width+dx,.01,1-x),height:corner.includes('n')?crop.y+crop.height-y:clamp(crop.height+dy,.01,1-y)};
 }
 export function frameSources(plan,index){
   const i=index%plan.cycleFrames;

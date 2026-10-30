@@ -7,6 +7,17 @@ export function exportScene(scene,useSequence=false){
   return {...checked.sequence.initial,sequence:checked.sequence};
 }
 
+export function exportPlaybackScene(scene,settings){
+  const source=exportScene(scene,Boolean(settings.useSequence));
+  if(settings.useSequence||!settings.startMode||settings.startMode==='captured')return source;
+  const group=settings.appearanceGroup;
+  if(!source.objects.some(object=>object.id===group))throw new Error('Select an artwork before restarting its animation');
+  if(source.mainViewSpeech?.group===group){delete source.mainViewSpeech;delete source.mainViewSpeechClock;}
+  if(source.audio?.voiceTrack?.group===group)delete source.audio.voiceTrack;
+  if(source.audio?.effectTracks)source.audio.effectTracks=source.audio.effectTracks.filter(track=>track.group!==group);
+  return source;
+}
+
 export function omittedVisualWarnings(groups,scene,useSequence=false){
   const warnings=new Set();
   for(const group of groups){

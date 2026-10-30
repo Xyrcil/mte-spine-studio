@@ -6,7 +6,7 @@ export function zoomCameraAt(camera,rect,x,y,factor){
   const before=worldAt(camera,rect,x,y),{sourcePreview,...manual}=camera,next={...manual,width:camera.width*factor,height:camera.height*factor},after=worldAt(next,rect,x,y);next.x+=before.x-after.x;next.y+=before.y-after.y;return next;
 }
 
-export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto'}){
+export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto',interact=(x,y)=>stage.interact(x,y)}){
   const canvas=stage.canvas,pointers=new Map();let action,space=false,wheelTimer,wheelChanged=false;
   const canEdit=()=>!editor.busy&&getView()!=='export';
   const rect=()=>canvas.getBoundingClientRect();
@@ -33,7 +33,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
   };
   const move=event=>{
     if(!pointers.has(event.pointerId)||!action)return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
-    if(action.kind==='bone-drag'){if(stage.paused)return;stage.triggerBoneDrag({...action.target,operation:'move',position:stage.screenToWorld(event.clientX,event.clientY)});return;}
+    if(action.kind==='bone-drag'){if(stage.paused||stage.hostPaused)return;stage.triggerBoneDrag({...action.target,operation:'move',position:stage.screenToWorld(event.clientX,event.clientY)});return;}
     if(action.kind==='blocked')return;if(!canEdit()){if(Math.hypot(event.clientX-action.x,event.clientY-action.y)>6)action.kind='blocked';return;}
     if(action.kind==='pinch'){
       const [a,b]=[...pointers.values()];if(!a||!b)return;const center={x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance=Math.max(2,Math.hypot(a.x-b.x,a.y-b.y));if(!beginChange())return;
@@ -46,7 +46,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
   };
   const up=event=>{
     if(!pointers.has(event.pointerId))return;pointers.delete(event.pointerId);if(!action)return;
-    if(event.type==='pointerup'&&action.kind==='tap'&&!action.changed&&Math.hypot(event.clientX-action.x,event.clientY-action.y)<=6&&getView()==='gallery'&&(!editor.busy||isRecording())){const bounds=rect();if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)onInteraction(stage.interact(event.clientX,event.clientY));}
+    if(event.type==='pointerup'&&action.kind==='tap'&&!action.changed&&Math.hypot(event.clientX-action.x,event.clientY-action.y)<=6&&getView()==='gallery'&&(!editor.busy||isRecording())){const bounds=rect();if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)onInteraction(interact(event.clientX,event.clientY));}
     if(action.kind==='bone-drag'||getView()==='gallery'&&event.type==='pointerup'&&event.button===0)stage.releaseBoneDrags?.({onlyDragging:event.type!=='pointerup'});
     if(action.kind==='bone-drag'&&!action.recording)editor.changed();
     commit();action=pointers.size?{kind:'blocked'}:null;try{canvas.releasePointerCapture(event.pointerId);}catch{}

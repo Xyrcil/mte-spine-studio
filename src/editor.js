@@ -2,6 +2,16 @@ import {History,validateScene,saveLocalScene,loadLocalScene,listLocalScenes,dele
 import {sceneDrawOrder,moveSceneLayer,duplicateSceneObject} from './engine/background-layers.js';
 import {createSceneFile,readSceneFile} from './engine/scene-file.js';
 
+export function cameraPresets(value){
+  if(!Array.isArray(value))return [];
+  const names=new Set();
+  return value.filter(row=>{
+    if(typeof row?.name!=='string'||!row.name.trim()||row.name.length>64||names.has(row.name))return false;
+    if(!['x','y','width','height'].every(key=>Number.isFinite(row.camera?.[key])&&Math.abs(row.camera[key])<=1e6)||row.camera.width<.01||row.camera.height<.01)return false;
+    names.add(row.name);return true;
+  }).slice(0,12).map(row=>({name:row.name,camera:Object.fromEntries(['x','y','width','height'].map(key=>[key,row.camera[key]]))}));
+}
+
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
   let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing,refreshFrame;
@@ -9,7 +19,15 @@ export function createEditor(stage,message,onSelection){
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
   controls.innerHTML=`<label>Scene name <input id="scene-name" value="Untitled scene" maxlength="512"></label><div class="actions"><button id="undo">Undo</button><button id="redo">Redo</button></div><div class="actions"><button id="save-scene">Save locally</button><button id="download-scene">Export scene</button><button id="import-scene">Import scene</button></div><label>Saved scenes <select id="saved-scenes"><option value="">Choose a scene</option></select></label><div class="actions"><button id="load-scene">Load</button><button id="delete-scene">Delete saved</button></div><button id="add-background">Add background image</button><input id="scene-file" type="file" accept="application/json,.json" hidden><input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>`;
-  document.querySelector('.inspector h2').after(controls);
+  document.querySelector('.inspector .panel-heading').after(controls);
+  const views=document.createElement('details');views.className='camera-presets';views.innerHTML='<summary>Camera presets</summary><label>View name<input id="camera-preset-name" maxlength="64" placeholder="Name this view"></label><button id="save-camera-preset">Save view</button><label>Saved views<select id="camera-presets"><option value="">Choose a view</option></select></label><div class="actions"><button id="apply-camera-preset">Apply view</button><button id="delete-camera-preset">Delete view</button></div><p>Views store only the camera. Save a scene to keep characters, backgrounds and sound.</p>';controls.append(views);
+  const viewField=id=>views.querySelector('#'+id);let presets=[];try{presets=cameraPresets(JSON.parse(localStorage.getItem('mte-camera-presets')));}catch{}
+  function presetList(active=viewField('camera-presets').value){const select=viewField('camera-presets');select.replaceChildren(new Option('Choose a view',''));for(const preset of presets){const option=new Option(preset.name,preset.name);option.dataset.i18nSkip='';select.append(option);}select.value=presets.some(row=>row.name===active)?active:'';}
+  const persistPresets=next=>{try{localStorage.setItem('mte-camera-presets',JSON.stringify(next));presets=next;presetList();return true;}catch{message('Camera views could not be saved in this browser');return false;}};
+  viewField('save-camera-preset').onclick=()=>{if(isBusy())return;const name=viewField('camera-preset-name').value.trim();if(!name){viewField('camera-preset-name').focus();message('Enter a name for this view');return;}if(presets.length>=12&&!presets.some(row=>row.name===name)){message('Up to 12 camera views can be saved. Replace or delete one first.');return;}const row=cameraPresets([{name,camera:stage.camera}])[0];if(!row){message('This camera view cannot be saved');return;}if(persistPresets([...presets.filter(row=>row.name!==name),row])){presetList(name);refresh();message('Camera view saved');}};
+  viewField('apply-camera-preset').onclick=()=>{const row=presets.find(row=>row.name===viewField('camera-presets').value);if(row&&!isBusy())mutate(()=>stage.camera={...row.camera});};
+  viewField('delete-camera-preset').onclick=()=>{const name=viewField('camera-presets').value;if(isBusy()||!name)return;if(persistPresets(presets.filter(row=>row.name!==name))){refresh();message('Camera view deleted');}};
+  viewField('camera-presets').onchange=()=>refreshControls(isBusy(),document.activeElement);presetList();
   const formatLabel=document.createElement('label');formatLabel.textContent='Scene file format';const fileFormat=document.createElement('select');fileFormat.id='scene-format';fileFormat.setAttribute('aria-label','Scene file format');for(const [value,title] of [['auto','Automatic (JSON or ZIP)'],['json','JSON'],['zip','ZIP (embedded images)']])fileFormat.append(new Option(title,value));formatLabel.append(fileFormat);controls.querySelector('#download-scene').parentElement.after(formatLabel);
   const cancelFile=document.createElement('button');cancelFile.id='cancel-scene-file';cancelFile.textContent='Cancel file operation';cancelFile.hidden=true;cancelFile.onclick=()=>fileController?.abort();controls.append(cancelFile);document.querySelector('#scene-file').accept='application/json,.json,application/zip,.zip';
   const selected=()=>stage.groups.find(group=>group.id===selectedId);
@@ -24,7 +42,7 @@ export function createEditor(stage,message,onSelection){
   const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
   const controlKey=node=>node?.dataset.editorKey||node?.id||node?.getAttribute('aria-label');
   function requestRefresh(){if(refreshFrame===undefined)refreshFrame=requestAnimationFrame(()=>{refreshFrame=undefined;refresh();});}
-  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));requestRefresh();clearTimeout(timer);timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));requestRefresh();clearTimeout(timer);if(window.__mteHostState)return;timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
@@ -39,6 +57,7 @@ export function createEditor(stage,message,onSelection){
   container.addEventListener('compositionstart',event=>{composing=event.target;});
   container.addEventListener('compositionend',event=>{if(composing===event.target)composing=null;requestRefresh();});
   function refreshControls(locked,active){
+    const hasView=presets.some(row=>row.name===viewField('camera-presets').value);viewField('save-camera-preset').disabled=locked;viewField('camera-preset-name').disabled=locked;viewField('camera-presets').disabled=locked;viewField('apply-camera-preset').disabled=locked||!hasView;viewField('delete-camera-preset').disabled=locked||!hasView;
     document.querySelector('#undo').disabled=locked||!history.past.length;document.querySelector('#redo').disabled=locked||!history.future.length;
     for(const id of ['download-scene','import-scene','add-background'])document.querySelector('#'+id).disabled=locked;fileFormat.disabled=locked;cancelFile.hidden=!fileController;
     const preview=document.querySelector('#source-preview');if(preview)preview.disabled=locked||!selected()?.presentation?.previewView;
@@ -132,5 +151,5 @@ export function createEditor(stage,message,onSelection){
     let added;try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);added=group;if(ownerId!==undefined){const owner=stage.groups.find(row=>row.id===ownerId);if(!owner)throw new Error('Character is no longer available');group.x=owner.x;group.y=owner.y;stage.setBackgroundParent(group,ownerId);}history.push(previous);choose(group);changed();}
     catch(error){if(added)stage.remove(added.id);message(error.message);}finally{busy=false;refresh();}
   };
-  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,get busy(){return isBusy();},get assetSelectionBusy(){return isBusy(false);},async init(presentations,runtime){catalog=presentations;entries=runtime;try{await savedList();const scene=await loadLocalScene();if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
+  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,async restorePreferences(){try{presets=cameraPresets(JSON.parse(localStorage.getItem('mte-camera-presets')));}catch{presets=[];}presetList();await savedList();},get busy(){return isBusy();},get assetSelectionBusy(){return isBusy(false);},async init(presentations,runtime,{recover=true}={}){catalog=presentations;entries=runtime;try{await savedList();const scene=recover?await loadLocalScene():null;if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }

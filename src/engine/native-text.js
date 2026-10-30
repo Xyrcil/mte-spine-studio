@@ -1,4 +1,5 @@
 import {multiply,objectTransform,point} from './geometry.js';
+import {resourceUrl} from './resource-urls.js';
 
 const roundAdvance=value=>value%1===.5?Math.round(value/2)*2:Math.round(value);
 export function nativeGradientVertexColors(data,alpha=1){
@@ -28,7 +29,7 @@ export class NativeTextLayer {
   async initialize(base,signal){
     try{
       for(const source of this.group.presentation.nativeFontAssets||[]){
-        const response=await fetch(base+source.path,{signal});if(!response.ok)throw new Error('Original native text font is unavailable');const bytes=await response.arrayBuffer();if(bytes.byteLength!==source.bytes)throw new Error('Original native text font is incomplete');
+        const response=await fetch(resourceUrl(base+source.path),{signal});if(!response.ok)throw new Error('Original native text font is unavailable');const bytes=await response.arrayBuffer();if(bytes.byteLength!==source.bytes)throw new Error('Original native text font is incomplete');
         const family='mte-native-'+crypto.randomUUID(),face=new FontFace(family,bytes);await face.load();if(this.disposed||signal?.aborted)throw new DOMException('Native text loading cancelled','AbortError');document.fonts.add(face);this.fonts.set(source.serializedFile+'/'+source.assetId,{source,family,face});
       }
       for(const source of this.group.presentation.nativeText||[]){

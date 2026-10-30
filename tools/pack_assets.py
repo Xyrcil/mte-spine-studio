@@ -1,8 +1,10 @@
 """Create a local ZIP of indexed converted resources; do not distribute game assets."""
 import argparse
+import copy
 import json
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -98,9 +100,71 @@ def pack(root, output):
         staging.unlink()
 
 
+def refresh_catalogues(root, output):
+    """Replace catalogues in the current local pack without replacing its media."""
+    if output.is_symlink() or not output.is_file():
+        raise ValueError("Choose an existing regular resource archive")
+    root, output = root.resolve(), output.resolve()
+    try:
+        output.relative_to(root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Archive output must be outside the assets folder")
+    expected = set(indexed_files(root))
+    payloads = {name: (root / name).read_bytes() for name in CATALOGUES}
+    before = output.stat()
+    staging = None
+    try:
+        with zipfile.ZipFile(output) as original:
+            infos = original.infolist()
+            if len(infos) != len(expected) or {info.filename for info in infos} != expected:
+                raise ValueError("Resource files changed; build a complete pack instead of refreshing catalogues")
+            if any(info.flag_bits & 1 for info in infos):
+                raise ValueError("Encrypted resource archives cannot be refreshed")
+            changed = [name for name, data in payloads.items() if original.read(name) != data]
+            if not changed:
+                return {"updated": [], "files": len(infos), "bytes": before.st_size}
+            required = sum(info.file_size for info in infos) + sum(map(len, payloads.values())) + 2 * 1024 * 1024
+            if shutil.disk_usage(output.parent).free < required:
+                raise ValueError("Not enough free space for one temporary resource archive")
+            with tempfile.NamedTemporaryFile(dir=output.parent, prefix="mte-pack-", suffix=".partial", delete=False) as temporary:
+                staging = Path(temporary.name)
+            with zipfile.ZipFile(staging, "w", compression=zipfile.ZIP_STORED) as refreshed:
+                for info in infos:
+                    entry = copy.copy(info)
+                    if info.filename in changed:
+                        refreshed.writestr(entry, payloads[info.filename])
+                    else:
+                        with original.open(info) as source, refreshed.open(entry, "w", force_zip64=True) as destination:
+                            shutil.copyfileobj(source, destination, 1024 * 1024)
+            with zipfile.ZipFile(staging) as refreshed:
+                if len(refreshed.infolist()) != len(infos):
+                    raise ValueError("Resource archive entry count changed")
+                for info in infos:
+                    actual = refreshed.getinfo(info.filename)
+                    if info.filename in changed:
+                        if refreshed.read(info.filename) != payloads[info.filename]:
+                            raise ValueError("Refreshed catalogue does not match: " + info.filename)
+                    elif (actual.CRC, actual.file_size) != (info.CRC, info.file_size):
+                        raise ValueError("Resource media changed: " + info.filename)
+            current = output.stat()
+            if (current.st_size, current.st_mtime_ns, current.st_ino) != (before.st_size, before.st_mtime_ns, before.st_ino):
+                raise ValueError("The resource archive changed during refresh")
+        os.replace(staging, output)
+        return {"updated": changed, "files": len(infos), "bytes": output.stat().st_size}
+    finally:
+        if staging is not None:
+            staging.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--assets", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--refresh-catalogues", action="store_true", help="Atomically update catalogues in the existing local pack; preserve media")
     args = parser.parse_args()
-    pack(args.assets, args.output)
+    if args.refresh_catalogues:
+        print(json.dumps(refresh_catalogues(args.assets, args.output)))
+    else:
+        pack(args.assets, args.output)

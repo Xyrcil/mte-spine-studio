@@ -25,9 +25,16 @@ export function mainViewVoiceBinding(library,object){
   return {modelId:appearance.id,targetId:appearance.ownVoice===false?appearance.characterId:appearance.id,voiceIds:[]};
 }
 
+export function mainViewEntryVoice(library,object,{birthday=false}={}){
+  const binding=mainViewVoiceBinding(library,object);if(!binding)return null;
+  const resourceName=`Voice_${binding.targetId}_${birthday?'Birthday':'Login'}`;
+  const row=library.mainViewVoices?.entryVoices?.find(row=>row.resourceName===resourceName)||(library.voices||[]).find(row=>row.resourceName===resourceName);
+  return {...row,resourceName,title:row?.title||resourceName,exactResource:true};
+}
+
 export function mainViewTouchVoices(library,object,{explicitStationPool=true}={}){
   const binding=mainViewVoiceBinding(library,object);if(!binding)return [];
-  if(explicitStationPool&&binding.voiceIds.length)return binding.voiceIds.map(id=>(library.mainViewVoices?.voices||[]).find(row=>row.id===id)||library.voices.find(row=>row.id===id)||{id,resourceName:'',title:`Station line ${id}`,text:''});
+  if(explicitStationPool&&binding.voiceIds.length)return binding.voiceIds.map(id=>(library.mainViewVoices?.stationVoices||[]).find(row=>row.id===id)||(library.mainViewVoices?.voices||[]).find(row=>row.id===id)||library.voices.find(row=>row.id===id)||{id,resourceName:'',title:`Station line ${id}`,text:''});
   const profile=library.mainViewVoices?.hotSpringProfiles?.find(row=>row.id===binding.modelId);
   if(profile){const level=object.hotSpringFavorLevel??1,names=profile.tiers.slice(0,level).flat();return names.map(name=>library.mainViewVoices.favorVoices.find(row=>row.resourceName===name)||{id:'favor:'+name,resourceName:name,title:name,text:'',exactResource:true,subtitleStatus:'missing'});}
   if(library.hotSpringRoles?.some(row=>row.skinId===binding.modelId))return [];
@@ -39,7 +46,7 @@ export function mainViewIdleVoices(library,object){
   const drawing=library.stationDrawings?.drawings.find(row=>row.id===binding.drawingId);
   const target=drawing?(drawing.peopleId||drawing.gospelId):binding.targetId;
   const names=[1,2].map(index=>`Voice_${target}_Greetings_Idel_0${index}`);
-  return names.map(name=>(library.mainViewVoices?.voices||[]).find(row=>row.resourceName===name)).filter(Boolean);
+  return names.map(resourceName=>(library.mainViewVoices?.voices||[]).find(row=>row.resourceName===resourceName)||{id:`resource:${resourceName}`,...(library.voices||[]).find(row=>row.resourceName===resourceName),resourceName,title:resourceName,exactResource:true});
 }
 
 export function voiceCatalog(library,objects=[],scope='scene',query=''){
