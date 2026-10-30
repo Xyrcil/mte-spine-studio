@@ -1,3 +1,4 @@
+import {createCanvasSelection} from './canvas-selection.js';
 export function worldAt(camera,rect,x,y){const width=Math.max(camera.width,camera.height*rect.width/rect.height),height=width*rect.height/rect.width;return {x:camera.x+((x-rect.left)/rect.width-.5)*width,y:camera.y+(.5-(y-rect.top)/rect.height)*height};}
 export function panCamera(camera,rect,dx,dy){const width=Math.max(camera.width,camera.height*rect.width/rect.height),{sourcePreview,...manual}=camera;return {...manual,x:camera.x-dx*width/rect.width,y:camera.y+dy*width/rect.width};}
 export function zoomCameraAt(camera,rect,x,y,factor){
@@ -6,17 +7,17 @@ export function zoomCameraAt(camera,rect,x,y,factor){
   const before=worldAt(camera,rect,x,y),{sourcePreview,...manual}=camera,next={...manual,width:camera.width*factor,height:camera.height*factor},after=worldAt(next,rect,x,y);next.x+=before.x-after.x;next.y+=before.y-after.y;return next;
 }
 
-export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto',interact=(x,y)=>stage.interact(x,y)}){
-  const canvas=stage.canvas,pointers=new Map();let action,space=false,wheelTimer,wheelChanged=false;
+export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto',interact=(x,y)=>stage.interact(x,y),enableSelection=false}){
+  const canvas=stage.canvas,pointers=new Map(),selection=enableSelection?createCanvasSelection(stage,editor,{getView}):null;let action,space=false,wheelTimer,wheelChanged=false;
   const canEdit=()=>!editor.busy&&getView()!=='export';
   const rect=()=>canvas.getBoundingClientRect();
-  const commit=()=>{if(action?.changed)editor.changed();};
-  const flushWheel=()=>{clearTimeout(wheelTimer);if(wheelChanged){wheelChanged=false;editor.changed();}};
-  const clear=()=>{if(action?.kind==='bone-drag'){stage.releaseBoneDrags?.({onlyDragging:true});if(!action.recording)editor.changed();}commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
-  const beginChange=()=>{if(action.changed)return true;if(!editor.before())return false;action.changed=true;return true;};
+  const commit=()=>{if(action?.changed)editor.changed(action.kind==='pan'||action.kind==='pinch'?{cameraOnly:true}:undefined);};
+  const flushWheel=()=>{clearTimeout(wheelTimer);if(wheelChanged){wheelChanged=false;editor.changed({cameraOnly:true});}};
+  const clear=()=>{stage.ctrlPanActive=false;stage.pendingCtrlContext=null;selection?.clearMarquee();if(action?.kind==='bone-drag'){stage.releaseBoneDrags?.({onlyDragging:true});if(!action.recording)editor.changed();}commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
+  const beginChange=()=>{if(action.changed)return true;if(!(getView()==='studio'&&(action.kind==='pan'||action.kind==='pinch'))&&!editor.before())return false;action.changed=true;return true;};
   const down=event=>{
-    const editable=canEdit(),recording=getView()==='gallery'&&isRecording();if(!editable&&!recording||event.button>1)return;
-    canvas.focus({preventScroll:true});event.preventDefault();flushWheel();pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});try{canvas.setPointerCapture(event.pointerId);}catch{}
+    const editable=canEdit(),recording=getView()==='gallery'&&isRecording();if(!editable&&!recording||event.button>1&&!(event.button===2&&event.ctrlKey&&getView()==='studio'))return;
+    canvas.focus({preventScroll:true});event.preventDefault();flushWheel();if(event.ctrlKey&&getView()==='studio')stage.ctrlPanActive=true;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});try{canvas.setPointerCapture(event.pointerId);}catch{}
     if(pointers.size>2){commit();action={kind:'blocked'};return;}
     if(action?.kind==='blocked'&&pointers.size>1)return;
     if(pointers.size===2){
@@ -25,14 +26,19 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
       if(action?.group&&action.changed){action.group.x=action.object.x;action.group.y=action.object.y;}
       const [a,b]=[...pointers.values()];action={kind:'pinch',camera:{...stage.camera},rect:rect(),center:{x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance:Math.max(2,Math.hypot(a.x-b.x,a.y-b.y)),changed:action?.changed||false};return;
     }
-    const pan=event.button===1||event.altKey||space||getTool()==='pan';if(pan&&!editable){action={kind:'blocked'};return;}
+    const pan=event.button===1||event.altKey||event.ctrlKey||space||getTool()==='pan';if(pan&&!editable){action={kind:'blocked'};return;}
     const drag=!pan&&getView()==='gallery'?stage.boneDragAt?.(event.clientX,event.clientY):null;
     if(drag&&stage.triggerBoneDrag({...drag,operation:'start'}).accepted){action={kind:'bone-drag',target:drag,recording};return;}
-    const group=!pan&&getView()==='studio'?stage.hitTest(event.clientX,event.clientY):null;if(group)editor.choose(group);
-    action={kind:pan||getView()==='studio'&&!group?'pan':getView()==='gallery'?'tap':group?.locked?'blocked':'object',id:event.pointerId,x:event.clientX,y:event.clientY,camera:{...stage.camera},rect:rect(),group,object:group?{x:group.x,y:group.y}:null,changed:false,recording};
+    const handle=!pan&&getView()==='studio'?selection?.handleAt(event.clientX,event.clientY):null;
+    const group=!pan&&!handle&&getView()==='studio'?(stage.hitTestDetailed?stage.hitTestDetailed(event.clientX,event.clientY):stage.hitTest(event.clientX,event.clientY)):null;
+    if(group){if(selection){if(event.shiftKey||!selection.has(group))selection.select(group,event.shiftKey);}else editor.choose(group);}
+    if(!pan&&!group&&!handle&&event.shiftKey&&selection&&getView()==='studio'){selection.startMarquee(event.clientX,event.clientY);action={kind:'marquee',id:event.pointerId,x:event.clientX,y:event.clientY,changed:false};return;}
+    const transform=handle?selection.beginTransform(handle,event.clientX,event.clientY):null;
+    action={kind:transform?'transform':pan||getView()==='studio'&&!group?'pan':getView()==='gallery'?'tap':group?.locked?'blocked':'object',id:event.pointerId,x:event.clientX,y:event.clientY,camera:{...stage.camera},rect:rect(),group,object:group?{x:group.x,y:group.y}:null,members:group&&selection?selection.movable():null,transform,changed:false,recording};
   };
   const move=event=>{
     if(!pointers.has(event.pointerId)||!action)return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(action.kind==='marquee'){selection.moveMarquee(event.clientX,event.clientY);return;}
     if(action.kind==='bone-drag'){if(stage.paused||stage.hostPaused)return;stage.triggerBoneDrag({...action.target,operation:'move',position:stage.screenToWorld(event.clientX,event.clientY)});return;}
     if(action.kind==='blocked')return;if(!canEdit()){if(Math.hypot(event.clientX-action.x,event.clientY-action.y)>6)action.kind='blocked';return;}
     if(action.kind==='pinch'){
@@ -41,30 +47,33 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     }
     const dx=event.clientX-action.x,dy=event.clientY-action.y;if(!action.changed&&Math.hypot(dx,dy)<=6)return;
     if(action.kind==='tap')action.kind='pan';if(!beginChange())return;
-    if(action.kind==='pan')stage.camera=panCamera(action.camera,action.rect,dx,dy);
-    else if(action.kind==='object'){const moved=panCamera(action.camera,action.rect,dx,dy),world={x:action.camera.x-moved.x,y:action.camera.y-moved.y},local=stage.objectDragDelta?.(action.group,world.x,world.y)||world;action.group.x=action.object.x+local.x;action.group.y=action.object.y+local.y;}
+    if(action.kind==='pan'){stage.camera=panCamera(action.camera,action.rect,dx,dy);if(event.ctrlKey)stage.suppressNextContextMenu=true;}
+    else if(action.kind==='transform')selection.transform(action.transform,event.clientX,event.clientY);
+    else if(action.kind==='object'){const moved=panCamera(action.camera,action.rect,dx,dy),world={x:action.camera.x-moved.x,y:action.camera.y-moved.y};if(action.members)selection.move(action.members,world.x,world.y);else{const local=stage.objectDragDelta?.(action.group,world.x,world.y)||world;action.group.x=action.object.x+local.x;action.group.y=action.object.y+local.y;}}
   };
   const up=event=>{
     if(!pointers.has(event.pointerId))return;pointers.delete(event.pointerId);if(!action)return;
     if(event.type==='pointerup'&&action.kind==='tap'&&!action.changed&&Math.hypot(event.clientX-action.x,event.clientY-action.y)<=6&&getView()==='gallery'&&(!editor.busy||isRecording())){const bounds=rect();if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)onInteraction(interact(event.clientX,event.clientY));}
+    if(action.kind==='marquee')selection.endMarquee();
+    if(action.kind==='pan'&&!action.changed&&getView()==='studio'&&!event.ctrlKey&&!event.altKey&&!space&&event.button===0)selection?.select(null);
     if(action.kind==='bone-drag'||getView()==='gallery'&&event.type==='pointerup'&&event.button===0)stage.releaseBoneDrags?.({onlyDragging:event.type!=='pointerup'});
     if(action.kind==='bone-drag'&&!action.recording)editor.changed();
-    commit();action=pointers.size?{kind:'blocked'}:null;try{canvas.releasePointerCapture(event.pointerId);}catch{}
+    const pending=stage.pendingCtrlContext,openPending=pending&&action.kind==='pan'&&!action.changed&&event.type==='pointerup';if(pending)stage.suppressNextContextMenu=false;else if(stage.suppressNextContextMenu)setTimeout(()=>stage.suppressNextContextMenu=false,400);stage.pendingCtrlContext=null;stage.ctrlPanActive=false;commit();action=pointers.size?{kind:'blocked'}:null;try{canvas.releasePointerCapture(event.pointerId);}catch{}if(openPending)canvas.dispatchEvent(new CustomEvent('mte-request-context-menu',{detail:pending}));
   };
-  const wheel=event=>{event.preventDefault();if(!canEdit())return;const bounds=rect(),delta=event.deltaY*(event.deltaMode===1?40:event.deltaMode===2?bounds.height:1);if(!Number.isFinite(delta)||delta===0)return;if(!wheelChanged){if(!editor.before())return;wheelChanged=true;}stage.camera=zoomCameraAt(stage.camera,bounds,event.clientX,event.clientY,Math.exp(Math.max(-1000,Math.min(1000,delta))*.001));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelChanged=false;editor.changed();},150);};
+  const wheel=event=>{event.preventDefault();if(!canEdit())return;const bounds=rect(),delta=event.deltaY*(event.deltaMode===1?40:event.deltaMode===2?bounds.height:1);if(!Number.isFinite(delta)||delta===0)return;if(!wheelChanged){if(getView()!=='studio'&&!editor.before())return;wheelChanged=true;}stage.camera=zoomCameraAt(stage.camera,bounds,event.clientX,event.clientY,Math.exp(Math.max(-1000,Math.min(1000,delta))*.001));clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>{wheelChanged=false;editor.changed({cameraOnly:true});},150);};
   const keyDown=event=>{
     if(event.ctrlKey||event.metaKey)return;
     if(event.code==='Space'){space=true;event.preventDefault();return;}if(!canEdit())return;
-    const bounds=rect(),directions={ArrowLeft:[40,0],ArrowRight:[-40,0],ArrowUp:[0,40],ArrowDown:[0,-40]};if(!directions[event.key]&&!['+','=','-','Home'].includes(event.key))return;event.preventDefault();if(!editor.before())return;
-    if(directions[event.key])stage.camera=panCamera(stage.camera,bounds,...directions[event.key]);else if(event.key==='Home')stage.fit();else stage.camera=zoomCameraAt(stage.camera,bounds,bounds.left+bounds.width/2,bounds.top+bounds.height/2,event.key==='-'?1.2:1/1.2);editor.changed();
+    const bounds=rect(),directions={ArrowLeft:[40,0],ArrowRight:[-40,0],ArrowUp:[0,40],ArrowDown:[0,-40]};if(!directions[event.key]&&!['+','=','-','Home'].includes(event.key))return;event.preventDefault();if(getView()!=='studio'&&!editor.before())return;
+    if(directions[event.key])stage.camera=panCamera(stage.camera,bounds,...directions[event.key]);else if(event.key==='Home')stage.fit();else stage.camera=zoomCameraAt(stage.camera,bounds,bounds.left+bounds.width/2,bounds.top+bounds.height/2,event.key==='-'?1.2:1/1.2);editor.changed({cameraOnly:true});
   };
   const keyUp=event=>{if(event.code==='Space')space=false;},blur=()=>{space=false;clear();};
   const document=canvas.ownerDocument;
   const globalSpace=event=>{if(event.ctrlKey||event.metaKey||event.code!=='Space'||event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;if(event.target===canvas||canvas.matches(':hover')){space=true;event.preventDefault();}};
   document?.addEventListener('keydown',globalSpace);document?.addEventListener('keyup',keyUp);document?.defaultView?.addEventListener('blur',blur);
-  canvas.tabIndex=0;canvas.setAttribute('aria-description','Drag source bone handles in Gallery; drag elsewhere to pan. In Studio, drag objects or empty space. Pinch or scroll to zoom. Arrow keys pan; plus and minus zoom; Home fits the scene.');
+  canvas.tabIndex=0;canvas.setAttribute('aria-description','Drag source bone handles in Gallery; drag elsewhere to pan. In Studio, drag objects; drag empty space or hold Control to pan. Pinch or scroll to zoom. Arrow keys pan; plus and minus zoom; Home fits the scene.');
   for(const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',up],['lostpointercapture',up],['wheel',wheel],['keydown',keyDown],['keyup',keyUp],['blur',blur]])canvas.addEventListener(name,handler,{passive:false});
   const resetEvents=['rendering-pausing','scene-ready','sequence-playing','sequence-paused','sequence-loaded'];
   for(const name of resetEvents)stage.addEventListener(name,clear);
-  return {clear,dispose(){clear();document?.removeEventListener('keydown',globalSpace);document?.removeEventListener('keyup',keyUp);document?.defaultView?.removeEventListener('blur',blur);for(const name of resetEvents)stage.removeEventListener(name,clear);for(const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',up],['lostpointercapture',up],['wheel',wheel],['keydown',keyDown],['keyup',keyUp],['blur',blur]])canvas.removeEventListener(name,handler);}};
+  return {clear,selection,dispose(){clear();selection?.dispose();document?.removeEventListener('keydown',globalSpace);document?.removeEventListener('keyup',keyUp);document?.defaultView?.removeEventListener('blur',blur);for(const name of resetEvents)stage.removeEventListener(name,clear);for(const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',up],['lostpointercapture',up],['wheel',wheel],['keydown',keyDown],['keyup',keyUp],['blur',blur]])canvas.removeEventListener(name,handler);}};
 }

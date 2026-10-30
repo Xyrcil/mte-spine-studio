@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cacheKind,rangeBounds,evictionCandidates,sceneCacheUrls,validCatalogue} from '../src/engine/cache-policy.js';
+import {cacheKind,rangeBounds,evictionCandidates,sceneCacheUrls,validCatalogue,freshCachedResource} from '../src/engine/cache-policy.js';
 test('original font files belong to scene cache preparation and stay inside its resource scope',()=>{
   const base='https://example.test/mte/',path='spines/interfaces/fonts/SOURCE.otf';assert.equal(cacheKind(base+'assets/'+path,base),'asset');assert.deepEqual(sceneCacheUrls([{presentation:{hotSpringHouse:{dialoguePanel:{fonts:[{path}]}}}}],base),[base+'assets/'+path]);
 });
@@ -13,6 +13,16 @@ test('native skill fonts are prepared once alongside their scene images',()=>{
   assert.deepEqual(sceneCacheUrls([{presentation:{nativeFontAssets:[{path},{path}]},nativeImages:[{used:true,texture:scope+'assets/portraits/badge.png'}]}],scope),[scope+'assets/portraits/badge.png',url]);
 });
 const scope='https://example.test/studio/';
+test('recent artwork is reused while catalogue reuse belongs to the current application build',()=>{
+  const now=10000000,row={checked:now-60000,build:'current'};
+  assert.equal(freshCachedResource('asset',row,'next',now),true);
+  assert.equal(freshCachedResource('catalog',row,'current',now),true);
+  assert.equal(freshCachedResource('catalog',row,'next',now),false);
+  assert.equal(freshCachedResource('catalog',{...row,checked:now-300000},'current',now),false);
+  assert.equal(freshCachedResource('asset',{...row,checked:now-3600000},'current',now),false);
+  assert.equal(freshCachedResource('asset',{...row,checked:now+1},'current',now),false);
+  assert.equal(freshCachedResource('asset',null,'current',now),false);
+});
 test('offline scene preparation retains source material textures once under project deployments',()=>{
   const path='spines/painting/role',entry={path,atlases:[{pages:[]}],materialBindings:{pages:[{materials:{normal:{textures:{_NoiseTex:{path:'materials/noise.png'},_MaskTex:{default:'white'}}},additive:{textures:{_NoiseTex:{path:'materials/noise.png'}}}}}]}},layer={entry,source:scope+'assets/'+path+'/id/skeleton.skel',atlas:scope+'assets/'+path+'/id/atlas/texture.atlas'};
   assert.deepEqual(sceneCacheUrls([{layers:[layer]}],scope),[layer.source,layer.atlas,scope+'assets/'+path+'/materials/noise.png']);

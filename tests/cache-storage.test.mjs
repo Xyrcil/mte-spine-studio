@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
-import {cacheKind,validCatalogue,evictionCandidates,rangeBounds} from '../src/engine/cache-policy.js';
+import {cacheKind,validCatalogue,evictionCandidates,rangeBounds,freshCachedResource} from '../src/engine/cache-policy.js';
 
 const source=(await readFile(new URL('../src/cache-worker.js',import.meta.url),'utf8')).replace(/^import .*;$/gm,'');
 function worker({failOpen=false,failRead=false,fetch:network,caches:storage}={}){
@@ -12,7 +12,7 @@ function worker({failOpen=false,failRead=false,fetch:network,caches:storage}={})
     const database={close(){closes++;},transaction(){const read=value=>{const result={};reads++;queueMicrotask(()=>{if(failRead){failRead=false;tx.error=new Error('Temporary read failure');tx.onabort();return;}result.result=value;result.onsuccess();tx.oncomplete();});return result;},tx={objectStore(){return {get:key=>read(rows.get(key)),getAll:()=>read([]),delete:()=>read(undefined),put:value=>read(value)};}};return tx;}};
     connections.push(database);request.result=database;request.onsuccess();
   });return request;}};
-  const context={indexedDB,URL,Request,Response,Headers,TextDecoder,Uint8Array,queueMicrotask,cacheKind,validCatalogue,evictionCandidates,rangeBounds,fetch:network,caches:storage,__MTE_BUILD_ID__:'test',self:{registration:{scope:'https://studio.invalid/'},clients:{matchAll:async()=>[],claim:async()=>{claims++;}},addEventListener(type,handler){listeners.set(type,handler);}}};
+  const context={indexedDB,URL,Request,Response,Headers,TextDecoder,Uint8Array,queueMicrotask,cacheKind,validCatalogue,evictionCandidates,rangeBounds,freshCachedResource,fetch:network,caches:storage,__MTE_BUILD_ID__:'test',self:{registration:{scope:'https://studio.invalid/'},clients:{matchAll:async()=>[],claim:async()=>{claims++;}},addEventListener(type,handler){listeners.set(type,handler);}}};
   runInNewContext(source+'\nglobalThis.api={db,settings,localPack,handle,store,warmShell};',context);
   return {api:context.api,connections,rows,listeners,get opens(){return opens;},get reads(){return reads;},get closes(){return closes;},get claims(){return claims;}};
 }
@@ -48,6 +48,13 @@ test('unavailable local storage does not block online resources or strip range h
 test('combined storage and network failures return an explicit unavailable response',async()=>{
   const pending=[],state=worker({failOpen:true,fetch:async()=>{throw new Error('Offline');}}),response=await state.api.handle(new Request('https://studio.invalid/assets/example.wav'),{waitUntil:promise=>pending.push(promise)},'asset');
   assert.equal(response.status,503);assert.match(await response.text(),/local storage.*network request failed/);await Promise.all(pending);
+});
+test('returning to artwork after one minute reads its cached texture without a network round trip',async()=>{
+  const url='https://studio.invalid/assets/spines/role/page.png',pending=[];let requests=0;
+  const state=worker({caches:{async open(){return {match:async()=>new Response('texture',{headers:{'content-type':'image/png'}})};}},fetch:async()=>{requests++;throw new Error('Network should not be needed');}});
+  state.rows.set(url,{url,kind:'asset',checked:Date.now()-60000,used:0,size:7});
+  const response=await state.api.handle(new Request(url),{waitUntil:promise=>pending.push(promise)},'asset');
+  assert.equal(await response.text(),'texture');assert.equal(requests,0);await Promise.all(pending);
 });
 test('catalogue cache write failure preserves the successful online response',async()=>{
   for(const failure of ['open','put']){

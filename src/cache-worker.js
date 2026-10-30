@@ -1,4 +1,4 @@
-import {cacheKind,rangeBounds,evictionCandidates,validCatalogue} from './engine/cache-policy.js';
+import {cacheKind,rangeBounds,evictionCandidates,validCatalogue,freshCachedResource} from './engine/cache-policy.js';
 import {verifyPackCache} from './engine/resource-pack.js';
 const scope=self.registration.scope,prefix=`mte-studio:${new URL(scope).pathname}:`,assetName=prefix+'assets:1',shellName=prefix+'shell:'+__MTE_BUILD_ID__,dbName=prefix+'metadata';
 const MAX_ITEM=64*1024*1024,jobs=new Map();let dbPromise,settingsPromise,packPromise,writes=Promise.resolve();
@@ -20,9 +20,9 @@ async function bytes(response){const length=Number(response.headers.get('content
 async function valid(response,url){if(response.status!==200)return false;const path=new URL(url).pathname,type=response.headers.get('content-type')||'';if((cacheKind(url,scope)!=='shell'||/\.(js|css)$/.test(path))&&type.includes('text/html'))return false;if(/\.(png|webp|jpg|jpeg)$/.test(path)&&!type.startsWith('image/'))return false;if(/\.json$/.test(path)){try{const data=await response.clone().json();if(cacheKind(url,scope)==='catalog'&&!validCatalogue(data,path.split('/').at(-1)))return false;}catch{return false;}}return true;}
 async function removeUrls(urls){const cache=await caches.open(assetName);for(const url of urls){await cache.delete(url);await record('entries','delete',url);}}
 async function reconcile(){const cache=await caches.open(assetName),entries=await record('entries','getAll'),known=new Set(entries.map(row=>row.url));for(const row of entries)if(!await cache.match(row.url))await record('entries','delete',row.url);for(const request of await cache.keys())if(!known.has(request.url)){const response=await cache.match(request);await record('entries','put',{url:request.url,size:Number(response.headers.get('x-mte-cache-size'))||0,used:Date.now(),checked:0,kind:cacheKind(request.url,scope)});}}
-async function store(url,response,kind,explicit=false){
+async function store(url,response,kind,explicit=false,validated=false){
   if(kind!=='shell'&&!explicit&&!(await settings()).enabled)return false;
-  if(!await valid(response,url))return false;const data=await bytes(response.clone());if(!data.length)return false;
+  if(!validated&&!await valid(response,url))return false;const data=await bytes(response.clone());if(!data.length)return false;
   return queue(async()=>{
     const config=kind==='shell'?null:await settings();if(kind!=='shell'&&!config.enabled&&!explicit)return false;
     const cache=await caches.open(kind==='shell'?shellName:assetName),previous=await cache.match(url);
@@ -30,7 +30,7 @@ async function store(url,response,kind,explicit=false){
     const old=kind==='shell'?null:await record('entries','get',url);
     if(kind!=='shell'){const candidates=evictionCandidates(await record('entries','getAll'),config.budget,data.length-(old?.size||0),url);await removeUrls(candidates.remove);if(candidates.total>config.budget)return false;}
     const headers=new Headers(response.headers);headers.delete('content-encoding');headers.set('content-length',String(data.length));headers.set('x-mte-cache-size',String(data.length));
-    try{await cache.put(url,new Response(data,{status:200,headers}));if(kind!=='shell')await record('entries','put',{url,size:data.length,used:Date.now(),checked:Date.now(),kind});return true;}
+    try{await cache.put(url,new Response(data,{status:200,headers}));if(kind!=='shell')await record('entries','put',{url,size:data.length,used:Date.now(),checked:Date.now(),kind,build:__MTE_BUILD_ID__});return true;}
     catch(error){await cache.delete(url);if(kind!=='shell')await record('entries','delete',url);await notify('Resource caching is unavailable or storage is full; online playback remains available');return false;}
   });
 }
@@ -45,17 +45,23 @@ async function handle(request,event,kind){
     if(cached)return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;
     try{return await fetch(new Request(request,{cache:'no-cache'}));}catch{return new Response('Resource unavailable: local storage could not be read and the network request failed.',{status:503,headers:{'content-type':'text/plain'}});}
   }
-  if(cached&&kind==='asset'&&Date.now()-(metadata?.checked||0)<30000){event.waitUntil(queue(()=>record('entries','put',{...metadata,used:Date.now()})).catch(()=>{}));return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;}
+  if(cached&&(kind==='shell'&&/\.(js|css)$/.test(new URL(url).pathname)||freshCachedResource(kind,metadata,__MTE_BUILD_ID__))){if(kind!=='shell')event.waitUntil(queue(()=>record('entries','put',{...metadata,used:Date.now()})).catch(()=>{}));return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;}
   try{
     const response=await fetch(new Request(request,{cache:'no-cache'}));
     if(response.status>=500)throw new Error('Resource server is unavailable');
     if(response.status===200&&!await valid(response,url)){if(cached){await notify('An invalid resource response was ignored; using the cached copy');return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;}return response;}
-    if(response.status===200){if(kind==='catalog'){try{await store(url,response,kind);}catch{event.waitUntil(notify('Resource caching failed; the online catalogue remains available').catch(()=>{}));}}else event.waitUntil(store(url,response,kind).catch(()=>{}));}
+    if(response.status===200){if(kind==='catalog'){try{await store(url,response,kind,false,true);}catch{event.waitUntil(notify('Resource caching failed; the online catalogue remains available').catch(()=>{}));}}else event.waitUntil(store(url,response,kind,false,true).catch(()=>{}));}
     if(response.status===206&&config.enabled){const total=Number(response.headers.get('content-range')?.split('/').at(-1));if(total>0&&total<=MAX_ITEM)event.waitUntil(fetch(url,{cache:'no-cache'}).then(full=>store(url,full,kind)).catch(()=>{}));}
     return response;
   }catch(error){if(cached)return request.headers.has('range')?cachedRange(cached,request.headers.get('range')):cached;return new Response('Resource unavailable offline. Open it online or prepare the scene cache first.',{status:503,headers:{'content-type':'text/plain'}});}
 }
-async function warmShell(){const url=new URL('app-shell.json',scope).href,response=await fetch(url,{cache:'no-cache'});if(!response.ok)throw new Error('Offline application manifest unavailable');const manifest=await response.clone().json();if(manifest.schema!==1||!Array.isArray(manifest.files))throw new Error('Invalid offline application manifest');for(const file of manifest.files){const target=new URL(file,scope).href;if(cacheKind(target,scope)!=='shell')throw new Error('Invalid application cache resource');const item=target===url?response:await fetch(target,{cache:'no-cache'});if(!item.ok||!await store(target,item,'shell'))throw new Error('Offline application resource unavailable');}}
+async function warmShell(){
+  const url=new URL('app-shell.json',scope).href,response=await fetch(url,{cache:'no-cache'});if(!response.ok)throw new Error('Offline application manifest unavailable');
+  const manifest=await response.clone().json();if(manifest.schema!==1||!Array.isArray(manifest.files))throw new Error('Invalid offline application manifest');
+  const targets=[...new Set(manifest.files.map(file=>new URL(file,scope).href))];for(const target of targets)if(cacheKind(target,scope)!=='shell')throw new Error('Invalid application cache resource');
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(4,targets.length)},async()=>{while(next<targets.length){const target=targets[next++],item=target===url?response:await fetch(target,{cache:'no-cache'});if(!item.ok||!await store(target,item,'shell'))throw new Error('Offline application resource unavailable');}}));
+}
 self.addEventListener('install',event=>event.waitUntil(warmShell()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{try{for(const name of await caches.keys())if(name.startsWith(prefix+'shell:')&&name!==shellName)await caches.delete(name);await reconcile();}catch{await notify('Local resource storage is unavailable; online resources remain available').catch(()=>{});}await self.clients.claim();})()));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;const kind=cacheKind(event.request.url,scope);if(kind)event.respondWith(handle(event.request,event,kind));});

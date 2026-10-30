@@ -155,3 +155,13 @@ test('local scene storage retries failed opens and reconnects after connection c
     connections[1].onclose();assert.deepEqual(await listLocalScenes(),['Saved scene']);assert.equal(opens,4);
   }finally{if(original===undefined)delete globalThis.indexedDB;else globalThis.indexedDB=original;}
 });
+
+test('large artwork arrangements preserve preview texture limits in scene files',()=>{
+  const value=scene(),object=value.objects[0];object.textureLimit=512;
+  value.objects=Array.from({length:264},(_,index)=>({...structuredClone(object),id:`actor-${index}`}));
+  const restored=validateScene(JSON.parse(JSON.stringify(value)));
+  assert.equal(restored.objects.length,264);assert.equal(restored.objects[200].textureLimit,512);
+  value.objects[0].textureLimit=12;assert.throws(()=>validateScene(value),/preview texture size/);
+  value.objects[0].textureLimit=512;value.objects.push(...Array.from({length:249},(_,index)=>({...structuredClone(object),id:`extra-${index}`})));
+  assert.throws(()=>validateScene(value),/Unsupported scene format/);
+});

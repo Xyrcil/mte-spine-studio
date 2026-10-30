@@ -17,7 +17,7 @@ import {sourcePreviewSettings} from './geometry.js';
 const finite=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value))throw new Error(`Invalid ${label}`);return value;};
 const text=(value,label)=>{if(typeof value!=='string'||value.length>512)throw new Error(`Invalid ${label}`);return value;};
 export function validateScene(value) {
-  if(!value||value.schema!==1||!Array.isArray(value.objects)||value.objects.length>200)throw new Error('Unsupported scene format');
+  if(!value||value.schema!==1||!Array.isArray(value.objects)||value.objects.length>512)throw new Error('Unsupported scene format');
   const camera={};for(const key of ['x','y','width','height'])camera[key]=finite(value.camera?.[key],`camera ${key}`);
   if(camera.width<=0||camera.height<=0)throw new Error('Camera dimensions must be positive');
   if(!/^#[0-9a-f]{6}$/i.test(value.background))throw new Error('Invalid background color');
@@ -32,6 +32,7 @@ export function validateScene(value) {
     if(object.hotSpringFavorLevel!==undefined){if(!Number.isInteger(object.hotSpringFavorLevel)||object.hotSpringFavorLevel<0||object.hotSpringFavorLevel>5)throw new Error('Invalid hot spring favor level');result.hotSpringFavorLevel=object.hotSpringFavorLevel;}
     if(object.kind==='spine') {
       result.bundle=text(object.bundle,'bundle');
+      if(object.textureLimit!==undefined){if(!Number.isInteger(object.textureLimit)||object.textureLimit<128||object.textureLimit>2048)throw new Error('Invalid preview texture size');result.textureLimit=object.textureLimit;}
       if(object.appearanceId!==undefined)result.appearanceId=text(object.appearanceId,'appearance ID');
       if(object.nativeAnimations!==undefined){if(!Array.isArray(object.nativeAnimations)||object.nativeAnimations.length>100)throw new Error('Invalid native animations');const ids=new Set();result.nativeAnimations=object.nativeAnimations.map(row=>{const checked=validateNativeAnimation(row);if(ids.has(checked.id))throw new Error('Duplicate native animation');ids.add(checked.id);return checked;});}
       if(object.effects!==undefined){if(!Array.isArray(object.effects)||object.effects.length>32)throw new Error('Invalid particle effects');const ids=new Set();result.effects=object.effects.map(row=>{if(ids.has(row.id))throw new Error('Duplicate particle effect');ids.add(row.id);return validateParticleCheckpoint(row);});}

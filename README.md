@@ -17,10 +17,9 @@ Open the printed local address. Converted resources can be placed in the ignored
 `public/assets/` folder, or imported through **Controls → Local resource pack**.
 A raw APK or game archive is not a converted resource pack.
 
-Right-click the canvas or open **Menu** to reach the library, controls, Studio
-and Export. Switch the interface with **English / 简体中文**; voice language is
-independent. Drag empty space to pan, scroll or pinch to zoom, and use Home with
-the canvas focused to fit the scene.
+Choose **Artwork** for a single preview or **Scenes** to browse and edit saved
+scenes. Right-click the canvas or open **Menu** for additional controls. Switch
+the interface with **English / 简体中文**; voice language is independent.
 
 Choose **Menu → Hide UI** for artwork-only viewing, without branding, controls,
 notices or captions; right-click to restore the interface. The optional shortcut
@@ -31,17 +30,22 @@ sound settings are unchanged.
 
 ## Browse and edit
 
-- **Gallery:** choose characters, skins and story artwork. Click for available
-  source interactions. Entry, click and two-minute idle dialogue have separate
-  switches; dedicated animation sounds take priority. Unconfigured actions stay
-  silent. Locked/unlocked entry and birthday options are local previews, not
-  account progress.
-- **Library:** filter by character or use **Selected character’s artwork**.
-  Favorites and the last 20 opened entries stay in your browser.
-- **Studio:** combine characters and custom backgrounds, arrange layers and
-  save scenes locally or as JSON/ZIP. Undo/redo and autosave recovery are built
-  in. Scene files embed custom images but reference game media from the pack.
-  **Camera presets** saves up to 12 named views, without objects or media.
+- **Artwork:** choose characters, skins and story artwork. Click for available
+  interactions. Entry, click and idle dialogue have separate switches.
+- **Scenes:** create a scene or start from a template, then use **Add artwork**
+  to add multiple items. Your scene library, drafts and single-artwork preview
+  are stored separately in the current browser. Previous scenes remain available.
+- Drag an object to move it; drag empty space or hold Control to pan. Select more
+  objects with Shift, use the handles to scale or rotate, and right-click for
+  layer and alignment actions. Scroll or pinch to zoom. **Use current view for
+  output** sets the camera used by scene and media export.
+- Save explicitly when a scene is ready. Leaving an edited scene offers to save
+  it or keep a draft. Export a scene as JSON/ZIP to move it to another browser;
+  custom images are included, while game media is referenced from the pack.
+
+The story template can arrange one indexed portrait per character or all
+available story portraits. Larger arrangements use smaller textures while
+editing; full-resolution export needs more device memory.
 
 ## Export
 
@@ -131,7 +135,7 @@ personal files and backup archives out of the deployment and Git repository.
 
 Missing media, unconfirmed bindings, source-disabled regions and unsupported
 native effects remain explicit; no replacement voices or animations are guessed.
-Some standalone artwork lacks source interaction regions. Browser text rendering,
+Some standalone artwork lacks source interaction regions. 3D models are not yet supported. Browser text rendering,
 input ordering, material effects and complex branches do not yet have complete
 original-client parity. Safari/iOS and Windows device checks remain incomplete.
 Transparent output uses PNG; additive effects may need an opaque background.

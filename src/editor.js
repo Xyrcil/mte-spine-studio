@@ -14,7 +14,7 @@ export function cameraPresets(value){
 
 export function createEditor(stage,message,onSelection){
   const history=new History(),container=document.querySelector('#layers');
-  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing,refreshFrame;
+  let selectedId,name='Untitled scene',catalog=[],entries=[],busy=false,batching=false,timer,saveQueue=Promise.resolve(),backgroundTarget,fileController,composing,refreshFrame,persistence;
   const snapshot=()=>stage.snapshot(name);
   stage.captureScene=snapshot;
   const controls=document.createElement('section');controls.className='scene-controls';
@@ -39,10 +39,20 @@ export function createEditor(stage,message,onSelection){
     storyPanel.inert=Boolean(storyBlocked());for(const control of storyPanel.querySelectorAll('button'))control.disabled=storyPanel.inert;
   }
   const isBusy=(includeAsset=true)=>busy||stage.recoveryPending||Boolean(stage.sequenceBusy)||Boolean(stage.resourceImportBusy)||Boolean(stage.packReloadRequired)||includeAsset&&Boolean(stage.assetLoadBusy);
-  const before=(scene)=>{if(isBusy())return false;history.push(scene||snapshot());return true;};
+  const historySnapshot=(scene=snapshot())=>scene.__workspaceOutputCamera?scene:persistence?.historySnapshot?persistence.historySnapshot(scene):scene;
+  const before=(scene)=>{if(isBusy())return false;history.push(historySnapshot(scene||snapshot()));return true;};
   const controlKey=node=>node?.dataset.editorKey||node?.id||node?.getAttribute('aria-label');
   function requestRefresh(){if(refreshFrame===undefined)refreshFrame=requestAnimationFrame(()=>{refreshFrame=undefined;refresh();});}
-  function changed(detail){stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));requestRefresh();clearTimeout(timer);if(window.__mteHostState)return;timer=setTimeout(()=>{const scene=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>saveLocalScene(scene)).catch(error=>message(`Autosave failed: ${error.message}`));},350);}
+  function enqueueSave(scene,scope){
+    const save=saveQueue.catch(()=>{}).then(()=>persistence?.save?persistence.save(scene,scope):saveLocalScene(scene));
+    saveQueue=save.catch(error=>{message(`Autosave failed: ${error.message}`);throw error;});saveQueue.catch(()=>{});return save;
+  }
+  function changed(detail){
+    if(batching)return;
+    stage.checkPreview?.();stage.dispatchEvent(new CustomEvent('scene-change',{detail}));requestRefresh();persistence?.onChange?.(detail);clearTimeout(timer);timer=undefined;if(window.__mteHostState)return;
+    const scope=persistence?.scope?.();timer=setTimeout(()=>{timer=undefined;enqueueSave(snapshot(),scope).catch(()=>{});},350);
+  }
+  async function flushAutosave(){if(timer){clearTimeout(timer);timer=undefined;await enqueueSave(snapshot(),persistence?.scope?.());}else await saveQueue;}
   function mutate(action){if(!before())return;action();changed();}
   const input=(label,type,value,change,options={})=>{
     const wrapper=document.createElement('label');wrapper.textContent=label;
@@ -108,7 +118,7 @@ export function createEditor(stage,message,onSelection){
       const duplicate=document.createElement('button');duplicate.textContent='Duplicate';duplicate.onclick=async()=>{
         if(isBusy())return;const previous=snapshot(),{scene,copy}=duplicateSceneObject(previous,group.id);
         for(const effect of copy.effects||[])if(group.effects?.find(layer=>layer.source.id===effect.id)?.source.data.moveWithTransform===0)for(const particle of effect.state.particles)particle.position[0]+=1;
-        try{await restore(scene);history.push(previous);choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
+        try{await restore(scene);history.push(historySnapshot(previous));choose(stage.groups.find(row=>row.id===copy.id));changed();}catch(error){message(error.message);}
       };duplicate.dataset.editorKey='Duplicate';panel.append(duplicate);container.append(panel);
     }
     if(!locked&&focus){const field=[...container.querySelectorAll('input,select,button')].find(node=>controlKey(node)===focus.key&&node.closest('[data-editor-object]')?.dataset.editorObject===focus.owner);if(field){if(['text','number'].includes(field.type)&&field.value===focus.baseline)field.value=focus.value;field.focus({preventScroll:true});if(field.type==='text'&&focus.start!==null)field.setSelectionRange(focus.start,focus.end,focus.direction);}}
@@ -118,28 +128,28 @@ export function createEditor(stage,message,onSelection){
     if(stage.sequenceBusy)throw new Error('Stop the interaction sequence before loading a scene');
     if(stage.recoveryPending)throw new Error('Wait for rendering recovery before loading a scene');
     if(busy)throw new Error('Scene loading is already in progress');clearTimeout(timer);busy=true;refresh();
-    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries,signal);name=checked.name;selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;onSelection?.(selected());}
+    try{const checked=validateScene(scene);await stage.restore(checked,catalog,entries,signal);name=checked.name;selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;persistence?.historyRestored?.(scene);onSelection?.(selected());}
     catch(error){changed();throw error;}
     finally{busy=false;refresh();stage.dispatchEvent(new CustomEvent('scene-ready'));}
   }
-  async function recall(scene,signal){const previous=snapshot();await restore(scene,signal);history.push(previous);changed();message('Scene loaded');}
+  async function recall(scene,signal,{imported=false}={}){const previous=historySnapshot();await restore(scene,signal);history.push(previous);if(imported)persistence?.afterImport?.(scene);changed();message('Scene loaded');}
   async function savedList(){const select=document.querySelector('#saved-scenes');select.replaceChildren(new Option('Choose a scene',''));for(const key of await listLocalScenes())select.append(new Option(key,key));}
   document.querySelector('#scene-name').onchange=event=>mutate(()=>name=event.target.value||'Untitled scene');
   for(const operation of ['undo','redo'])document.querySelector(`#${operation}`).onclick=async()=>{
     const list=operation==='undo'?history.past:history.future,target=list.at(-1);if(busy||!target)return;
-    const current=snapshot();try{await restore(target);history[operation](current);changed();}catch(error){message(error.message);}
+    const current=historySnapshot();try{await restore(target);history[operation](current);changed();}catch(error){message(error.message);}
   };
-  document.querySelector('#save-scene').onclick=async()=>{try{await saveLocalScene(snapshot(),name);await savedList();message(`Saved ${name}`);}catch(error){message(error.message);}};
+  document.querySelector('#save-scene').onclick=async()=>{try{if(persistence?.saveScene){await persistence.saveScene();return;}await saveLocalScene(snapshot(),name);await savedList();message(`Saved ${name}`);}catch(error){message(error.message);}};
   const fileProgress=progress=>message(`${progress.phase==='exporting'?'Preparing scene file':'Reading scene file'} · ${progress.images??progress.files} / ${progress.total}`);
   document.querySelector('#download-scene').onclick=async()=>{
     if(busy||stage.sequenceBusy||stage.resourceImportBusy||stage.packReloadRequired)return;fileController=new AbortController();busy=true;refresh();message('Preparing scene file…');
-    try{const result=await createSceneFile(snapshot(),{format:fileFormat.value,signal:fileController.signal,onProgress:fileProgress}),url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=`${name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.${result.extension}`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message(`Scene exported (${result.extension.toUpperCase()})`);}
+    try{const result=await createSceneFile(persistence?.output?persistence.output(snapshot()):snapshot(),{format:fileFormat.value,signal:fileController.signal,onProgress:fileProgress}),url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=`${name.replace(/[^a-z0-9_-]/gi,'_')||'scene'}.${result.extension}`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message(`Scene exported (${result.extension.toUpperCase()})`);}
     catch(error){message(error.name==='AbortError'?'Scene file export cancelled':`Export failed: ${error.message}`);}finally{fileController=undefined;busy=false;refresh();}
   };
   document.querySelector('#import-scene').onclick=()=>document.querySelector('#scene-file').click();
   document.querySelector('#scene-file').onchange=async event=>{
-    const file=event.target.files[0];event.target.value='';if(!file||isBusy())return;fileController=new AbortController();busy=true;refresh();message('Reading scene file…');
-    try{const scene=await readSceneFile(file,{signal:fileController.signal,onProgress:fileProgress});busy=false;await recall(scene,fileController.signal);}
+    const file=event.target.files[0];event.target.value='';if(!file||isBusy()||persistence?.beforeReplace&&!await persistence.beforeReplace())return;fileController=new AbortController();busy=true;refresh();message('Reading scene file…');
+    try{const scene=await readSceneFile(file,{signal:fileController.signal,onProgress:fileProgress});busy=false;await recall(scene,fileController.signal,{imported:true});}
     catch(error){message(error.name==='AbortError'?'Scene file import cancelled; previous scene retained':`Import failed: ${error.message}`);}finally{fileController=undefined;busy=false;refresh();}
   };
   document.querySelector('#load-scene').onclick=async()=>{try{const key=document.querySelector('#saved-scenes').value;if(!key)return;const scene=await loadLocalScene(key);if(scene)await recall(scene);}catch(error){message(error.message);}};
@@ -148,8 +158,8 @@ export function createEditor(stage,message,onSelection){
   document.querySelector('#background-file').onchange=async event=>{
     const file=event.target.files[0],ownerId=backgroundTarget;backgroundTarget=undefined;event.target.value='';if(!file||isBusy())return;
     const previous=snapshot();busy=true;refresh();
-    let added;try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);added=group;if(ownerId!==undefined){const owner=stage.groups.find(row=>row.id===ownerId);if(!owner)throw new Error('Character is no longer available');group.x=owner.x;group.y=owner.y;stage.setBackgroundParent(group,ownerId);}history.push(previous);choose(group);changed();}
+    let added;try{if(file.size>20*1024*1024)throw new Error('Background exceeds 20 MB');const src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(src))throw new Error('Unsupported image format');const group=await stage.addImage(src,file.name);added=group;if(ownerId!==undefined){const owner=stage.groups.find(row=>row.id===ownerId);if(!owner)throw new Error('Character is no longer available');group.x=owner.x;group.y=owner.y;stage.setBackgroundParent(group,ownerId);}history.push(historySnapshot(previous));choose(group);changed();}
     catch(error){if(added)stage.remove(added.id);message(error.message);}finally{busy=false;refresh();}
   };
-  return {selected,choose,before,changed,refresh,mutate,snapshot,restore,async restorePreferences(){try{presets=cameraPresets(JSON.parse(localStorage.getItem('mte-camera-presets')));}catch{presets=[];}presetList();await savedList();},get busy(){return isBusy();},get assetSelectionBusy(){return isBusy(false);},async init(presentations,runtime,{recover=true}={}){catalog=presentations;entries=runtime;try{await savedList();const scene=recover?await loadLocalScene():null;if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
+  return {selected,choose,before,changed,refresh,mutate,snapshot,historySnapshot,beginBatch(){batching=true;clearTimeout(timer);timer=undefined;},endBatch(){batching=false;changed();},outputSnapshot(){const value=snapshot();return persistence?.output?persistence.output(value):value;},restore,flushAutosave,setPersistence(value){persistence=value;if(value){document.querySelector('#saved-scenes').closest('label').hidden=true;document.querySelector('#load-scene').parentElement.hidden=true;}},resetHistory(){history.past=[];history.future=[];refresh();},setName(value){name=value||'Untitled scene';refresh();},async restorePreferences(){try{presets=cameraPresets(JSON.parse(localStorage.getItem('mte-camera-presets')));}catch{presets=[];}presetList();await savedList();},get busy(){return isBusy();},get assetSelectionBusy(){return isBusy(false);},async init(presentations,runtime,{recover=true}={}){catalog=presentations;entries=runtime;try{await savedList();const scene=recover?await loadLocalScene():null;if(scene){await restore(scene);message('Recovered last scene');return true;}}catch(error){message(`Scene recovery failed: ${error.message}`);}return false;}};
 }

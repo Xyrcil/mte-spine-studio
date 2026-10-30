@@ -1,5 +1,5 @@
 import {validateScene} from './scene.js';
-import {identity,multiply,unityTransform,objectTransform,point,sourcePreviewCamera,sourcePreviewSettings} from './geometry.js';
+import {identity,multiply,unityTransform,objectTransform,point,inversePoint,sourcePreviewCamera,sourcePreviewSettings} from './geometry.js';
 import {InteractionRoot} from './interaction.js';
 import {BoneDragRoot} from './bone-drag-root.js';
 import {switchLayerSkin} from './artwork-variant.js';
@@ -23,6 +23,7 @@ import {StationDrawingRoot} from './station-drawing.js';
 import {MainViewSpeechClock} from './main-view-speech-clock.js';
 import {MainViewSpeech} from './main-view-speech.js';
 import {resourceUrl,mapAssetManager} from './resource-urls.js';
+import {opaqueAt,spineHit} from './pointer-hit.js';
 export {multiply,unityTransform,objectTransform} from './geometry.js';
 const s = () => window.spine;
 const APPLIED_FIELDS=['animation','trackTime','mixTime','mixDuration','alpha','loop','timeScale','animationStart','animationEnd'];
@@ -79,16 +80,21 @@ export class Stage extends EventTarget {
     this.canvas.height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
     if(this.camera.sourcePreview&&this.previewResponsive!==false&&!this.options?.manual&&!this.recoveryPending&&!this.assetLoadBusy&&this.checkPreview()){const preview=this.camera.sourcePreview,group=this.groups.find(group=>group.id===preview.group),previous=this.camera;this.fitPreview(group,preview.view);if(JSON.stringify(previous)!==JSON.stringify(this.camera))this.dispatchEvent(new CustomEvent('preview-resized'));}
   }
-  async add(presentation, entries, signal,detached=false) {
+  async add(presentation, entries, signal,detached=false,options={}) {
     if(this.contextLost||this.disposed)throw new DOMException('Rendering context is unavailable','AbortError');
     presentation=prepareSkillArtwork(presentation);
     const contextEpoch=this.contextEpoch;
     const manager = mapAssetManager(new (s().webgl.AssetManager)(this.gl));
     let released=false;const textureLoader=manager.textureLoader,disposeManager=manager.dispose.bind(manager);
-    manager.textureLoader=image=>released||signal?.aborted||this.disposed||this.contextLost||contextEpoch!==this.contextEpoch?new (s().FakeTexture)(image):textureLoader(image);
+    manager.textureLoader=image=>{
+      if(released||signal?.aborted||this.disposed||this.contextLost||contextEpoch!==this.contextEpoch)return new (s().FakeTexture)(image);
+      const limit=!this.options.manual&&options.textureLimit;
+      if(limit&&Math.max(image.width,image.height)>limit){const ratio=limit/Math.max(image.width,image.height),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*ratio));canvas.height=Math.max(1,Math.round(image.height*ratio));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return textureLoader(canvas);}
+      return textureLoader(image);
+    };
     manager.dispose=()=>{released=true;disposeManager();};
     this.activeLoads=(this.activeLoads||0)+1;
-    const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager, layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
+    const group = {id:crypto.randomUUID(),kind:'spine', name:presentation.label||presentation.id, presentation, manager,...(options.textureLimit?{textureLimit:options.textureLimit}:{}), layers:[], x:0, y:0, scale:1, rotation:0, opacity:1, flipX:false, flipY:false, locked:false, visible:true};
     try {
       const base = `${import.meta.env.BASE_URL}assets/${presentation.path}/`;
       group.materialBase=base;
@@ -254,7 +260,7 @@ export class Stage extends EventTarget {
       if(group.hotSpringLevel!==undefined)row.hotSpringLevel=group.hotSpringLevel;
       if(group.hotSpringFavorLevel!==undefined)row.hotSpringFavorLevel=group.hotSpringFavorLevel;
       if(group.kind==='image')return {...row,...(group.asset?{asset:group.asset}:{src:group.src}),...(group.appearanceId!==undefined?{appearanceId:group.appearanceId}:{}),width:group.width,height:group.height};
-      return {...row,bundle:group.presentation.id,...(group.presentation.appearanceId!==undefined?{appearanceId:group.presentation.appearanceId}:{}),...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
+      return {...row,bundle:group.presentation.id,...(group.textureLimit?{textureLimit:group.textureLimit}:{}),...(group.presentation.appearanceId!==undefined?{appearanceId:group.presentation.appearanceId}:{}),...(group.nativeAnimations?.some(native=>native.model)?{nativeAnimations:group.nativeAnimations.filter(native=>native.model).map(native=>native.model.snapshot())}:{}),...(group.effects?.length?{effects:group.effects.filter(effect=>effect.model).map(effect=>effect.model.snapshot())}:{}),interactions:(group.controllers||[]).map(root=>({id:root.source.id,state:root.snapshot()})),layers:group.layers.map(layer=>({id:layer.instance.id,active:layer.active,animationState:captureAnimation(layer.state),pose:capturePose(layer.skeleton),tracks:layer.state.tracks.flatMap((track,index)=>track?[{index,name:track.animation.name,time:track.trackTime,loop:track.loop,timeScale:track.timeScale}]:[])}))};
     })};
   }
   async restore(scene,presentations,entries,signal) {
@@ -267,12 +273,12 @@ export class Stage extends EventTarget {
     try {
       for(const row of scene.objects){
         if(row.kind==='image'&&row.asset&&!this.imageAssets.has(row.asset))throw new Error(`Portrait unavailable: ${row.asset}`);
-        const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?row.asset?group.asset===row.asset:!group.asset&&group.src===row.src:group.presentation.id===row.bundle));
+        const group=old.find(group=>group.id===row.id && group.kind===row.kind && (row.kind==='image'?row.asset?group.asset===row.asset:!group.asset&&group.src===row.src:group.presentation.id===row.bundle&&(group.textureLimit||null)===(row.textureLimit||null)));
         if(group){created.push(group);continue;}
         if(row.kind==='image')created.push(row.asset?await this.addPortrait(row.asset,row.name,row.appearanceId,signal,true):await this.addImage(row.src,row.name,true,signal));
         else {
           const presentation=presentations.find(item=>item.id===row.bundle);if(!presentation)throw new Error(`Scene asset unavailable: ${row.bundle}`);
-          created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===(presentation.resourceBundle||row.bundle)),signal,true));
+          created.push(await this.add(presentation,entries.filter(entry=>entry.bundle===(presentation.resourceBundle||row.bundle)),signal,true,{textureLimit:row.textureLimit}));
         }
       }
       if(signal?.aborted)throw new DOMException('Loading cancelled','AbortError');
@@ -369,6 +375,27 @@ export class Stage extends EventTarget {
     const result={...this.mainViewSpeech.command(group,operation,{language,localized}),group,controller:'main-view-speech',hit:operation,type:'main-view-speech',language:language??this.mainViewSpeech.value.language,localized:localized??this.mainViewSpeech.value.localized};
     if(result.accepted&&!replay)this.dispatchEvent(new CustomEvent('interaction-invoked',{detail:result}));return result;
   }
+  objectBounds(group){
+    if(!group||!objectVisible(group,this.groups))return null;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    const include=(x,y)=>{if(Number.isFinite(x)&&Number.isFinite(y)){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}};
+    if(group.kind==='image'){const matrix=backgroundMatrix(group,this.groups);for(const x of [-group.width/2,group.width/2])for(const y of [-group.height/2,group.height/2]){const p=point(matrix,x,y);include(p.x,p.y);}}
+    else{
+      for(const layer of group.layers.filter(layer=>layer.active)){const offset=new (s().Vector2)(),size=new (s().Vector2)();layer.skeleton.getBounds(offset,size,[]);include(offset.x,offset.y);include(offset.x+size.x,offset.y+size.y);}
+      for(const image of group.nativeImages||[]){if(!image.used||image.reason||image.source.viewportRoot||image.source.viewportDecoration||!group.isActiveTransform(image.source.transform))continue;const node=group.nodes.get(image.source.transform),bounds=nativeImageBounds(node.data.m_SizeDelta,node.data.m_Pivot,image.source.sprite),matrix=multiply(objectTransform(group),group.world(node.id));for(const x of [bounds.left,bounds.right])for(const y of [bounds.bottom,bounds.top]){const p=point(matrix,x,y);include(p.x,p.y);}}
+    }
+    return Number.isFinite(minX)?{minX,minY,maxX,maxY}:null;
+  }
+  hitTestDetailed(clientX,clientY){
+    const {x,y}=this.screenToWorld(clientX,clientY);
+    for(const group of sceneDrawOrder(this.groups).reverse()){
+      if(!objectVisible(group,this.groups)||backgroundOpacity(group,this.groups)<=0)continue;
+      const bounds=this.objectBounds(group);if(!bounds||x<bounds.minX||x>bounds.maxX||y<bounds.minY||y>bounds.maxY)continue;
+      if(group.kind==='image'){const local=inversePoint(backgroundMatrix(group,this.groups),x,y);if(local&&Math.abs(local.x)<=group.width/2&&Math.abs(local.y)<=group.height/2&&opaqueAt(this,group.texture?.getImage?.(),local.x/group.width+.5,.5-local.y/group.height))return group;continue;}
+      try{for(const layer of [...group.layers].reverse())if(layer.active&&spineHit(this,layer,x,y,s()))return group;}catch{return group;}
+      for(const image of group.nativeImages||[]){if(!image.used||image.reason||image.source.viewportRoot||image.source.viewportDecoration||!group.isActiveTransform(image.source.transform))continue;const node=group.nodes.get(image.source.transform),bounds=nativeImageBounds(node.data.m_SizeDelta,node.data.m_Pivot,image.source.sprite),local=inversePoint(multiply(objectTransform(group),group.world(node.id)),x,y);if(local&&local.x>=bounds.left&&local.x<=bounds.right&&local.y>=bounds.bottom&&local.y<=bounds.top)return group;}
+    }return null;
+  }
   hitTest(clientX,clientY){
     const {x,y}=this.screenToWorld(clientX,clientY);
     for(const group of sceneDrawOrder(this.groups).reverse())if(objectVisible(group,this.groups)){
@@ -461,6 +488,23 @@ export class Stage extends EventTarget {
     if(paused){if(this.frame!==null&&this.frame!==undefined)cancelAnimationFrame(this.frame);this.frame=null;}
     else if(wasPaused&&!this.disposed&&!this.options.manual){this.previous=performance.now();this.frame=requestAnimationFrame(time=>this.tick(time));}
     if(oldScale!==renderScale&&!this.options.manual){this.resize();if(!this.recoveryPending)this.draw();}
+  }
+  resetPreview(group){
+    const row=group.previewInitial;if(!row)throw new Error('Preview state is unavailable');
+    for(const key of ['name','x','y','scale','rotation','opacity','flipX','flipY','visible','locked'])group[key]=row[key];
+    this.suppressEvents=true;
+    try{for(const layer of group.layers){const saved=row.layers.find(value=>value.id===layer.instance.id);layer.active=saved.active;restoreAnimation(layer.state,saved.animationState);restorePose(layer.skeleton,saved.pose);this.recordApplied(layer);this.transformLayer(group,layer);}}
+    finally{this.suppressEvents=false;}
+    for(const root of group.controllers||[])if(root instanceof InteractionRoot)root.rebind();
+    for(const root of group.controllers||[]){const saved=row.interactions?.find(value=>value.id===root.source.id);if(saved)root.restore(saved.state);else root.reset();}
+    for(const effect of group.effects||[])if(effect.model){const saved=row.effects?.find(value=>value.id===effect.source.id);if(saved)effect.model.restore(saved);}
+    for(const native of group.nativeAnimations||[])if(native.model){const saved=row.nativeAnimations?.find(value=>value.id===native.source.id);if(saved)native.model.restore(saved);}
+  }
+  parkPreview(group){
+    if(!this.groups.includes(group)||this.groups.some(row=>row.parentId===group.id))return false;
+    if(this.mainViewSpeech?.value.group===group.id)this.mainViewSpeech.detach(group.id);
+    if(this.camera?.sourcePreview?.group===group.id)delete this.camera.sourcePreview;
+    this.groups.splice(this.groups.indexOf(group),1);return true;
   }
   remove(id) {
     if(this.mainViewSpeech?.value.group===id||this.groups.some(group=>group.parentId===id&&group.id===this.mainViewSpeech?.value.group))this.mainViewSpeech.detach(this.mainViewSpeech.value.group);

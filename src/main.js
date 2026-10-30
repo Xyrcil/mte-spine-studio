@@ -2,6 +2,9 @@ import './style.css';
 import './editor.css';
 import './library.css';
 import './viewer.css';
+import './workspace.css';
+import {createSceneWorkspace} from './scene-workspace.js';
+import {createPreviewPool} from './preview-pool.js';
 import {createViewerShell,uiHiddenPreference} from './viewer-shell.js';
 import {GallerySpeech,speechPreferences} from './gallery-speech.js';
 import {appearancePlaybackProfile} from './engine/appearance-playback.js';
@@ -54,7 +57,9 @@ let stage;
 try{await loadSpineRuntime(new URL(import.meta.env.BASE_URL,document.baseURI));stage=new Stage(document.querySelector('#stage'));}catch(error){status.textContent=`Rendering could not start: ${error.message}. Check browser graphics support and reload.`;document.querySelector('.library').inert=true;document.querySelector('.inspector').inert=true;for(const button of document.querySelectorAll('header button'))button.disabled=true;window.mteStartupError=error.message;}
 if(stage){
 window.mteStudio = stage;
-let view = 'gallery', catalog, runtime, request, libraryData, audio,gallerySpeech,appReady=false,statusTimer;
+const previewPool=createPreviewPool(stage);window.mtePreviewPool=previewPool;
+for(const name of ['rendering-pausing','resource-import-start'])stage.addEventListener(name,()=>previewPool.clear());
+let view = 'gallery', catalog, runtime, request, libraryData, audio,gallerySpeech,workspace,appReady=false,statusTimer;
 const message = (value,{transient=false}={}) => {clearTimeout(statusTimer);status.textContent=value;status.classList.remove('is-quiet');if(transient)statusTimer=setTimeout(()=>status.classList.add('is-quiet'),4000);};
 const speechNotices=new Map();let refreshDialogueStatus=()=>{};
 const reportSpeechIssue=detail=>{const group=detail.group||stage.mainViewSpeech.value.group;if(!group)return;speechNotices.set(group,{language:detail.language||audio?.language,resourceName:detail.resourceName||'',reason:detail.reason||''});if(speechNotices.size>64)speechNotices.delete(speechNotices.keys().next().value);refreshDialogueStatus();};
@@ -65,7 +70,7 @@ const sourcePreview=document.createElement('button');sourcePreview.id='source-pr
 const closeLibrary=()=>viewer.closeLibrary();
 const editor=createEditor(stage,message,group=>{window.mteLibrary?.setActive(group);window.mteSkills?.setActive(group);if(group?.kind==='spine'){describe(group);voicePanel(group.presentation);}else if(group?.appearanceId){const appearance=libraryData.appearances.find(row=>row.id===group.appearanceId);describePortrait(appearance);voicePanel({appearanceId:group.appearanceId});}else{document.querySelector('#details').textContent=group?'Image layer':'';document.querySelector('#voice-panel')?.remove();}});
 window.mteEditor=editor;
-const viewer=createViewerShell({stage,getView:()=>view,setView:value=>setView(value),canSelect:()=>!editor.busy&&view!=='export',canHide:()=>!editor.busy,message,uiHidden:startupSession?.ui?.uiHidden});
+const viewer=createViewerShell({stage,getView:()=>view,setView:value=>setView(value),canSelect:()=>!editor.busy&&view!=='export'&&workspace?.state().mode!=='scene-preview',canHide:()=>!editor.busy,message,preserveWorkspace:!wallpaperMode&&!window.__mteHostState,uiHidden:startupSession?.ui?.uiHidden});
 const exporter=createExportPanel(stage,editor,()=>({catalog,runtime,library:libraryData,audio}),message);window.mteExporter=exporter;
 const resourceCache=wallpaperMode?{ready:Promise.resolve(false)}:createCachePanel(stage,editor,()=>({library:libraryData,audio,catalog,runtime}),message);window.mteCache=resourceCache;
 window.mtePack=wallpaperMode?{setLibrary:()=>{}}:createResourcePackPanel(resourceCache,editor,message,stage);
@@ -115,31 +120,33 @@ const cancelAsset=document.createElement('button');cancelAsset.id='cancel-asset-
 function finishAssetLoading(){stage.assetLoadBusy=false;cancelAsset.hidden=true;stage.canvas.setAttribute('aria-busy','false');if(!stage.recoveryPending)stage.resize();editor.refresh();}
 function cancelAssetLoading(){if(!request)return;const pending=request;request=null;pending.abort();finishAssetLoading();message('Asset loading cancelled');}
 cancelAsset.onclick=cancelAssetLoading;
-async function loadAsset(label,create,loadedMessage=label){
+async function loadAsset(label,create,loadedMessage=label,position,options={}){
   if(editor.assetSelectionBusy)return false;
   canvasInput.clear();request?.abort();const current=new AbortController();request=current;
-  const previous=editor.snapshot(),old=[...stage.groups],selectedView=view;
+  const previous=options.batch?null:editor.snapshot(),old=[...stage.groups],selectedView=view;
   stage.assetLoadBusy=true;cancelAsset.hidden=false;stage.canvas.setAttribute('aria-busy','true');editor.refresh();message(`Loading ${label}…`);
   let group;
   try{
     group=await create(current.signal);
     if(current.signal.aborted||request!==current||view!==selectedView)throw new DOMException('Loading cancelled','AbortError');
-    finishAssetLoading();editor.before(previous);audio?.stop();audio?.stopEffects();if(selectedView==='gallery')audio?.stopAmbients();stage.groups.push(group);
-    if(selectedView==='gallery')for(const previousGroup of old)stage.remove(previousGroup.id);
+    finishAssetLoading();if(!options.batch)editor.before(previous);audio?.stop();audio?.stopEffects();if(selectedView==='gallery')audio?.stopAmbients();stage.groups.push(group);
+    if(selectedView==='gallery')for(const previousGroup of old){if(workspace?.state().mode==='role'&&previousGroup.kind==='spine'&&stage.parkPreview(previousGroup))previewPool.put(previousGroup);else stage.remove(previousGroup.id);}
+    stage.evaluate(0);if(selectedView==='gallery'&&workspace?.state().mode==='role'&&group.kind==='spine'&&!group.previewInitial)group.previewInitial=stage.snapshot().objects.find(row=>row.id===group.id);
     const arrival=selectedView==='gallery'?gallerySpeech?.enter(group):null;
-    stage.evaluate(0);stage.fit();if(selectedView==='gallery')stage.fitPreview(group);editor.choose(group);editor.changed();request=null;message(loadedMessage,{transient:!group.presentation?.stationDrawingWarnings?.length});if(arrival?.accepted===false)reportSpeechIssue({group:group.id,language:audio.language,resourceName:arrival.resourceName});closeLibrary();return true;
+    if(selectedView==='studio'&&workspace){if(position){group.x=position.x;group.y=position.y;}else if(old.length){group.x=stage.camera.x+Math.min(stage.camera.width*.18,old.length*2);group.y=stage.camera.y;}}
+    stage.evaluate(0);if(selectedView==='gallery'||!old.length){stage.fit();if(selectedView==='gallery')stage.fitPreview(group);}editor.choose(group);workspace?.assetAdded(old.length);editor.changed();request=null;message(loadedMessage,{transient:!group.presentation?.stationDrawingWarnings?.length});if(arrival?.accepted===false)reportSpeechIssue({group:group.id,language:audio.language,resourceName:arrival.resourceName});if(selectedView!=='studio'||!workspace)closeLibrary();return true;
   }catch(error){if(group&&!stage.groups.includes(group))stage.release(group);if(request===current&&error.name!=='AbortError')message(error.message);return false;}
   finally{if(request===current){request=null;finishAssetLoading();}}
 }
-function selectPortrait(appearance){return loadAsset(appearance.name||appearance.id,signal=>stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,signal,true),'Static portrait loaded');}
-function select(presentation){return loadAsset(presentation.id,signal=>stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true),presentation.stationDrawingWarnings?.join(' ')||presentation.id);}
+function selectPortrait(appearance,position){return loadAsset(appearance.name||appearance.id,signal=>stage.addPortrait(appearance.portrait.path,[appearance.characterName,appearance.name].filter(Boolean).join(' · '),appearance.id,signal,true),'Static portrait loaded',position);}
+function select(presentation,position,options={}){return loadAsset(presentation.id,signal=>{const cached=workspace?.state().mode==='role'?previewPool.take(presentation.id):null;if(cached){try{stage.resetPreview(cached);return Promise.resolve(cached);}catch(error){stage.release(cached);throw error;}}return stage.add(presentation,runtime.entries.filter(entry=>entry.bundle===(presentation.resourceBundle||presentation.id)),signal,true,options);},presentation.stationDrawingWarnings?.join(' ')||presentation.id,position,options);}
 function voicePanel(presentation) {
   createVoicePanel(presentation,libraryData,audio,editor,message,stage);
 }
 document.querySelector('#background').onchange=event=>{const value=event.target.value;editor.mutate(()=>stage.background=value);};
 document.querySelector('#speed').onchange=event=>{const value=Number(event.target.value);editor.mutate(()=>stage.speed=value);};
 document.querySelector('#pause').onclick=()=>{if(window.mteSequence.togglePause())return;canvasInput.clear();editor.mutate(()=>{stage.paused=!stage.paused;if(stage.paused)audio?.pause();else audio?.resume().catch(error=>message(error.message));});};
-document.querySelector('#fit').onclick=()=>editor.mutate(()=>{stage.evaluate(0);stage.fit();});
+document.querySelector('#fit').onclick=()=>{if(workspace?.state().mode==='scene-edit'){stage.evaluate(0);stage.fit();editor.changed({cameraOnly:true});}else editor.mutate(()=>{stage.evaluate(0);stage.fit();});};
 sourcePreview.onclick=()=>editor.mutate(()=>{const group=editor.selected();if(!stage.fitPreview(group))message(`Source preview unavailable: ${group?.previewReason||'No matching configuration'}`);if(view==='studio')delete stage.camera.sourcePreview;});
 stage.addEventListener('preview-resized',()=>{if(!editor.busy)editor.changed({cameraOnly:true});});
 function setView(next){
@@ -154,8 +161,10 @@ function setView(next){
   viewer.setMode(view);
   gallerySpeech?.sync();
 }
-for (const button of document.querySelectorAll('button[data-view]'))button.onclick=()=>{setView(button.dataset.view);viewer.showView(view);};
-const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,isRecording:()=>window.mteSequence.recorder.active,interact:(x,y)=>gallerySpeech?gallerySpeech.interactAt(x,y):stage.interact(x,y),onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`,{transient:true});}else if(result.resourceName)reportSpeechIssue({group:result.group,resourceName:result.resourceName});else if(result.reason!=='No interaction region here')message(result.reason);}});
+for (const button of document.querySelectorAll('button[data-view]'))button.onclick=()=>{if(workspace){workspace.navigate(button.dataset.view);return;}setView(button.dataset.view);viewer.showView(view);};
+const canvasInput=createCanvasInput(stage,editor,{getView:()=>view,enableSelection:!wallpaperMode&&!window.__mteHostState,isRecording:()=>window.mteSequence.recorder.active,interact:(x,y)=>gallerySpeech?gallerySpeech.interactAt(x,y):stage.interact(x,y),onInteraction:result=>{if(result.accepted){editor.changed();message(`Interaction: ${result.animation||'reset'}`,{transient:true});}else if(result.resourceName)reportSpeechIssue({group:result.group,resourceName:result.resourceName});else if(result.reason!=='No interaction region here')message(result.reason);}});
+stage.canvas.addEventListener('dragover',event=>{if(workspace?.state().mode==='scene-edit'&&event.dataTransfer.types.includes('application/x-mte-artwork')){event.preventDefault();event.dataTransfer.dropEffect='copy';}});
+stage.canvas.addEventListener('drop',event=>{if(workspace?.state().mode!=='scene-edit')return;const key=event.dataTransfer.getData('application/x-mte-artwork');if(!key)return;event.preventDefault();window.mteLibrary?.addByKey(key,stage.screenToWorld(event.clientX,event.clientY));});
 window.mteHost=createHostApi({stage,editor,getAudio:()=>audio,getReady:()=>appReady,clearInput:()=>canvasInput.clear(),onError:audioError,
   getSessionUI:()=>({view:view==='studio'?'studio':'gallery',uiHidden:viewer.uiHidden,locale:getLocale(),selected:editor.selected()?.id,preferences:wallpaperPreferences(),savedScenes:hostSavedScenes(),speech:gallerySpeech?{group:gallerySpeech.groupId,blocked:gallerySpeech.blocked}:undefined}),
   restoreSessionUI:async ui=>{
@@ -174,7 +183,7 @@ stage.addEventListener('scene-change',()=>wallpaper.changed());
 for(const name of ['click','change','mte-language-change','mte-ui-visibility-change'])document.addEventListener(name,()=>wallpaper.changed());
 document.querySelector('#notice').textContent='Click to interact in Gallery; drag objects in Studio. Drag empty space to pan, or hold Space to pan anywhere. Scroll or pinch to zoom. With the canvas focused, use arrow keys to pan, +/− to zoom, and Home to fit.';
 stage.addEventListener('sound-request',event=>{if(!audio||stage.paused||!stage.groups.some(group=>group.id===event.detail.group&&group.visible))return;if(!audio.soundInfo(event.detail.name,event.detail.category).clip){reportSpeechIssue({group:event.detail.group,resourceName:event.detail.name,language:audio.language});return;}quietAudio('effects');audio.playEffect(event.detail.name,event.detail.category,event.detail.lateness||0,true,event.detail.group).catch(audioError);});
-stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed();});
+stage.addEventListener('interaction-change',()=>{if(!editor.busy)editor.changed({runtimeOnly:true});});
 stage.addEventListener('scene-change',()=>{const group=editor.selected();if(group?.kind==='spine')describe(group);});
 stage.addEventListener('effect-request',()=>message('This interaction requests an effect that is not rendered yet.'));
 stage.addEventListener('voice-request',event=>{
@@ -193,19 +202,21 @@ try {
   await resourceCache.ready;
   const base=import.meta.env.BASE_URL;
   const importedPack=import.meta.env.MODE==='web'&&await resourceCache.ready?await resourceCache.request('PACK_STATUS'):null;
-  if(import.meta.env.MODE==='wallpaper'||import.meta.env.MODE==='web'&&!importedPack){
-    const response=await fetch(`${base}assets/resource-map.json`);if(!response.ok)throw new Error('Local resource map is unavailable');configureResourceAliases(await response.json(),new URL(base,document.baseURI));
-  }
-  [catalog,runtime,libraryData]=await Promise.all(['presentations.json','runtime-index.json','library.json'].map(async name=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok)throw new Error(`Catalog unavailable (${response.status})`);return response.json();}));
+  const useAliases=import.meta.env.MODE==='wallpaper'||import.meta.env.MODE==='web'&&!importedPack;
+  const readIndex=async(name,optional=false)=>{const response=await fetch(`${base}assets/${name}`);if(!response.ok){if(optional)return null;throw new Error(`Catalog unavailable (${response.status})`);}return response.json();};
+  const [presentationIndex,runtimeIndex,libraryIndex,portraitIndex,audioIndex,aliases]=await Promise.all([
+    readIndex('presentations.json'),readIndex('runtime-index.json'),readIndex('library.json'),readIndex('portrait-index.json',true),readIndex('audio-index.json',true),useAliases?readIndex('resource-map.json'):null
+  ]);
+  [catalog,runtime,libraryData]=[presentationIndex,runtimeIndex,libraryIndex];
+  if(aliases)configureResourceAliases(aliases,new URL(base,document.baseURI));
   window.mtePack.setLibrary(libraryData);
   configureInteractionAmbients(stage,libraryData);
   const {expandHotSpringPresentations}=await import('./engine/hot-spring.js');catalog.presentations=expandHotSpringPresentations(catalog.presentations,libraryData.hotSpringHouses,libraryData.hotSpringRoles,libraryData.voices,libraryData.characters);
   const skills=skillDisplayOptions(catalog.presentations,libraryData);catalog.presentations.push(...skills.flatMap(row=>row.presentation?[row.presentation]:[]));
   catalog.presentations=expandStationDrawings(catalog.presentations,libraryData,runtime.entries);
   for(const presentation of catalog.presentations){const appearance=libraryData.appearances.find(row=>row.bundle===presentation.id);if(appearance){presentation.label=[appearance.characterName,appearance.name].filter(Boolean).join(' · ');const view=artworkPreviewView(presentation,appearance,libraryData.artworkViews);if(view)presentation.previewView=view;}}
-  const portraitResponse=await fetch(`${base}assets/portrait-index.json`);if(portraitResponse.ok)stage.setImageAssets((await portraitResponse.json()).entries);
-  const audioResponse=await fetch(`${base}assets/audio-index.json`);
-  if(audioResponse.ok){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[]),...(libraryData.mainViewVoices?.entryVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(await audioResponse.json(),libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
+  if(portraitIndex)stage.setImageAssets(portraitIndex.entries);
+  if(audioIndex){const sourceRows=[...(libraryData.mainViewVoices?.voices||[]),...(libraryData.mainViewVoices?.stationVoices||[]),...(libraryData.mainViewVoices?.favorVoices||[]),...(libraryData.mainViewVoices?.entryVoices||[])].map(row=>({...row,mainViewText:libraryData.mainViewVoices?.captions?.[row.resourceName]||''}));audio=new AudioBus(audioIndex,libraryData.soundResources,`${base}assets/`,[...libraryData.voices,...libraryData.storyVoices,...sourceRows]);stage.mainViewSpeech.configure(libraryData,audio);audio.addEventListener('subtitle',event=>{const el=document.querySelector('#subtitle');if(el)el.textContent=event.detail?.text||'';});for(const name of ['voice-state','effect-state'])audio.addEventListener(name,()=>{if(!editor.busy)editor.changed({audioOnly:true});});audio.addEventListener('audio-error',event=>message(event.detail));window.mteAudio=audio;createSoundPanel(stage,audio,libraryData,editor,message);}
   await wallpaper.sync();
   if(audio){
     let preferences;try{preferences=JSON.parse(localStorage.getItem('mte-gallery-speech'));}catch{}
@@ -241,9 +252,10 @@ try {
     document.querySelector('#enable-sound').onclick=async()=>{try{await gallerySpeech.unlock();document.querySelector('#enable-sound').hidden=true;message('Sound enabled',{transient:true});}catch(error){message(error.name==='NotAllowedError'?'Audio is still blocked. Check this browser’s sound permissions.':error.message);}};
     stage.addEventListener('scene-change',()=>gallerySpeech.sync());
   }
-  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
+  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,getPurpose:()=>workspace?.state().mode==='scene-edit'?'scene':'role',showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
-  let recovered=await editor.init(catalog.presentations,runtime.entries,{recover:!window.__mteHostState});
+  let recovered=await editor.init(catalog.presentations,runtime.entries,{recover:wallpaperMode&&!window.__mteHostState});
+  if(!wallpaperMode&&!window.__mteHostState){workspace=createSceneWorkspace({stage,editor,viewer,setView,getView:()=>view,message,getLibrary:()=>window.mteLibrary,getSelection:()=>canvasInput.selection,selectRow:(row,position,options)=>window.mteLibrary.addRow(row,position,false,options)});window.mteWorkspace=workspace;recovered=await workspace.start();}
   appReady=true;
   if(startupSession){await window.mteHost.restoreSession(startupSession);window.__mteHostSessionConsumed=true;recovered=true;}
   if(recovered)message('Scene restored',{transient:true});

@@ -1,4 +1,8 @@
 const CATALOGS=new Set(['runtime-index.json','presentations.json','library.json','audio-index.json','portrait-index.json','resource-map.json']);
+export function freshCachedResource(kind,metadata,build,now=Date.now()){
+  const age=now-(metadata?.checked||0);
+  return Boolean(metadata?.checked&&age>=0&&(kind==='asset'?age<3600000:kind==='catalog'&&metadata.build===build&&age<300000));
+}
 export function validCatalogue(data,name){if(name==='resource-map.json')return data?.schema===1&&Boolean(data.aliases)&&typeof data.aliases==='object'&&!Array.isArray(data.aliases)&&Object.values(data.aliases).every(value=>typeof value==='string');const fields=name==='library.json'?['characters','appearances','voices','storyVoices','soundResources']:name==='presentations.json'?['presentations']:['entries'];return data?.schema===1&&fields.every(field=>Array.isArray(data[field]));}
 export function cacheKind(value,scope){
   const url=new URL(value,scope),base=new URL(scope);if(url.origin!==base.origin||url.username||url.password||url.search||url.hash||!url.pathname.startsWith(base.pathname))return null;

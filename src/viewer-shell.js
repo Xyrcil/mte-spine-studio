@@ -17,10 +17,10 @@ export function uiShortcutPreference(value){
   return typeof value==='string'&&(value===''||/^[a-z]$/i.test(value))?value.toUpperCase():'H';
 }
 
-export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>true,message,uiHidden:initialHidden=initialUiHidden()}){
+export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>true,message,preserveWorkspace=false,uiHidden:initialHidden=initialUiHidden()}){
   const menu=document.querySelector('#viewer-menu'),toggle=document.querySelector('#menu-toggle'),library=document.querySelector('.library'),inspector=document.querySelector('.inspector');
   const hideButton=document.querySelector('#viewer-hide-ui'),shortcutField=document.querySelector('#viewer-ui-shortcut');
-  let closeTimer,returnFocus=toggle,uiHidden=false,shortcut='H';
+  let closeTimer,returnFocus=toggle,uiHidden=false,shortcut='H',canvasContextMenu;
   function restoreShortcut(){
     let saved;try{saved=localStorage.getItem('mte-ui-shortcut');}catch{}
     shortcut=uiShortcutPreference(saved);shortcutField.value=shortcut;
@@ -42,7 +42,7 @@ export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>t
     document.querySelector('#library-toggle').setAttribute('aria-expanded','false');document.querySelector('#editor-toggle').setAttribute('aria-expanded','false');
   }
   function closePanels({watch=false,focus=true}={}){
-    hidePanels();if(watch&&getView()!=='gallery')setView('gallery');if(focus)stage.canvas.focus({preventScroll:true});
+    hidePanels();if(watch&&!preserveWorkspace&&getView()!=='gallery')setView('gallery');if(focus)stage.canvas.focus({preventScroll:true});
   }
   function openMenu(x,y,from=toggle){
     if(uiHidden)setUiHidden(false,{focus:false});
@@ -54,7 +54,7 @@ export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>t
   }
   function openPanel(panel){
     if(uiHidden)setUiHidden(false,{focus:false});
-    closeMenu();hidePanels();panel.hidden=false;
+    closeMenu();if(!preserveWorkspace||getView()!=='studio'||matchMedia('(max-width: 840px)').matches)hidePanels();panel.hidden=false;
     const isLibrary=panel===library;document.body.classList.add(isLibrary?'library-open':'inspector-open');
     document.querySelector(isLibrary?'#library-toggle':'#editor-toggle').setAttribute('aria-expanded','true');
     panel.querySelector(isLibrary&&!matchMedia('(pointer: coarse)').matches?'#search':'[data-close-panel]')?.focus({preventScroll:true});
@@ -62,7 +62,7 @@ export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>t
   function setUiHidden(value,{persist=true,focus=true}={}){
     value=value===true;
     if(value&&!uiHidden&&!canHide()){message('Finish the current operation before hiding the interface.');return false;}
-    if(value){closeMenu();hidePanels();if(getView()!=='gallery')setView('gallery');}
+    if(value){closeMenu();hidePanels();if(!preserveWorkspace&&getView()!=='gallery')setView('gallery');}
     uiHidden=value;document.body.dataset.uiHidden=String(value);stage.uiHidden=value;
     if(persist)try{localStorage.setItem('mte-ui-hidden',value?'1':'0');}catch{}
     stage.draw();if(focus)stage.canvas.focus({preventScroll:true});
@@ -73,12 +73,18 @@ export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>t
   document.querySelector('#library-toggle').onclick=()=>{if(canSelect())openPanel(library);};
   document.querySelector('#editor-toggle').onclick=()=>openPanel(inspector);
   hideButton.onclick=()=>setUiHidden(true);
-  for(const button of document.querySelectorAll('[data-close-panel]'))button.onclick=()=>closePanels({watch:true});
-  stage.canvas.addEventListener('contextmenu',event=>{event.preventDefault();openMenu(event.clientX,event.clientY,stage.canvas);});
+  for(const button of document.querySelectorAll('[data-close-panel]'))button.onclick=()=>{if(preserveWorkspace&&getView()==='studio'){const panel=button.closest('aside'),isLibrary=panel===library;panel.hidden=true;document.body.classList.remove(isLibrary?'library-open':'inspector-open');document.querySelector(isLibrary?'#library-toggle':'#editor-toggle').setAttribute('aria-expanded','false');stage.canvas.focus({preventScroll:true});}else closePanels({watch:true});};
+  const canvasMenu=event=>{if(canvasContextMenu?.(event))return;openMenu(event.clientX,event.clientY,stage.canvas);};
+  stage.canvas.addEventListener('contextmenu',event=>{event.preventDefault();if(stage.suppressNextContextMenu){stage.suppressNextContextMenu=false;return;}if(event.ctrlKey&&stage.ctrlPanActive){stage.pendingCtrlContext={clientX:event.clientX,clientY:event.clientY};return;}canvasMenu(event);});
+  stage.canvas.addEventListener('mte-request-context-menu',event=>canvasMenu(event.detail));
   stage.canvas.addEventListener('keydown',event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();event.stopPropagation();const rect=stage.canvas.getBoundingClientRect();openMenu(rect.left+rect.width/2,rect.top+rect.height/2,stage.canvas);}});
   stage.canvas.addEventListener('pointerdown',event=>{
     if(event.button!==0)return;
     if(stage.exportCropEditing)return;
+    if(preserveWorkspace&&getView()==='studio'){
+      if(menu.classList.contains('is-open')){event.preventDefault();event.stopImmediatePropagation();closeMenu();}
+      return;
+    }
     if(menu.classList.contains('is-open')||!library.hidden||!inspector.hidden){event.preventDefault();event.stopImmediatePropagation();closeMenu();closePanels({watch:true});}
   },true);
   document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target)&&event.target!==toggle&&event.target!==stage.canvas)closeMenu();},true);
@@ -112,7 +118,11 @@ export function createViewerShell({stage,getView,setView,canSelect,canHide=()=>t
   return {
     get uiHidden(){return uiHidden;},
     setUiHidden,
-    closeLibrary(){if(library.hidden)return;closePanels();if(getView()==='studio')openPanel(inspector);},
+    closeLibrary(){if(library.hidden)return;if(preserveWorkspace&&getView()==='studio'){library.hidden=true;document.body.classList.remove('library-open');document.querySelector('#library-toggle').setAttribute('aria-expanded','false');return;}closePanels();if(getView()==='studio')openPanel(inspector);},
+    openLibrary(){if(canSelect())openPanel(library);},
+    openInspector(){openPanel(inspector);},
+    closePanels,
+    setCanvasContextMenu(handler){canvasContextMenu=handler;},
     showView(view){if(view==='gallery'){closeMenu();closePanels();}else openPanel(inspector);},
     setMode(view){if(view!=='gallery'&&uiHidden)setUiHidden(false,{focus:false});document.body.dataset.view=view;document.querySelector('#viewer-mode').textContent={gallery:'Gallery',studio:'Studio',export:'Export'}[view];document.querySelector('#inspector-title').textContent=view==='export'?'Export':'Scene';document.querySelector('#inspector-eyebrow').textContent=view==='export'?'Output':'Workspace';}
   };
