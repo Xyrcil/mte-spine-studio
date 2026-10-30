@@ -54,3 +54,10 @@ body[data-workspace="scene-edit"] #status { z-index:7; }
 .asset-card:has(.asset-batch-check) { grid-template-columns:24px minmax(0,1fr) 30px; }
 
 body[data-workspace="role"] .scene-controls { display:none; }
+
+.scene-hub-actions { display:flex; gap:8px; }
+.scene-search { display:block; max-width:360px; color:var(--muted); font-size:12px; }
+.scene-search input { display:block; width:100%; margin-top:7px; }
+#library-cancel-replacement { width:100%; margin:4px 0 8px; }
+
+body[data-workspace="scene-edit"] .layer[draggable="true"] { cursor:grab; }

@@ -178,4 +178,7 @@ export default {
   'Preview':'预览','Rename':'重命名','Rename scene':'重命名场景','Export':'导出',
   'Untitled scene':'未命名场景',
   'Add two artworks and arrange them automatically.':'添加两张立绘并自动排列。','Choose two artworks for this scene.':'选择两张立绘，自动并排放入场景。','Compare skins':'皮肤对比','Arrange one character’s available appearances.':'排列同一角色的可用外观。','No character appearances are available':'没有可用的角色外观','Skin comparison: {name}':'皮肤对比：{name}','Scene template created':'场景模板已创建',
+  'Replace artwork':'更换立绘','Cancel replacement':'取消更换','Select an unlocked artwork to replace.':'请选择未锁定的立绘进行更换。','The selected artwork cannot be replaced.':'无法更换当前选中的立绘。','The selected artwork is no longer available':'选中的立绘已不可用','Choose artwork to replace the selected object. Its position and background will be kept.':'选择新立绘，更换当前对象；位置与所属背景会保留。',
+  'Search scenes':'搜索场景','Search by name':'按名称搜索','No scenes match this search.':'没有符合搜索条件的场景。','{count} artworks':'{count} 张立绘','{count} backgrounds':'{count} 个背景','Preview {name}':'预览 {name}','Edit':'编辑',
+  'Lock':'锁定','Unlock':'解锁','Hide':'隐藏','Focus artwork':'聚焦立绘','Reset transform':'重置变换',
 };

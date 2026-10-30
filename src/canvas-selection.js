@@ -39,5 +39,5 @@ export function createCanvasSelection(stage,editor,{enabled=true,getView}){
   function startMarquee(x,y){marquee={x,y,endX:x,endY:y};draw();}
   function moveMarquee(x,y){if(marquee){marquee.endX=x;marquee.endY=y;draw();}}
   function endMarquee(){if(!marquee)return;const r={left:Math.min(marquee.x,marquee.endX),right:Math.max(marquee.x,marquee.endX),top:Math.min(marquee.y,marquee.endY),bottom:Math.max(marquee.y,marquee.endY)};for(const group of stage.groups){const b=box(group);if(b&&b.left<=r.right&&b.right>=r.left&&b.top<=r.bottom&&b.bottom>=r.top)ids.add(group.id);}marquee=null;const group=selected().at(-1);primary=group?.id||'';editor.choose(group);draw();}
-  return {select,getSelected:selected,has:group=>ids.has(group.id),handleAt,beginTransform,transform,movable,move,startMarquee,moveMarquee,endMarquee,clearMarquee(){marquee=null;draw();},dispose(){cancelAnimationFrame(frame);svg.remove();}};
+  return {select,getSelected:selected,clear(){ids.clear();primary='';editor.choose(undefined);draw();},has:group=>ids.has(group.id),handleAt,beginTransform,transform,movable,move,startMarquee,moveMarquee,endMarquee,clearMarquee(){marquee=null;draw();},dispose(){cancelAnimationFrame(frame);svg.remove();}};
 }

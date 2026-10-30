@@ -88,12 +88,16 @@ export function createEditor(stage,message,onSelection){
     for(const group of sceneDrawOrder(stage.groups).reverse()){
       const row=document.createElement('div');row.className=`layer ${group.id===selectedId?'selected':''}`;
       row.dataset.editorObject=group.id;
+      row.draggable=true;row.ondragstart=event=>{event.dataTransfer.setData('application/x-mte-layer',group.id);event.dataTransfer.effectAllowed='move';};
+      row.ondragover=event=>{if(event.dataTransfer.types.includes('application/x-mte-layer'))event.preventDefault();};
+      row.ondrop=event=>{const source=stage.groups.find(item=>item.id===event.dataTransfer.getData('application/x-mte-layer'));if(!source||source===group||source.parentId!==group.parentId)return;event.preventDefault();mutate(()=>{let siblings=stage.groups.filter(item=>item.parentId===group.parentId),from=siblings.indexOf(source);const to=siblings.indexOf(group);while(from!==to){moveSceneLayer(stage.groups,source,from<to?1:-1);siblings=stage.groups.filter(item=>item.parentId===group.parentId);from=siblings.indexOf(source);}});};
       const title=document.createElement('button');title.textContent=group.name;title.dataset.editorKey='Select';title.setAttribute('aria-pressed',String(group.id===selectedId));title.onclick=()=>choose(group);
       row.append(title,button('Remove',()=>{stage.remove(group.id);if(!selected()){selectedId=sceneDrawOrder(stage.groups).at(-1)?.id;onSelection?.(selected());}}));container.append(row);
     }
     const group=selected();
     if(group){const panel=document.createElement('section');panel.className='object-controls';panel.dataset.editorObject=group.id;
       panel.append(input('Object name','text',group.name,value=>group.name=value,{maxLength:512}));
+      if(persistence?.canReplace?.(group)){const replace=document.createElement('button');replace.textContent='Replace artwork';replace.dataset.editorKey='Replace artwork';replace.onclick=()=>persistence.replace(group);panel.append(replace);}
       if(group.kind==='spine'||group.asset){const add=document.createElement('button');add.textContent='Add character background';add.dataset.editorKey=add.textContent;add.onclick=()=>{if(isBusy())return;backgroundTarget=group.id;document.querySelector('#background-file').click();};panel.append(add);}
       if(group.kind==='image'&&!group.asset){const label=document.createElement('label');label.textContent='Background for';const select=document.createElement('select');select.setAttribute('aria-label','Background for');select.append(new Option('Scene (independent)',''));for(const owner of stage.groups.filter(row=>row.kind==='spine'||row.asset))select.append(new Option(owner.name,owner.id));select.value=group.parentId||'';select.onchange=()=>mutate(()=>stage.setBackgroundParent(group,select.value||undefined));label.append(select);panel.append(label);}
       const variants=group.layers.filter(layer=>layer.skeleton?.data.skins.length>1);

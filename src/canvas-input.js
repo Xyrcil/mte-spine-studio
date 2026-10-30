@@ -8,12 +8,12 @@ export function zoomCameraAt(camera,rect,x,y,factor){
 }
 
 export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,onInteraction=()=>{},getTool=()=> 'auto',interact=(x,y)=>stage.interact(x,y),enableSelection=false}){
-  const canvas=stage.canvas,pointers=new Map(),selection=enableSelection?createCanvasSelection(stage,editor,{getView}):null;let action,space=false,wheelTimer,wheelChanged=false;
+  const canvas=stage.canvas,pointers=new Map(),selection=enableSelection?createCanvasSelection(stage,editor,{getView}):null;let action,space=false,wheelTimer,wheelChanged=false,longPressTimer;
   const canEdit=()=>!editor.busy&&getView()!=='export';
   const rect=()=>canvas.getBoundingClientRect();
   const commit=()=>{if(action?.changed)editor.changed(action.kind==='pan'||action.kind==='pinch'?{cameraOnly:true}:undefined);};
   const flushWheel=()=>{clearTimeout(wheelTimer);if(wheelChanged){wheelChanged=false;editor.changed({cameraOnly:true});}};
-  const clear=()=>{stage.ctrlPanActive=false;stage.pendingCtrlContext=null;selection?.clearMarquee();if(action?.kind==='bone-drag'){stage.releaseBoneDrags?.({onlyDragging:true});if(!action.recording)editor.changed();}commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
+  const clear=()=>{clearTimeout(longPressTimer);stage.ctrlPanActive=false;stage.pendingCtrlContext=null;selection?.clearMarquee();if(action?.kind==='bone-drag'){stage.releaseBoneDrags?.({onlyDragging:true});if(!action.recording)editor.changed();}commit();action=null;const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture(id);}catch{}flushWheel();};
   const beginChange=()=>{if(action.changed)return true;if(!(getView()==='studio'&&(action.kind==='pan'||action.kind==='pinch'))&&!editor.before())return false;action.changed=true;return true;};
   const down=event=>{
     const editable=canEdit(),recording=getView()==='gallery'&&isRecording();if(!editable&&!recording||event.button>1&&!(event.button===2&&event.ctrlKey&&getView()==='studio'))return;
@@ -21,6 +21,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     if(pointers.size>2){commit();action={kind:'blocked'};return;}
     if(action?.kind==='blocked'&&pointers.size>1)return;
     if(pointers.size===2){
+      clearTimeout(longPressTimer);
       if(action?.kind==='bone-drag')stage.releaseBoneDrags?.({onlyDragging:true});
       if(!editable){action={kind:'blocked'};return;}
       if(action?.group&&action.changed){action.group.x=action.object.x;action.group.y=action.object.y;}
@@ -35,9 +36,10 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     if(!pan&&!group&&!handle&&event.shiftKey&&selection&&getView()==='studio'){selection.startMarquee(event.clientX,event.clientY);action={kind:'marquee',id:event.pointerId,x:event.clientX,y:event.clientY,changed:false};return;}
     const transform=handle?selection.beginTransform(handle,event.clientX,event.clientY):null;
     action={kind:transform?'transform':pan||getView()==='studio'&&!group?'pan':getView()==='gallery'?'tap':group?.locked?'blocked':'object',id:event.pointerId,x:event.clientX,y:event.clientY,camera:{...stage.camera},rect:rect(),group,object:group?{x:group.x,y:group.y}:null,members:group&&selection?selection.movable():null,transform,changed:false,recording};
+    if(event.pointerType==='touch'&&getView()==='studio'){const clientX=event.clientX,clientY=event.clientY,id=event.pointerId;clearTimeout(longPressTimer);longPressTimer=setTimeout(()=>{if(!pointers.has(id)||!action||action.changed)return;clear();canvas.dispatchEvent(new CustomEvent('mte-request-context-menu',{detail:{clientX,clientY}}));},550);}
   };
   const move=event=>{
-    if(!pointers.has(event.pointerId)||!action)return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(!pointers.has(event.pointerId)||!action)return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});if(Number.isFinite(action.x)&&Math.hypot(event.clientX-action.x,event.clientY-action.y)>6)clearTimeout(longPressTimer);
     if(action.kind==='marquee'){selection.moveMarquee(event.clientX,event.clientY);return;}
     if(action.kind==='bone-drag'){if(stage.paused||stage.hostPaused)return;stage.triggerBoneDrag({...action.target,operation:'move',position:stage.screenToWorld(event.clientX,event.clientY)});return;}
     if(action.kind==='blocked')return;if(!canEdit()){if(Math.hypot(event.clientX-action.x,event.clientY-action.y)>6)action.kind='blocked';return;}
@@ -52,7 +54,7 @@ export function createCanvasInput(stage,editor,{getView,isRecording=()=>false,on
     else if(action.kind==='object'){const moved=panCamera(action.camera,action.rect,dx,dy),world={x:action.camera.x-moved.x,y:action.camera.y-moved.y};if(action.members)selection.move(action.members,world.x,world.y);else{const local=stage.objectDragDelta?.(action.group,world.x,world.y)||world;action.group.x=action.object.x+local.x;action.group.y=action.object.y+local.y;}}
   };
   const up=event=>{
-    if(!pointers.has(event.pointerId))return;pointers.delete(event.pointerId);if(!action)return;
+    if(!pointers.has(event.pointerId))return;clearTimeout(longPressTimer);pointers.delete(event.pointerId);if(!action)return;
     if(event.type==='pointerup'&&action.kind==='tap'&&!action.changed&&Math.hypot(event.clientX-action.x,event.clientY-action.y)<=6&&getView()==='gallery'&&(!editor.busy||isRecording())){const bounds=rect();if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)onInteraction(interact(event.clientX,event.clientY));}
     if(action.kind==='marquee')selection.endMarquee();
     if(action.kind==='pan'&&!action.changed&&getView()==='studio'&&!event.ctrlKey&&!event.altKey&&!space&&event.button===0)selection?.select(null);

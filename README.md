@@ -33,8 +33,9 @@ sound settings are unchanged.
 - **Artwork:** choose characters, skins and story artwork. Click for available
   interactions. Entry, click and idle dialogue have separate switches.
 - **Scenes:** create a scene or start from a template, then use **Add artwork**
-  to add multiple items. Your scene library, drafts and single-artwork preview
-  are stored separately in the current browser. Previous scenes remain available.
+  to add multiple items, or **Replace artwork** to change a selected object
+  without moving it. Your scene library, drafts and single-artwork preview are
+  stored separately in the current browser. Previous scenes remain available.
 - Drag an object to move it; drag empty space or hold Control to pan. Select more
   objects with Shift, use the handles to scale or rotate, and right-click for
   layer and alignment actions. Scroll or pinch to zoom. **Use current view for

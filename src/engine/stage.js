@@ -386,10 +386,10 @@ export class Stage extends EventTarget {
     }
     return Number.isFinite(minX)?{minX,minY,maxX,maxY}:null;
   }
-  hitTestDetailed(clientX,clientY){
+  hitTestDetailed(clientX,clientY,{includeLocked=false}={}){
     const {x,y}=this.screenToWorld(clientX,clientY);
     for(const group of sceneDrawOrder(this.groups).reverse()){
-      if(!objectVisible(group,this.groups)||backgroundOpacity(group,this.groups)<=0)continue;
+      if(!objectVisible(group,this.groups)||group.locked&&!includeLocked||backgroundOpacity(group,this.groups)<=0)continue;
       const bounds=this.objectBounds(group);if(!bounds||x<bounds.minX||x>bounds.maxX||y<bounds.minY||y>bounds.maxY)continue;
       if(group.kind==='image'){const local=inversePoint(backgroundMatrix(group,this.groups),x,y);if(local&&Math.abs(local.x)<=group.width/2&&Math.abs(local.y)<=group.height/2&&opaqueAt(this,group.texture?.getImage?.(),local.x/group.width+.5,.5-local.y/group.height))return group;continue;}
       try{for(const layer of [...group.layers].reverse())if(layer.active&&spineHit(this,layer,x,y,s()))return group;}catch{return group;}

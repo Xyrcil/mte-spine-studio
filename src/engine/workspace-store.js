@@ -35,7 +35,7 @@ const list=store=>transact([store],'readonly',s=>s[store].getAll());
 export async function saveWorkspaceScene(id,scene,{thumbnail='',legacyKey}={}){
   id=idCheck(id);scene=validateScene(scene);
   if(typeof thumbnail!=='string'||thumbnail.length>500000||thumbnail&&!/^data:image\/(jpeg|png|webp);base64,/.test(thumbnail))throw new Error('Invalid scene thumbnail');
-  const metadata={id,name:scene.name,updated:Date.now(),thumbnail,...(legacyKey?{legacyKey}: {})};
+  const metadata={id,name:scene.name,updated:Date.now(),thumbnail,artworkCount:scene.objects.filter(object=>object.kind==='spine'||object.asset).length,backgroundCount:scene.objects.filter(object=>object.kind==='image'&&!object.asset).length,...(legacyKey?{legacyKey}: {})};
   await transact(['scenes','sceneMetadata'],'readwrite',s=>{s.scenes.put({id,scene});s.sceneMetadata.put(metadata);});
   return metadata;
 }
@@ -44,7 +44,7 @@ export async function listWorkspaceScenes(){return (await list('sceneMetadata'))
 export async function deleteWorkspaceScene(id){id=idCheck(id);return transact(['scenes','sceneMetadata'],'readwrite',s=>{s.scenes.delete(id);s.sceneMetadata.delete(id);});}
 export async function saveWorkspaceDraft(id,scene,{baseId=null,legacyKey=null}={}){
   id=idCheck(id);scene=validateScene(scene);
-  const metadata={id,name:scene.name,updated:Date.now(),baseId,legacyKey};
+  const metadata={id,name:scene.name,updated:Date.now(),baseId,legacyKey,artworkCount:scene.objects.filter(object=>object.kind==='spine'||object.asset).length,backgroundCount:scene.objects.filter(object=>object.kind==='image'&&!object.asset).length};
   await transact(['drafts','draftMetadata'],'readwrite',s=>{s.drafts.put({id,scene});s.draftMetadata.put(metadata);});
   return metadata;
 }
