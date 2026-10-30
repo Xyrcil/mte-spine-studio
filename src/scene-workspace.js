@@ -211,7 +211,7 @@ export function createSceneWorkspace({stage,editor,viewer,setView,getView,messag
       if(!complete){for(const group of [...stage.groups])if(!originalIds.has(group.id))stage.remove(group.id);stage.camera=viewport;outputCamera=previousOutput;if(!append)editor.setName(initial.name);editor.choose(stage.groups.find(group=>group.id===previousSelection));}
       loading=false;stage.templateBusy=false;if(complete)editor.before(initial);editor.endBatch();progressDialog.removeEventListener('cancel',onCancel);progressDialog.close();
     }
-    message(complete?(append?'Template added to scene':'Scene template created'):cancelled?'Template cancelled; no artwork was added':`Could not load artwork ${failedAt}; no artwork was added`,{transient:true});
+    message(complete?(append?'Template added to scene':'Scene template created'):cancelled?'Template cancelled; no artwork was added':`Could not load artwork ${failedAt}; no artwork was added`,{transient:complete||cancelled});
   }
   viewer.setCanvasContextMenu(event=>{
     if(mode!=='scene-edit'||viewer.uiHidden)return false;const group=stage.hitTestDetailed(event.clientX,event.clientY,{includeLocked:true});context.replaceChildren();
