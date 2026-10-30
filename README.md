@@ -45,8 +45,10 @@ sound settings are unchanged.
   custom images are included, while game media is referenced from the pack.
 
 Templates can arrange two artworks, compare one character's available skins, or
-place one indexed story portrait per character or all available story portraits. Larger arrangements use smaller textures while
-editing; full-resolution export needs more device memory.
+place one indexed story portrait per character or all available story portraits.
+Use **Templates** in the editor to add an arrangement to an existing scene.
+Larger arrangements use smaller textures while editing; full-resolution export
+needs more device memory.
 
 ## Export
 

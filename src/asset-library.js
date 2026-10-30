@@ -41,7 +41,7 @@ export function createAssetLibrary(catalog,library,{select,selectPortrait,showUn
   const persist=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{preferenceError=true;}};
   const pager=document.createElement('div');pager.className='library-pagination';const previous=document.createElement('button'),next=document.createElement('button'),pageLabel=document.createElement('span');previous.textContent='Previous';next.textContent='Next';pager.append(previous,pageLabel,next);container.after(pager);
   async function addRow(row,position,preferPortrait=false,options={}){
-    if(!row||isBusy())return false;const target=getReplaceTarget();if(target)options={...options,replaceId:target};
+    if(!row||isBusy()&&!options.batch)return false;const target=getReplaceTarget();if(target)options={...options,replaceId:target};
     const selected=preferPortrait&&row.portrait?await selectPortrait(row.appearance,position,options):row.status==='animated'?await select(row.presentation,position,options):row.portrait?await selectPortrait(row.appearance,position,options):showUnavailable(row.appearance||{id:row.presentation.id,name:row.name});
     if(selected===false||row.status==='missing')return false;active=row.key;recent=[row.key,...recent.filter(key=>key!==row.key)].slice(0,20);persist('mte-library-recent',recent);return true;
   }

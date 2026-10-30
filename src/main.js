@@ -121,7 +121,7 @@ function finishAssetLoading(){stage.assetLoadBusy=false;cancelAsset.hidden=true;
 function cancelAssetLoading(){if(!request)return;const pending=request;request=null;pending.abort();finishAssetLoading();message('Asset loading cancelled');}
 cancelAsset.onclick=cancelAssetLoading;
 async function loadAsset(label,create,loadedMessage=label,position,options={}){
-  if(editor.assetSelectionBusy)return false;
+  if(editor.assetSelectionBusy)return false;if(view==='studio'&&!options.replaceId&&stage.groups.length>=512){message('A scene supports up to 512 objects.');return false;}
   canvasInput.clear();request?.abort();const current=new AbortController();request=current;
   const previous=options.batch?null:editor.snapshot(),old=[...stage.groups],selectedView=view,replaced=options.replaceId?stage.groups.find(item=>item.id===options.replaceId):null;
   if(options.replaceId&&(!replaced||selectedView!=='studio'||replaced.locked)){request=null;message('The selected artwork cannot be replaced.');return false;}
@@ -254,10 +254,10 @@ try {
     document.querySelector('#enable-sound').onclick=async()=>{try{await gallerySpeech.unlock();document.querySelector('#enable-sound').hidden=true;message('Sound enabled',{transient:true});}catch(error){message(error.name==='NotAllowedError'?'Audio is still blocked. Check this browser’s sound permissions.':error.message);}};
     stage.addEventListener('scene-change',()=>gallerySpeech.sync());
   }
-  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy,base,getPurpose:()=>workspace?.libraryPurpose()||'role',getReplaceTarget:()=>workspace?.replacementTarget()||null,onCancelReplace:()=>workspace?.cancelReplacement(),showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
+  window.mteLibrary=createAssetLibrary(catalog,libraryData,{select,selectPortrait,isBusy:()=>editor.assetSelectionBusy||Boolean(stage.templateBusy),base,getPurpose:()=>workspace?.libraryPurpose()||'role',getReplaceTarget:()=>workspace?.replacementTarget()||null,onCancelReplace:()=>workspace?.cancelReplacement(),showUnavailable:entry=>{message(`Display unavailable: ${entry.name}`);voicePanel({appearanceId:entry.id});}});message(`${catalog.presentations.length} bundles · ${runtime.summary?.parsed??runtime.entries.filter(entry=>entry.status==='parsed').length} parsed skeletons`);
   window.mteSkills=createSkillPanel(skills,editor,select,message);
   let recovered=await editor.init(catalog.presentations,runtime.entries,{recover:wallpaperMode&&!window.__mteHostState});
-  if(!wallpaperMode&&!window.__mteHostState){workspace=createSceneWorkspace({stage,editor,viewer,setView,getView:()=>view,message,getLibrary:()=>window.mteLibrary,getSelection:()=>canvasInput.selection,selectRow:(row,position,options)=>window.mteLibrary.addRow(row,position,false,options)});window.mteWorkspace=workspace;recovered=await workspace.start();}
+  if(!wallpaperMode&&!window.__mteHostState){workspace=createSceneWorkspace({stage,editor,viewer,setView,getView:()=>view,message,getLibrary:()=>window.mteLibrary,getSelection:()=>canvasInput.selection,startSceneSpeech:group=>gallerySpeech?.enter(group,{entry:false,animations:false}),selectRow:(row,position,options)=>window.mteLibrary.addRow(row,position,false,options)});window.mteWorkspace=workspace;recovered=await workspace.start();}
   appReady=true;
   if(startupSession){await window.mteHost.restoreSession(startupSession);window.__mteHostSessionConsumed=true;recovered=true;}
   if(recovered)message('Scene restored',{transient:true});

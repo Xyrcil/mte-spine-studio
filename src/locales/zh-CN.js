@@ -181,4 +181,7 @@ export default {
   'Replace artwork':'更换立绘','Cancel replacement':'取消更换','Select an unlocked artwork to replace.':'请选择未锁定的立绘进行更换。','The selected artwork cannot be replaced.':'无法更换当前选中的立绘。','The selected artwork is no longer available':'选中的立绘已不可用','Choose artwork to replace the selected object. Its position and background will be kept.':'选择新立绘，更换当前对象；位置与所属背景会保留。',
   'Search scenes':'搜索场景','Search by name':'按名称搜索','No scenes match this search.':'没有符合搜索条件的场景。','{count} artworks':'{count} 张立绘','{count} backgrounds':'{count} 个背景','Preview {name}':'预览 {name}','Edit':'编辑',
   'Lock':'锁定','Unlock':'解锁','Hide':'隐藏','Focus artwork':'聚焦立绘','Reset transform':'重置变换',
+  'Discard changes':'放弃更改',
+  'Include HX variants':'包含 HX 版本','Add a template':'添加模板','Add template':'添加模板','Add an arrangement to the current scene.':'将排列添加到当前场景。','Template added to scene':'已将模板添加到场景',
+  'A scene supports up to 512 objects.':'一个场景最多支持 512 个对象。',
 };
